@@ -1,0 +1,6 @@
+work-data_*.json
+export/
+*.local.json
+*.private.json
+.env
+.env.*
