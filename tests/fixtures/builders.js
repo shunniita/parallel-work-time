@@ -99,22 +99,147 @@ export function taskRecord(options = {}) {
 /**
  * 実施回を作る。
  *
- * @param {{tasks?: object[], status?: string}} [options]
+ * `withTaskDetail` は入れ子（tasks → intervals / directEntries）が保存と
+ * 読み込みで保たれるかを見る結合テスト向け。`tasks` を明示した場合はそちらを使う。
+ *
+ * @param {{tasks?: object[], status?: string, projectGroupId?: string,
+ *          runQuantity?: number, workDate?: string, withTaskDetail?: boolean,
+ *          transferredAt?: string|null, archivedAt?: string|null}} [options]
  */
 export function workRun(options = {}) {
-  const { tasks = [], status = 'working' } = options;
+  const {
+    status = 'working',
+    projectGroupId = nextId('group'),
+    runQuantity = 50,
+    workDate = '2026-07-30',
+    withTaskDetail = false,
+    transferredAt = null,
+    archivedAt = null,
+  } = options;
+  const tasks = options.tasks ?? (withTaskDetail ? [detailedTaskRecord()] : []);
   return {
     runId: nextId('run'),
-    projectGroupId: nextId('group'),
-    workDate: '2026-07-30',
-    runQuantity: 50,
+    projectGroupId,
+    workDate,
+    runQuantity,
     status,
     templateId: nextId('template'),
     templateVersion: 1,
     createdAt: '2026-07-30T09:00:00+09:00',
     updatedAt: '2026-07-30T09:00:00+09:00',
-    transferredAt: null,
-    archivedAt: null,
+    transferredAt,
+    archivedAt,
     tasks,
+  };
+}
+
+/**
+ * 終了済み区間・未終了区間・直接入力をひととおり持つ作業項目実績を作る。
+ */
+function detailedTaskRecord() {
+  return taskRecord({
+    intervals: [
+      workInterval('2026-07-30T09:00:00+09:00', '2026-07-30T09:20:00+09:00', ['甲', '乙']),
+      workInterval('2026-07-30T09:30:00+09:00', null, ['甲']),
+    ],
+    directEntries: [directEntry(1200)],
+  });
+}
+
+/**
+ * 作業テンプレートを作る（仕様書6.3）。
+ *
+ * @param {{templateSeriesId?: string, templateId?: string, targetType?: string,
+ *          variant?: string, version?: number, active?: boolean,
+ *          tasks?: object[]}} [options]
+ */
+export function taskTemplate(options = {}) {
+  const seriesId = options.templateSeriesId ?? nextId('series');
+  const {
+    templateId = nextId('template'),
+    targetType = '対象種別A',
+    variant = '標準',
+    version = 1,
+    active = true,
+    tasks = [
+      templateTask({ name: '作業項目A', externalCode: 'X-100', order: 1 }),
+      templateTask({ name: '作業項目B', externalCode: 'X-200', order: 2 }),
+    ],
+  } = options;
+  return {
+    templateSeriesId: seriesId,
+    templateId,
+    targetType,
+    variant,
+    version,
+    active,
+    createdAt: '2026-07-30T08:00:00+09:00',
+    tasks,
+  };
+}
+
+/**
+ * テンプレート内の作業項目定義を作る。
+ *
+ * @param {{name?: string, externalCode?: string|null, order?: number,
+ *          active?: boolean}} [options]
+ */
+export function templateTask(options = {}) {
+  const { name = '作業項目A', externalCode = 'X-100', order = 1, active = true } = options;
+  return {
+    taskDefinitionId: nextId('taskDef'),
+    name,
+    externalCode,
+    order,
+    active,
+  };
+}
+
+/**
+ * 案件グループを作る（仕様書6.4）。
+ *
+ * @param {{projectId?: string, targetType?: string, variant?: string,
+ *          totalQuantity?: number}} [options]
+ */
+export function projectGroup(options = {}) {
+  const {
+    projectId = nextId('PJ'),
+    targetType = '対象種別A',
+    variant = '標準',
+    totalQuantity = 100,
+  } = options;
+  return {
+    projectGroupId: nextId('group'),
+    projectId,
+    targetType,
+    variant,
+    totalQuantity,
+    createdAt: '2026-07-30T08:30:00+09:00',
+    updatedAt: '2026-07-30T08:30:00+09:00',
+  };
+}
+
+/**
+ * 簡易変更履歴を作る（仕様書11章）。`reason` は必須。
+ *
+ * @param {{entityType?: string, targetId?: string, operation?: string,
+ *          summary?: string, reason?: string}} [options]
+ */
+export function historyEntry(options = {}) {
+  const {
+    entityType = 'workRun',
+    targetId = nextId('run'),
+    operation = 'statusReverted',
+    summary = '転記済み → 集計済み',
+    reason = '転記先の誤りに気づいたため',
+  } = options;
+  return {
+    historyId: nextId('history'),
+    timestamp: '2026-07-30T11:00:00+09:00',
+    entityType,
+    targetId,
+    operation,
+    summary,
+    reason,
   };
 }
