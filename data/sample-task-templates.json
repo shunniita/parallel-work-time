@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "note": "初回起動時に投入する架空のサンプルテンプレート（仕様書8.1.6、14章）。実在の案件名・作業項目名・参加者名を書かないこと。createdAt は投入時に補う。",
+  "templates": [
+    {
+      "templateSeriesId": "0f4a1c9e-1d2b-4a6f-9c31-5b8e7d204a11",
+      "templateId": "0f4a1c9e-1d2b-4a6f-9c31-5b8e7d204a11",
+      "targetType": "対象種別A",
+      "variant": "標準",
+      "version": 1,
+      "active": true,
+      "tasks": [
+        {
+          "taskDefinitionId": "3c7e5a02-8b14-4d59-a7f6-9e2c1b330d01",
+          "name": "受入確認",
+          "externalCode": "X-100",
+          "order": 1,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "3c7e5a02-8b14-4d59-a7f6-9e2c1b330d02",
+          "name": "前処理",
+          "externalCode": "X-200",
+          "order": 2,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "3c7e5a02-8b14-4d59-a7f6-9e2c1b330d03",
+          "name": "本作業",
+          "externalCode": "X-1000",
+          "order": 3,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "3c7e5a02-8b14-4d59-a7f6-9e2c1b330d04",
+          "name": "検査",
+          "externalCode": "X-1100",
+          "order": 4,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "3c7e5a02-8b14-4d59-a7f6-9e2c1b330d05",
+          "name": "後片付け",
+          "externalCode": null,
+          "order": 5,
+          "active": true
+        }
+      ]
+    },
+    {
+      "templateSeriesId": "6b2d8f31-4e05-4c72-8a19-2d6f4b915c22",
+      "templateId": "6b2d8f31-4e05-4c72-8a19-2d6f4b915c22",
+      "targetType": "対象種別A",
+      "variant": "拡張",
+      "version": 1,
+      "active": true,
+      "tasks": [
+        {
+          "taskDefinitionId": "9a1f6c48-7d23-4b80-9e51-3c8a2f640e01",
+          "name": "受入確認",
+          "externalCode": "X-100",
+          "order": 1,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "9a1f6c48-7d23-4b80-9e51-3c8a2f640e02",
+          "name": "本作業",
+          "externalCode": "X-1000",
+          "order": 2,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "9a1f6c48-7d23-4b80-9e51-3c8a2f640e03",
+          "name": "追加加工",
+          "externalCode": "X-2000",
+          "order": 3,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "9a1f6c48-7d23-4b80-9e51-3c8a2f640e04",
+          "name": "検査",
+          "externalCode": "X-1100",
+          "order": 4,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "9a1f6c48-7d23-4b80-9e51-3c8a2f640e05",
+          "name": "旧手順による確認",
+          "externalCode": "X-1200",
+          "order": 5,
+          "active": false
+        }
+      ]
+    },
+    {
+      "templateSeriesId": "c58e0a17-9f36-4d81-b204-7a1e6c352d33",
+      "templateId": "c58e0a17-9f36-4d81-b204-7a1e6c352d33",
+      "targetType": "対象種別B",
+      "variant": "標準",
+      "version": 1,
+      "active": true,
+      "tasks": [
+        {
+          "taskDefinitionId": "e4b93d20-5c81-4a67-9f38-1d5c7a908b01",
+          "name": "準備",
+          "externalCode": "Y-10",
+          "order": 1,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "e4b93d20-5c81-4a67-9f38-1d5c7a908b02",
+          "name": "本作業",
+          "externalCode": "Y-20",
+          "order": 2,
+          "active": true
+        },
+        {
+          "taskDefinitionId": "e4b93d20-5c81-4a67-9f38-1d5c7a908b03",
+          "name": "記録",
+          "externalCode": "Y-30",
+          "order": 3,
+          "active": true
+        }
+      ]
+    }
+  ]
+}
