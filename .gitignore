@@ -1,6 +1,19 @@
+# 実運用データ（仕様書 5.4）
 work-data_*.json
+parallel-work-time_*.json
 export/
 *.local.json
 *.private.json
 .env
 .env.*
+
+# 開発時ツール（実装計画書 4.4）
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+.vitest/
+
+# OS・エディタ
+.DS_Store
+Thumbs.db
