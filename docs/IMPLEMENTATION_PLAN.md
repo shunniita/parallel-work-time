@@ -289,10 +289,12 @@ ProjectGroup（案件ID・対象種別・バリエーション・総予定数）
 | ストア | キー | 内容 | 索引 |
 | ------ | ---- | ---- | ---- |
 | `settings` | 固定キー `"singleton"` | Settings（6.2） | — |
-| `taskTemplates` | `templateId` | TaskTemplate（6.3）。旧版も保持 | `templateSeriesId`、`targetType`+`variant`+`active` |
+| `taskTemplates` | `templateId` | TaskTemplate（6.3）。旧版も保持 | `templateSeriesId`、`targetType`+`variant` |
 | `projectGroups` | `projectGroupId` | ProjectGroup（6.4） | `projectId`（一意） |
 | `workRuns` | `runId` | WorkRun＋tasks配下すべて（6.5〜6.8） | `projectGroupId`、`status`、`workDate` |
 | `changeHistory` | `historyId` | 簡易変更履歴（11章） | `targetId`、`timestamp` |
+
+`taskTemplates` の複合索引に `active` を含めない理由: IndexedDB の有効なキー型は number / string / Date / ArrayBuffer / Array に限られ、boolean は含まれない。複合索引のキーパスのいずれかが無効なキーを返すと、そのレコードは例外なく索引から除外される。有効版の絞り込みは `targetType`+`variant` で取得した結果に対しメモリ上で行う。他の索引に boolean を用いるものはない（`status` / `workDate` / `projectId` / `targetId` / `timestamp` はいずれも文字列）。
 
 WorkRun は `tasks[] → intervals[] / directEntries[]` を内包する単一ドキュメントとして扱う（6.5〜6.8 の入れ子表記に従う）。区間1件の編集でも WorkRun 1件を書き戻す粒度になるが、初版の性能目標（案件20件・実施回100件・区間2,000件、13章）に対しては十分である。区間の一覧・集計は選択中の実施回のみメモリへ展開する。
 
@@ -443,6 +445,9 @@ parallel-work-time/
 ├─ README.md                      … 用途・起動方法・未実装事項・性能実測値・定期エクスポート案内
 ├─ .gitignore                     … 5.4 の指定内容
 ├─ mise.toml                      … 既存（node 24）
+├─ playwright.config.js           … E2E設定（Chromium1種、静的配信を自動起動）
+├─ tools/
+│  └─ static-server.mjs           … 開発・E2E用の静的配信（Node標準のみ。配布物へ含めない）
 ├─ licenses/                      … 外部ライブラリのライセンス文（14章。初版は空でも配置）
 │  └─ .gitkeep
 ├─ data/
@@ -473,6 +478,7 @@ parallel-work-time/
 │  │  ├─ IndexedDbAdapter.js      … 初版実装（5.2、9.1のトランザクション/Quota対応）
 │  │  └─ MemoryAdapter.js         … テスト用。同一インターフェース
 │  ├─ app/
+│  │  ├─ bootstrap.js             … 起動時の初期化とサンプルテンプレート初回投入（8.1.6）
 │  │  ├─ store.js                 … メモリ上の状態と購読通知
 │  │  ├─ actions/
 │  │  │  ├─ projectActions.js     … 案件・実施回の作成/修正（8.2）

@@ -103,7 +103,19 @@ node --version
 npm --version
 ```
 
-ローカルでの静的ファイル配信方法は、画面の実装開始後に追記します。
+## ローカルでの起動
+
+`file://`での直接起動は動作保証の対象外です。付属の静的配信サーバーを使用してください。Node.jsの標準モジュールのみで動作し、配布物へは含めません。
+
+```powershell
+mise exec -- npm run serve
+```
+
+起動後、ブラウザで`http://127.0.0.1:4173/`を開きます。ポートは`--port`または環境変数`PORT`で変更できます。
+
+```powershell
+mise exec -- node tools/static-server.mjs --port 8080
+```
 
 ## テスト
 
@@ -114,7 +126,16 @@ mise exec -- npm install
 mise exec -- npm test
 ```
 
-計算処理（工数、丸め、状態判定、並び順）は`src/domain`の純関数へ閉じ込め、単体テストで固定しています。受入試験の自動化は画面の実装後に追加します。
+`npm test`は単体テストと結合テストを実行します。計算処理（工数、丸め、状態判定、並び順）は`src/domain`の純関数へ閉じ込め、単体テストで固定しています。保存処理は`IndexedDbAdapter`と`MemoryAdapter`の両方へ同一の契約テストを通しています。
+
+受入試験（E2E）はPlaywrightで実行します。初回のみブラウザの取得が必要です。
+
+```powershell
+mise exec -- npx playwright install chromium
+mise exec -- npm run test:e2e
+```
+
+E2Eは静的配信サーバーを自動起動し、`http://127.0.0.1:4173`に対して実行します。仕様書16章の受入試験T-01〜T-18は、対応する画面の実装後に追加します。
 
 ## データの保存
 
@@ -176,12 +197,12 @@ export/
 
 ## 現在の状態
 
-現在は計算処理の実装段階です。
+現在は保存基盤の実装段階です。画面はまだありません。
 
 * [x] 初版仕様書の作成
 * [x] 実装計画の作成
 * [ ] 基本画面の実装
-* [ ] IndexedDB保存機能
+* [x] IndexedDB保存機能
 * [ ] 作業テンプレート管理
 * [ ] 案件・実施回管理
 * [ ] 時刻入力

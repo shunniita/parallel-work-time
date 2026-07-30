@@ -1,0 +1,189 @@
+/**
+ * メモリ上に保持する保存アダプター。テスト用（実装計画4.1）。
+ *
+ * {@link ./IndexedDbAdapter.js IndexedDbAdapter} と同一の契約を満たす。
+ * 両者は同じ結合テストスイートへ通す（実装計画8.2）。
+ *
+ * IndexedDB は値を構造化複製して保存するため、呼び出し側が後から
+ * オブジェクトを書き換えても保存内容は変わらない。この振る舞いの差が
+ * テストと本番で出ないよう、本実装も出入りの両方で複製する。
+ */
+
+import { createDefaultSettings } from '../config.js';
+import { validateImportPayload } from '../domain/schema.js';
+import { toIsoSecond } from '../domain/datetime.js';
+import {
+  COLLECTION_TYPES,
+  ENTITY_TYPE,
+  STORAGE_ERROR_KIND,
+  SETTINGS_KEY,
+  StorageAdapter,
+  StorageError,
+  assertKnownType,
+  createEmptyDataset,
+  entityKeyOf,
+  toExportPayload,
+} from './StorageAdapter.js';
+
+function clone(value) {
+  return structuredClone(value);
+}
+
+export class MemoryAdapter extends StorageAdapter {
+  constructor() {
+    super();
+    /** @type {Map<string, Map<string, object>>} 種別 → キー → エンティティ */
+    this.stores = new Map();
+    for (const type of Object.values(ENTITY_TYPE)) {
+      this.stores.set(type, new Map());
+    }
+    this.initialized = false;
+  }
+
+  async initialize() {
+    // 冪等。既に設定があれば上書きしない。
+    const settings = this.stores.get(ENTITY_TYPE.SETTINGS);
+    if (!settings.has(SETTINGS_KEY)) {
+      settings.set(SETTINGS_KEY, createDefaultSettings());
+    }
+    this.initialized = true;
+  }
+
+  async loadAll() {
+    this.assertInitialized();
+    const dataset = createEmptyDataset();
+    dataset.settings = clone(this.stores.get(ENTITY_TYPE.SETTINGS).get(SETTINGS_KEY));
+    for (const type of COLLECTION_TYPES) {
+      dataset[type] = [...this.stores.get(type).values()].map(clone);
+    }
+    return dataset;
+  }
+
+  async saveEntity(type, entity) {
+    this.assertInitialized();
+    assertKnownType(type);
+    const key = entityKeyOf(type, entity);
+    if (type === ENTITY_TYPE.PROJECT_GROUPS) {
+      this.assertProjectIdUnique(entity, key);
+    }
+    this.stores.get(type).set(key, clone(entity));
+  }
+
+  /**
+   * 案件IDの一意性を確かめる（仕様書8.2.6）。
+   *
+   * IndexedDbAdapter は `byProjectId` 索引の一意制約で同じ状況を弾く。両実装で
+   * 同じ例外になるよう、こちらでも走査して検出する。
+   *
+   * @param {object} entity
+   * @param {string} key
+   */
+  assertProjectIdUnique(entity, key) {
+    for (const [existingKey, existing] of this.stores.get(ENTITY_TYPE.PROJECT_GROUPS)) {
+      if (existingKey !== key && existing.projectId === entity.projectId) {
+        throw new StorageError(
+          STORAGE_ERROR_KIND.CONSTRAINT,
+          `一意制約に違反しています（${ENTITY_TYPE.PROJECT_GROUPS} の保存）。`,
+        );
+      }
+    }
+  }
+
+  async deleteEntity(type, id) {
+    this.assertInitialized();
+    assertKnownType(type);
+    if (type === ENTITY_TYPE.SETTINGS) {
+      throw new StorageError(
+        STORAGE_ERROR_KIND.VALIDATION,
+        '設定は削除できない。値の変更は saveEntity で行う。',
+      );
+    }
+    // 存在しないキーでも失敗させない。
+    this.stores.get(type).delete(id);
+  }
+
+  async exportAll(options = {}) {
+    const dataset = await this.loadAll();
+    const exportedAt = options.exportedAt ?? toIsoSecond(new Date());
+    return toExportPayload(dataset, exportedAt);
+  }
+
+  async importAll(data) {
+    this.assertInitialized();
+    const result = validateImportPayload(data);
+    if (!result.ok) {
+      // 検証失敗時は既存データを一切変更しない（仕様書9.3）。
+      throw new StorageError(
+        result.schemaMismatch
+          ? STORAGE_ERROR_KIND.SCHEMA_MISMATCH
+          : STORAGE_ERROR_KIND.VALIDATION,
+        result.schemaMismatch
+          ? 'スキーマ版が一致しないため取り込めません。'
+          : 'JSONの内容が不正なため取り込めません。',
+        { details: result.errors },
+      );
+    }
+
+    const next = new Map();
+    for (const type of Object.values(ENTITY_TYPE)) {
+      next.set(type, new Map());
+    }
+    next.get(ENTITY_TYPE.SETTINGS).set(SETTINGS_KEY, clone(data.settings));
+    for (const type of COLLECTION_TYPES) {
+      for (const entity of data[type]) {
+        next.get(type).set(entityKeyOf(type, entity), clone(entity));
+      }
+    }
+    // 全置換は最後の代入1回で行う。途中で失敗しても既存データは残る。
+    this.stores = next;
+  }
+
+  /**
+   * 対象種別・バリエーションの作業テンプレートを引く。
+   *
+   * `activeOnly` は取得後のメモリ上で絞り込む。IndexedDbAdapter が boolean を
+   * 索引へ含められないため（実装計画3.1）、同じ絞り込み方に揃えてある。
+   *
+   * @param {string} targetType
+   * @param {string} variant
+   * @param {{activeOnly?: boolean}} [options]
+   * @returns {Promise<object[]>}
+   */
+  async findTaskTemplates(targetType, variant, options = {}) {
+    this.assertInitialized();
+    const matched = [...this.stores.get(ENTITY_TYPE.TASK_TEMPLATES).values()].filter(
+      (template) => template.targetType === targetType && template.variant === variant,
+    );
+    const filtered =
+      options.activeOnly === true
+        ? matched.filter((template) => template.active === true)
+        : matched;
+    return filtered.map(clone);
+  }
+
+  async findTemplateSeries(templateSeriesId) {
+    this.assertInitialized();
+    return [...this.stores.get(ENTITY_TYPE.TASK_TEMPLATES).values()]
+      .filter((template) => template.templateSeriesId === templateSeriesId)
+      .map(clone);
+  }
+
+  async findProjectGroupByProjectId(projectId) {
+    this.assertInitialized();
+    for (const group of this.stores.get(ENTITY_TYPE.PROJECT_GROUPS).values()) {
+      if (group.projectId === projectId) {
+        return clone(group);
+      }
+    }
+    return null;
+  }
+
+  assertInitialized() {
+    if (!this.initialized) {
+      throw new StorageError(
+        STORAGE_ERROR_KIND.UNAVAILABLE,
+        'initialize() を先に呼ぶ必要がある',
+      );
+    }
+  }
+}
