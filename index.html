@@ -7,27 +7,16 @@
     <!--
       外部フォント・CDN・外部APIを参照しない（仕様書5.1.4、13章）。
       このファイルと src/ 配下に外部URLの文字列が無いことを T-18 で静的検査する。
-
-      画面構成（ヘッダー・警告領域・二分割レイアウト・フッター、仕様書12.1）は
-      実装計画 Step 4 以降で組み立てる。現時点は Step 3 の保存基盤が
-      ブラウザ上で動くことを確認するための最小構成である。
     -->
+    <link rel="stylesheet" href="src/styles/base.css" />
+    <link rel="stylesheet" href="src/styles/layout.css" />
+    <link rel="stylesheet" href="src/styles/components.css" />
   </head>
   <body>
-    <h1>同時並行作業時間計測支援ツール</h1>
-    <p>画面は実装計画 Step 4 以降で作成する。以下は保存基盤の初期化結果。</p>
-    <section id="bootstrap-status" aria-live="polite" data-state="pending">
-      <p data-testid="bootstrap-message">初期化中…</p>
-      <dl>
-        <dt>schemaVersion</dt>
-        <dd data-testid="schema-version">—</dd>
-        <dt>作業テンプレート件数</dt>
-        <dd data-testid="template-count">—</dd>
-        <dt>今回投入した件数</dt>
-        <dd data-testid="seeded-count">—</dd>
-      </dl>
-      <ul data-testid="template-list"></ul>
-    </section>
+    <!-- 骨格は src/ui/shell.js が組み立てる（仕様書12.1）。 -->
+    <div id="app">
+      <p data-testid="boot-message">初期化中…</p>
+    </div>
     <script type="module" src="src/main.js"></script>
   </body>
 </html>

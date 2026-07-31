@@ -171,6 +171,95 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
     });
   });
 
+  describe('saveEntities()', () => {
+    it('複数種別をまとめて保存する（仕様書9.1）', async () => {
+      const group = projectGroup();
+      const run = workRun({ projectGroupId: group.projectGroupId });
+
+      await adapter.saveEntities([
+        { type: ENTITY_TYPE.PROJECT_GROUPS, entity: group },
+        { type: ENTITY_TYPE.WORK_RUNS, entity: run },
+        { type: ENTITY_TYPE.TASK_TEMPLATES, entity: taskTemplate() },
+      ]);
+
+      const dataset = await adapter.loadAll();
+      expect(dataset.projectGroups).toHaveLength(1);
+      expect(dataset.workRuns).toHaveLength(1);
+      expect(dataset.taskTemplates).toHaveLength(1);
+    });
+
+    it('同一ストアへの複数件も保存できる（テンプレート改訂の形）', async () => {
+      const v1 = taskTemplate({ templateId: 'template-v1', version: 1, active: true });
+      const v2 = {
+        ...v1,
+        templateId: 'template-v2',
+        version: 2,
+        active: true,
+      };
+
+      await adapter.saveEntities([
+        { type: ENTITY_TYPE.TASK_TEMPLATES, entity: { ...v1, active: false } },
+        { type: ENTITY_TYPE.TASK_TEMPLATES, entity: v2 },
+      ]);
+
+      const dataset = await adapter.loadAll();
+      expect(dataset.taskTemplates).toHaveLength(2);
+      const active = dataset.taskTemplates.filter((template) => template.active);
+      expect(active.map((template) => template.templateId)).toEqual(['template-v2']);
+    });
+
+    it('空配列は何もしない', async () => {
+      await expect(adapter.saveEntities([])).resolves.toBeUndefined();
+      expect((await adapter.loadAll()).taskTemplates).toEqual([]);
+    });
+
+    it('1件でも主キーが無ければ全件を反映しない', async () => {
+      const { templateId, ...withoutKey } = taskTemplate();
+
+      await expect(
+        adapter.saveEntities([
+          { type: ENTITY_TYPE.TASK_TEMPLATES, entity: taskTemplate() },
+          { type: ENTITY_TYPE.TASK_TEMPLATES, entity: withoutKey },
+        ]),
+      ).rejects.toMatchObject({ kind: STORAGE_ERROR_KIND.VALIDATION });
+
+      expect((await adapter.loadAll()).taskTemplates).toEqual([]);
+    });
+
+    it('1件でも未知の種別があれば全件を反映しない', async () => {
+      await expect(
+        adapter.saveEntities([
+          { type: ENTITY_TYPE.TASK_TEMPLATES, entity: taskTemplate() },
+          { type: 'unknownStore', entity: {} },
+        ]),
+      ).rejects.toMatchObject({ kind: STORAGE_ERROR_KIND.VALIDATION });
+
+      expect((await adapter.loadAll()).taskTemplates).toEqual([]);
+    });
+
+    it('案件IDが重複すれば全件を取り消す（仕様書8.2.6）', async () => {
+      await adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, projectGroup({ projectId: 'PJ-0001' }));
+
+      await expect(
+        adapter.saveEntities([
+          { type: ENTITY_TYPE.TASK_TEMPLATES, entity: taskTemplate() },
+          { type: ENTITY_TYPE.PROJECT_GROUPS, entity: projectGroup({ projectId: 'PJ-0001' }) },
+        ]),
+      ).rejects.toMatchObject({ kind: STORAGE_ERROR_KIND.CONSTRAINT });
+
+      const dataset = await adapter.loadAll();
+      expect(dataset.projectGroups).toHaveLength(1);
+      // 同じ一括保存に含めたテンプレートも反映されない。
+      expect(dataset.taskTemplates).toEqual([]);
+    });
+
+    it('配列でない引数は validation で失敗する', async () => {
+      await expect(adapter.saveEntities(undefined)).rejects.toMatchObject({
+        kind: STORAGE_ERROR_KIND.VALIDATION,
+      });
+    });
+  });
+
   describe('deleteEntity()', () => {
     it('指定したキーだけを削除する', async () => {
       const kept = workRun();

@@ -1,18 +1,31 @@
 /**
- * 起動エントリ。
+ * 起動エントリ。初期化と画面の結線のみを持つ。
  *
- * 現時点の役目は、実装計画 Step 3 の完了条件「初回起動でテンプレートが入る」を
- * ブラウザ上で確認できるようにすることに限る。画面の組み立て（仕様書12章）は
- * Step 4 以降で `src/ui/` へ実装し、このファイルは初期化とビュー切替の
- * 呼び出しへ縮める。
+ * 流れは次のとおり。
+ *
+ *   サンプルJSON読込 → bootstrap（初期化・初回投入）→ ストア生成
+ *   → 骨格の描画 → 画面の描画
  *
  * サンプルテンプレートJSONの読み込みはここで行う。同一オリジンの相対パスであり、
  * 外部通信は発生しない（仕様書5.1.4、13章）。
+ *
+ * 画面は実装計画 Step 4 の時点でテンプレート画面のみ。Step 5 以降でヘッダーの
+ * 各画面と左ツリーを埋めていく。
  */
 
 import { SCHEMA_VERSION } from './config.js';
 import { bootstrap } from './app/bootstrap.js';
+import { createStore } from './app/store.js';
+import { createPersistence } from './app/persistence.js';
+import {
+  createTemplate,
+  reviseTemplateAction,
+} from './app/actions/templateActions.js';
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
+import { VIEW, renderShell, renderTreePlaceholder } from './ui/shell.js';
+import { renderStatusBar } from './ui/statusBar.js';
+import { createTemplateView } from './ui/views/templateView.js';
+import { el, replaceChildren } from './ui/dom.js';
 
 /** サンプルテンプレートの配置（仕様書8.1.6）。 */
 const SAMPLE_TEMPLATES_URL = 'data/sample-task-templates.json';
@@ -37,67 +50,75 @@ async function loadSampleTemplates() {
   }
 }
 
-function setText(testId, value) {
-  const element = document.querySelector(`[data-testid="${testId}"]`);
-  if (element !== null) {
-    element.textContent = value;
-  }
-}
-
 /**
- * 初期化結果を画面へ出す。Step 4 で `src/ui/` へ置き換える暫定表示。
+ * 起動に失敗した旨を出す。骨格を描く前に落ちた場合の受け皿。
  *
- * @param {{dataset: object, seededTemplateCount: number}} result
- */
-function renderBootstrapResult({ dataset, seededTemplateCount }) {
-  const status = document.getElementById('bootstrap-status');
-  status.dataset.state = 'ready';
-  setText('bootstrap-message', '保存基盤の初期化が完了しました。');
-  setText('schema-version', String(dataset.settings.schemaVersion));
-  setText('template-count', String(dataset.taskTemplates.length));
-  setText('seeded-count', String(seededTemplateCount));
-
-  const list = document.querySelector('[data-testid="template-list"]');
-  list.textContent = '';
-  const sorted = [...dataset.taskTemplates].sort((left, right) =>
-    `${left.targetType}/${left.variant}`.localeCompare(`${right.targetType}/${right.variant}`, 'ja'),
-  );
-  for (const template of sorted) {
-    const item = document.createElement('li');
-    item.dataset.templateId = template.templateId;
-    item.textContent =
-      `${template.targetType} / ${template.variant} ` +
-      `（版${template.version}、有効=${template.active}、作業項目${template.tasks.length}件）`;
-    list.append(item);
-  }
-}
-
-/**
- * 初期化に失敗した旨を画面へ出す（仕様書9.1 の成否表示の暫定版）。
- *
+ * @param {HTMLElement} root
  * @param {unknown} error
  */
-function renderBootstrapFailure(error) {
-  const status = document.getElementById('bootstrap-status');
-  status.dataset.state = 'error';
-  const detail = error?.details?.length > 0 ? `\n${error.details.join('\n')}` : '';
-  setText(
-    'bootstrap-message',
-    `保存基盤の初期化に失敗しました: ${error?.message ?? String(error)}${detail}`,
-  );
+function renderBootFailure(root, error) {
+  const detail = error?.details?.length > 0 ? error.details.join(' / ') : '';
+  replaceChildren(root, [
+    el('div', { class: 'errors', role: 'alert', dataset: { testid: 'boot-error' } }, [
+      el('p', { class: 'errors__title', text: '起動できませんでした' }),
+      el('p', { text: error?.message ?? String(error) }),
+      detail !== '' && el('p', { text: detail }),
+    ]),
+  ]);
 }
 
 async function main() {
-  setText('schema-version', String(SCHEMA_VERSION));
+  const root = document.getElementById('app');
   const adapter = new IndexedDbAdapter();
+
+  let dataset;
   try {
-    const result = await bootstrap(adapter, {
+    ({ dataset } = await bootstrap(adapter, {
       sampleTemplates: await loadSampleTemplates(),
-    });
-    renderBootstrapResult(result);
+    }));
   } catch (error) {
-    renderBootstrapFailure(error);
+    renderBootFailure(root, error);
+    return;
   }
+
+  const store = createStore({ dataset, view: VIEW.TEMPLATES });
+  const persistence = createPersistence(adapter);
+
+  const shell = renderShell(root, {
+    onNavigate: (view) => {
+      store.setState({ view });
+      shell.setActiveView(view);
+    },
+  });
+  shell.setActiveView(VIEW.TEMPLATES);
+
+  const statusBar = renderStatusBar(shell.statusBar, { schemaVersion: SCHEMA_VERSION });
+  statusBar.update(persistence.getStatus());
+  persistence.subscribe((status) => statusBar.update(status));
+
+  replaceChildren(shell.treePane, [renderTreePlaceholder()]);
+
+  // アクションへはストアの更新まで含めて渡す。画面側は保存後のデータセットを
+  // 自分で流し込まなくてよい。
+  const deps = { adapter, persistence };
+  const templateView = createTemplateView({
+    container: shell.detailPane,
+    store,
+    actions: {
+      createTemplate: async (draft) => {
+        const result = await createTemplate(deps, draft);
+        store.setState({ dataset: result.dataset });
+        return result;
+      },
+      reviseTemplate: async (templateId, draft) => {
+        const result = await reviseTemplateAction(deps, templateId, draft);
+        store.setState({ dataset: result.dataset });
+        return result;
+      },
+    },
+  });
+
+  templateView.render();
 }
 
 main();

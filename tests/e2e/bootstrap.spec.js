@@ -1,54 +1,64 @@
 /**
- * Step 3 の完了条件「初回起動でテンプレートが入る」をブラウザ上で確認する。
+ * 起動とサンプルテンプレート初回投入のE2E（仕様書5.2、8.1.6）。
  *
- * 受入試験 T-01〜T-18（仕様書16章）は Step 12 でこのディレクトリへ追加する。
- * 本ファイルはそれ以前の土台確認であり、試験IDは持たない。
+ * 画面越しの確認に絞る。保存層そのものの検証は
+ * `tests/integration/bootstrap.test.js` が担う。
  */
 
 import { expect, test } from '@playwright/test';
 
-test.describe('保存基盤の初期化', () => {
-  test('初回起動でサンプルテンプレートが投入される（仕様書8.1.6）', async ({ page }) => {
-    await page.goto('/');
+/** サンプルテンプレートの件数（`data/sample-task-templates.json`）。 */
+const SAMPLE_COUNT = 3;
 
-    await expect(page.getByTestId('bootstrap-message')).toHaveText(
-      '保存基盤の初期化が完了しました。',
-    );
-    await expect(page.getByTestId('schema-version')).toHaveText('1');
-    await expect(page.getByTestId('seeded-count')).toHaveText('3');
-    await expect(page.getByTestId('template-count')).toHaveText('3');
-  });
-
-  test('再読み込みしても件数が増えない', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.getByTestId('seeded-count')).toHaveText('3');
-
-    await page.reload();
-
-    await expect(page.getByTestId('seeded-count')).toHaveText('0');
-    await expect(page.getByTestId('template-count')).toHaveText('3');
-  });
-
-  test('T-01 が使う対象種別A・標準が一覧に出る', async ({ page }) => {
-    await page.goto('/');
-
-    await expect(page.getByTestId('template-list').getByRole('listitem')).toHaveCount(3);
-    await expect(page.getByTestId('template-list')).toContainText('対象種別A / 標準');
-  });
-
-  test('外部オリジンへの要求が発生しない（仕様書5.1.4、13章）', async ({ page }) => {
-    const external = [];
-    page.on('request', (request) => {
-      if (!request.url().startsWith('http://127.0.0.1:')) {
-        external.push(request.url());
-      }
+/**
+ * IndexedDB を消してから開く。初回起動の状態から始める。
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+async function openFresh(page) {
+  await page.goto('/');
+  await page.evaluate(async () => {
+    await new Promise((resolve) => {
+      const request = indexedDB.deleteDatabase('parallel-work-time');
+      request.onsuccess = resolve;
+      request.onerror = resolve;
+      request.onblocked = resolve;
     });
-
-    await page.goto('/');
-    await expect(page.getByTestId('bootstrap-message')).toHaveText(
-      '保存基盤の初期化が完了しました。',
-    );
-
-    expect(external).toEqual([]);
   });
+  await page.reload();
+}
+
+test('初回起動でサンプルテンプレートが投入される（仕様書8.1.6）', async ({ page }) => {
+  await openFresh(page);
+
+  await expect(page.getByTestId('template-row')).toHaveCount(SAMPLE_COUNT);
+});
+
+test('再読み込みしても件数が増えない', async ({ page }) => {
+  await openFresh(page);
+  await expect(page.getByTestId('template-row')).toHaveCount(SAMPLE_COUNT);
+
+  await page.reload();
+
+  await expect(page.getByTestId('template-row')).toHaveCount(SAMPLE_COUNT);
+});
+
+test('起動時点では保存状態が未操作である（仕様書9.1）', async ({ page }) => {
+  await openFresh(page);
+
+  await expect(page.getByTestId('save-status')).toHaveText('—');
+});
+
+test('外部オリジンへの要求が発生しない（仕様書5.1.4、13章）', async ({ page }) => {
+  const external = [];
+  page.on('request', (request) => {
+    if (!request.url().startsWith('http://127.0.0.1:')) {
+      external.push(request.url());
+    }
+  });
+
+  await openFresh(page);
+  await expect(page.getByTestId('template-row')).toHaveCount(SAMPLE_COUNT);
+
+  expect(external).toEqual([]);
 });
