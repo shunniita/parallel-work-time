@@ -180,6 +180,38 @@ export function entityKeyOf(type, entity) {
 }
 
 /**
+ * `saveEntities` の引数を検証し、主キーを添えて返す。
+ *
+ * 書き込みを始める前にすべての主キーを取り出しておく。トランザクション開始後に
+ * 例外を投げると、一部だけ書き込まれた状態で中断されうるためである。
+ *
+ * @param {unknown} entries
+ * @returns {{type: string, entity: object, key: string}[]}
+ */
+export function normalizeSaveEntries(entries) {
+  if (!Array.isArray(entries)) {
+    throw new StorageError(
+      STORAGE_ERROR_KIND.VALIDATION,
+      'saveEntities() には {type, entity} の配列が必要',
+    );
+  }
+  return entries.map((entry) => {
+    if (entry === null || typeof entry !== 'object') {
+      throw new StorageError(
+        STORAGE_ERROR_KIND.VALIDATION,
+        'saveEntities() の要素は {type, entity} である必要がある',
+      );
+    }
+    assertKnownType(entry.type);
+    return {
+      type: entry.type,
+      entity: entry.entity,
+      key: entityKeyOf(entry.type, entry.entity),
+    };
+  });
+}
+
+/**
  * 空のデータセットを返す。
  *
  * `settings` は初期化時に既定値で埋めるため、ここでは null を置く。
@@ -255,6 +287,20 @@ export class StorageAdapter {
    */
   async saveEntity(type, entity) {
     throw new Error('saveEntity() は実装が必要');
+  }
+
+  /**
+   * 複数のエンティティをまとめて保存する。
+   *
+   * 一連の関連書き込みを同一トランザクションへまとめるための操作である
+   * （仕様書9.1）。1件でも失敗すれば全件を反映しない。テンプレート改訂のように
+   * 「新版の追加」と「旧版の無効化」が同時に成立しなければ整合しない場面で使う。
+   *
+   * @param {{type: string, entity: object}[]} entries
+   * @returns {Promise<void>}
+   */
+  async saveEntities(entries) {
+    throw new Error('saveEntities() は実装が必要');
   }
 
   /**

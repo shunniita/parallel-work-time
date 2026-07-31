@@ -26,6 +26,7 @@ import {
   assertKnownType,
   createEmptyDataset,
   entityKeyOf,
+  normalizeSaveEntries,
   toExportPayload,
   toStorageError,
 } from './StorageAdapter.js';
@@ -180,6 +181,28 @@ export class IndexedDbAdapter extends StorageAdapter {
       await transactionDone(tx);
     } catch (error) {
       throw toStorageError(sink.error ?? error, `${type} の保存`);
+    }
+  }
+
+  async saveEntities(entries) {
+    const normalized = normalizeSaveEntries(entries);
+    if (normalized.length === 0) {
+      return;
+    }
+    const db = this.assertOpen();
+    // 関与するストアだけをトランザクションの対象にする。無関係なストアを
+    // 含めると、その間ほかの書き込みを不要に待たせる。
+    const stores = [...new Set(normalized.map((entry) => entry.type))];
+    const sink = createErrorSink();
+    try {
+      const tx = db.transaction(stores, 'readwrite');
+      for (const { type, entity, key } of normalized) {
+        const store = tx.objectStore(type);
+        sink.watch(type === ENTITY_TYPE.SETTINGS ? store.put(entity, key) : store.put(entity));
+      }
+      await transactionDone(tx);
+    } catch (error) {
+      throw toStorageError(sink.error ?? error, `${stores.join(' / ')} の一括保存`);
     }
   }
 
