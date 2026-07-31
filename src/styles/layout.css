@@ -86,6 +86,120 @@
   overflow: auto;
 }
 
+/* 左ペインの階層ツリー（仕様書12.1）。 */
+.tree__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.tree__title {
+  font-size: 1rem;
+}
+
+.tree,
+.tree__children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 階層ごとに字下げする。ツリーの深さは3段（案件・実施回・作業項目）。 */
+.tree__children {
+  padding-left: var(--space-4);
+}
+
+.tree__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.tree__item--task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.tree__toggle {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* 子を持たないノードでも字下げを揃えるため、場所だけ確保する。 */
+.tree__toggle--empty {
+  display: inline-block;
+  cursor: default;
+}
+
+.tree__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree__label:hover {
+  background: var(--color-selected);
+}
+
+.tree__label--selected {
+  background: var(--color-selected);
+  border-color: var(--color-accent);
+  font-weight: 600;
+}
+
+.tree__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree__meta {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-family: var(--font-num);
+  font-size: 0.9em;
+}
+
+.tree__meta--warn {
+  color: var(--color-error-text);
+}
+
+/* 作業項目の状態記号（仕様書7.2）。色だけに頼らず記号でも区別する。 */
+.tree__mark--working {
+  color: var(--color-accent);
+}
+
+.tree__mark--onBreak {
+  color: var(--color-warning-border);
+}
+
+.tree__mark--done {
+  color: var(--color-ok);
+}
+
+.tree__mark--notStarted {
+  color: var(--color-text-muted);
+}
+
 .status-bar {
   display: flex;
   align-items: center;

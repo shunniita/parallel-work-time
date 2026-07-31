@@ -81,6 +81,11 @@
   text-align: right;
 }
 
+/* 内容に合わせて縮む入力欄。並び順の選択などに使う。 */
+.input--auto {
+  width: auto;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -105,6 +110,12 @@
   display: flex;
   gap: var(--space-4);
   flex-wrap: wrap;
+}
+
+/* ラベルと入力欄を横一列に並べる。並び順の選択などの単独項目に使う。 */
+.field-row--baseline {
+  align-items: baseline;
+  margin-top: var(--space-3);
 }
 
 .actions {
@@ -169,4 +180,133 @@
 .placeholder {
   margin-top: var(--space-3);
   color: var(--color-text-muted);
+}
+
+.card--info {
+  background: var(--color-selected);
+  border-color: var(--color-accent);
+}
+
+.card--warn {
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning-border);
+}
+
+.note--warn {
+  color: var(--color-error-text);
+  font-weight: 600;
+}
+
+.actions--inline {
+  margin-top: 0;
+}
+
+/* 数量サマリなどの定義リスト。ラベルと値を2列で並べる。 */
+.summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+.summary dt {
+  color: var(--color-text-muted);
+}
+
+.summary dd {
+  margin: 0;
+  font-family: var(--font-num);
+  font-weight: 600;
+}
+
+.summary__warn {
+  color: var(--color-error-text);
+}
+
+.fieldset {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.fieldset legend {
+  padding: 0 var(--space-2);
+  font-weight: 600;
+}
+
+.checklist {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  cursor: pointer;
+}
+
+.suggest {
+  display: block;
+}
+
+/* 表内から詳細へ移動するための文字リンク。見た目はリンク、実体はボタン。 */
+.link {
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cell--warn {
+  color: var(--color-error-text);
+}
+
+/* 状態バッジ。実施回の状態と作業項目の状態で共用する。 */
+.badge {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.badge--working {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.badge--aggregated {
+  border-color: var(--color-ok);
+  color: var(--color-ok);
+}
+
+.badge--transferred {
+  border-color: var(--color-ok);
+  background: var(--color-ok);
+  color: var(--color-accent-text);
+}
+
+.badge--archived,
+.badge--notStarted {
+  color: var(--color-text-muted);
+}
+
+.badge--onBreak {
+  border-color: var(--color-warning-border);
+  color: var(--color-warning-border);
+}
+
+.badge--done {
+  border-color: var(--color-ok);
+  color: var(--color-ok);
 }

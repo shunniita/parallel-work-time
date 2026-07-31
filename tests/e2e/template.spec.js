@@ -47,8 +47,14 @@ test.describe('画面の骨格（仕様書12.1）', () => {
   });
 
   test('未実装の画面は押せない', async ({ page }) => {
-    await expect(page.getByTestId('nav-projects')).toBeDisabled();
     await expect(page.getByTestId('nav-summary')).toBeDisabled();
+    await expect(page.getByTestId('nav-archive')).toBeDisabled();
+    await expect(page.getByTestId('nav-settings')).toBeDisabled();
+  });
+
+  test('実装済みの画面は押せる', async ({ page }) => {
+    await expect(page.getByTestId('nav-projects')).toBeEnabled();
+    await expect(page.getByTestId('nav-templates')).toBeEnabled();
   });
 
   test('警告領域は中身が無いあいだ畳まれている', async ({ page }) => {

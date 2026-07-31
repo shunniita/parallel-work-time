@@ -6,10 +6,16 @@
  * `src/domain/schema.js` と揃え、「場所: 説明」の形にする。画面はこの文字列を
  * そのまま表示できる。
  *
- * 本モジュールは各Stepで必要になった検証を足していく。Step 4 の時点では
- * 作業テンプレートの下書きのみを扱う。実装計画 Step 11 で 8.9.1〜8.9.9 の
- * 総点検を行う。
+ * 本モジュールは各Stepで必要になった検証を足していく。実装計画 Step 11 で
+ * 8.9.1〜8.9.9 の総点検を行う。
+ *
+ * 警告（`warnings`）と拒否（`errors`）を分ける。累計超過は警告し、確認後に
+ * 続行できる（仕様書8.9.7）ため、保存を止める `errors` とは別に返す。
  */
+
+import { normalizeProjectId } from './templateInstantiate.js';
+import { isValidDateKey } from './datetime.js';
+import { previewQuantity, previewTotalQuantity } from './quantity.js';
 
 /**
  * 検証結果を集める入れ物。
@@ -17,9 +23,12 @@
 class Problems {
   constructor() {
     this.errors = [];
+    this.warnings = [];
   }
 
   /**
+   * 保存を止める不備を積む。
+   *
    * @param {string} path 例: `tasks[2].name`
    * @param {string} message
    */
@@ -27,17 +36,40 @@ class Problems {
     this.errors.push(`${path}: ${message}`);
   }
 
+  /**
+   * 保存は止めないが利用者へ知らせる事柄を積む。
+   *
+   * @param {string} path
+   * @param {string} message
+   */
+  warn(path, message) {
+    this.warnings.push(`${path}: ${message}`);
+  }
+
   get ok() {
     return this.errors.length === 0;
   }
 
-  toResult() {
-    return { ok: this.ok, errors: this.errors };
+  toResult(extra = {}) {
+    return { ok: this.ok, errors: this.errors, warnings: this.warnings, ...extra };
   }
 }
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim() !== '';
+}
+
+/**
+ * 1以上の整数かどうか（仕様書8.9.2）。
+ *
+ * 文字列の `"50"` は受け付けない。画面側で数値へ変換する責務を明確にし、
+ * 変換漏れを検証で捕まえる。
+ *
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isPositiveInteger(value) {
+  return Number.isInteger(value) && value >= 1;
 }
 
 /**
@@ -126,4 +158,156 @@ export function validateTemplateIsNew(existingActiveTemplates, draft) {
   }
 
   return problems.toResult();
+}
+
+/**
+ * 案件グループの下書きを検証する（仕様書8.2.1、8.9.1、8.9.2）。
+ *
+ * 案件IDの重複は {@link validateProjectIdAvailable} が別に扱う。既存案件の
+ * 内容を画面へ示す必要があり、返す情報の形が違うためである。
+ *
+ * @param {unknown} draft
+ * @returns {{ok: boolean, errors: string[], warnings: string[]}}
+ */
+export function validateProjectGroupDraft(draft) {
+  const problems = new Problems();
+
+  if (draft === null || typeof draft !== 'object' || Array.isArray(draft)) {
+    problems.add('案件', '入力内容を読み取れない');
+    return problems.toResult();
+  }
+
+  if (!isNonEmptyString(draft.projectId)) {
+    problems.add('案件ID', '必須項目である');
+  }
+  if (!isNonEmptyString(draft.targetType)) {
+    problems.add('対象種別', '必須項目である');
+  }
+  if (!isNonEmptyString(draft.variant)) {
+    problems.add('バリエーション', '必須項目である');
+  }
+  if (!isPositiveInteger(draft.totalQuantity)) {
+    problems.add('総予定数', '1以上の整数である');
+  }
+
+  return problems.toResult();
+}
+
+/**
+ * 案件IDが未使用かどうかを検証する（仕様書8.2.6）。
+ *
+ * 案件IDは一意である。既存の案件IDで新規登録しようとした場合は登録を禁止し、
+ * 何が登録済みかを示す。仕様が「その内容を示して登録を禁止する」と書いている
+ * のは、利用者が既存IDを打ったときに自分の意図を確かめられるようにするためと
+ * 読む。画面は返り値の `conflict` から対象種別・バリエーションを表示し、
+ * 既存案件へ実施回を追加する導線を出す。
+ *
+ * 既存案件の対象種別・バリエーションを新しい入力で上書きしてはならない。
+ * 実施回は作成時にテンプレートから作業項目を複製しており、後から案件の
+ * 対象種別が変わると過去の実施回と食い違うためである。
+ *
+ * @param {object[]} existingGroups 保存済みの案件グループすべて
+ * @param {string} projectId 入力された案件ID
+ * @returns {{ok: boolean, errors: string[], warnings: string[], conflict: object|null}}
+ */
+export function validateProjectIdAvailable(existingGroups, projectId) {
+  const problems = new Problems();
+  const normalized = normalizeProjectId(projectId);
+
+  const conflict =
+    normalized === ''
+      ? null
+      : (existingGroups.find((group) => group.projectId === normalized) ?? null);
+
+  if (conflict !== null) {
+    problems.add(
+      '案件ID',
+      `${normalized} は既に登録されている（${conflict.targetType} / ${conflict.variant}）。` +
+        '同じ案件の作業を続ける場合は、この案件へ実施回を追加する。',
+    );
+  }
+
+  return problems.toResult({ conflict });
+}
+
+/**
+ * 実施回の下書きを検証する（仕様書8.2.4、8.9.1、8.9.2、8.9.7）。
+ *
+ * 累計超過は警告のみとし、保存は止めない。確認後に続行できるという要件
+ * （仕様書8.9.7）を、`errors` ではなく `warnings` へ入れることで表す。
+ *
+ * @param {unknown} draft `{workDate, runQuantity, excludedTaskDefinitionIds?}`
+ * @param {{projectGroup: object, runs: object[], excludeRunId?: string|null,
+ *          generatableCount?: number}} context
+ * @returns {{ok: boolean, errors: string[], warnings: string[], preview: object|null}}
+ */
+export function validateRunDraft(draft, context) {
+  const problems = new Problems();
+
+  if (draft === null || typeof draft !== 'object' || Array.isArray(draft)) {
+    problems.add('実施回', '入力内容を読み取れない');
+    return problems.toResult({ preview: null });
+  }
+
+  if (!isValidDateKey(draft.workDate)) {
+    problems.add('作業日', 'YYYY-MM-DD 形式の日付である');
+  }
+  if (!isPositiveInteger(draft.runQuantity)) {
+    problems.add('今回数量', '1以上の整数である');
+  }
+
+  // 作業項目を全部除外すると、工数を記録する対象が無い実施回ができてしまう。
+  if (context.generatableCount !== undefined) {
+    const excluded = draft.excludedTaskDefinitionIds ?? [];
+    if (context.generatableCount - excluded.length <= 0) {
+      problems.add('生成対象の作業項目', '1件以上を残す必要がある');
+    }
+  }
+
+  let preview = null;
+  if (isPositiveInteger(draft.runQuantity)) {
+    preview = previewQuantity(context.projectGroup, context.runs, {
+      runQuantity: draft.runQuantity,
+      excludeRunId: context.excludeRunId ?? null,
+    });
+    if (preview.exceeded) {
+      problems.warn(
+        '今回数量',
+        `累計 ${preview.accumulated} が総予定数 ${context.projectGroup.totalQuantity} を ` +
+          `${preview.overBy} 超える。確認のうえ続行できる。`,
+      );
+    }
+  }
+
+  return problems.toResult({ preview });
+}
+
+/**
+ * 総予定数の修正を検証する（仕様書8.2.7、8.9.2、8.9.7）。
+ *
+ * 累計より小さい値へ修正すると超過状態になる。実施回追加時と同じ扱いで
+ * 警告し、保存は止めない。
+ *
+ * @param {{runQuantity: number}[]} runs 当該案件グループの実施回すべて
+ * @param {unknown} nextTotalQuantity
+ * @returns {{ok: boolean, errors: string[], warnings: string[], preview: object|null}}
+ */
+export function validateTotalQuantityChange(runs, nextTotalQuantity) {
+  const problems = new Problems();
+
+  if (!isPositiveInteger(nextTotalQuantity)) {
+    problems.add('総予定数', '1以上の整数である');
+    return problems.toResult({ preview: null });
+  }
+
+  const preview = previewTotalQuantity(runs, nextTotalQuantity);
+  if (preview.exceeded) {
+    problems.warn(
+      '総予定数',
+      `累計 ${preview.accumulated} が総予定数 ${nextTotalQuantity} を ` +
+        `${preview.overBy} 超える。確認のうえ続行できる。`,
+    );
+  }
+
+  return problems.toResult({ preview });
 }
