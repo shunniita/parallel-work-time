@@ -1,0 +1,133 @@
+/*
+ * ヘッダー・警告領域・二分割・フッター（仕様書12.1）。
+ *
+ * 画面幅1280px以上を主対象とする。狭い画面で最適化はしないが、操作不能な崩壊は
+ * 避ける（仕様書13章）。左ペインは狭幅で下へ回り込ませる。
+ */
+
+#app {
+  display: grid;
+  /* ヘッダー / 警告領域 / 本体 / フッター。本体だけが伸びる。 */
+  grid-template-rows: auto auto 1fr auto;
+  min-height: 100vh;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.header__title {
+  font-size: 1.05rem;
+}
+
+.header__nav {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.header__nav-item {
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.header__nav-item:hover:not(:disabled) {
+  background: var(--color-selected);
+}
+
+.header__nav-item:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.header__nav-item--active {
+  background: var(--color-selected);
+  border-color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* 警告領域。中身が無いあいだは hidden 属性で畳む（Step 11 で内容を入れる）。 */
+.warning-bar {
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-warning-bg);
+  border-bottom: 1px solid var(--color-warning-border);
+}
+
+.warning-bar[hidden] {
+  display: none;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--tree-width) 1fr;
+  min-height: 0;
+}
+
+.layout__tree {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  overflow: auto;
+}
+
+.layout__detail {
+  padding: var(--space-4);
+  overflow: auto;
+}
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.status-bar__message {
+  font-weight: 600;
+}
+
+.status-bar[data-state='saved'] .status-bar__message {
+  color: var(--color-ok);
+}
+
+.status-bar[data-state='failed'] .status-bar__message {
+  color: var(--color-error-text);
+}
+
+.status-bar__detail {
+  color: var(--color-error-text);
+}
+
+.status-bar__schema {
+  margin-left: auto;
+  font-family: var(--font-num);
+}
+
+/*
+ * 狭幅への備え。1280px未満では左ペインを上へ回り込ませ、横スクロールで
+ * 操作不能にならないようにする（仕様書13章）。
+ */
+@media (max-width: 1279px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .layout__tree {
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+}
