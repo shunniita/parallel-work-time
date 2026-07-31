@@ -11,9 +11,15 @@
 
 import { el, replaceChildren } from './dom.js';
 
-/** ヘッダーの画面切替（仕様書12.2 の7画面）。 */
+/**
+ * 単一ページ内のビュー（仕様書12.2 の7画面）。
+ *
+ * `PROJECT_FORM` はヘッダーに並べない。案件登録は左ツリーの「新規案件」から
+ * 入る操作であり、画面切替の行き先として常設する必要がないためである。
+ */
 export const VIEW = {
   PROJECTS: 'projects',
+  PROJECT_FORM: 'projectForm',
   SUMMARY: 'summary',
   TEMPLATES: 'templates',
   ARCHIVE: 'archive',
@@ -28,8 +34,8 @@ const NAV_ITEMS = [
   { view: VIEW.SETTINGS, label: '設定' },
 ];
 
-/** 実装計画 Step 4 の時点で中身があるのはテンプレート画面のみ。 */
-const IMPLEMENTED_VIEWS = new Set([VIEW.TEMPLATES]);
+/** 実装計画 Step 5 の時点で中身があるのは案件とテンプレート。 */
+const IMPLEMENTED_VIEWS = new Set([VIEW.PROJECTS, VIEW.TEMPLATES]);
 
 /**
  * 骨格を組み立てて指定要素へ差し込む。
@@ -105,23 +111,13 @@ export function renderShell(root, handlers) {
    */
   function setActiveView(view) {
     for (const [candidate, button] of navButtons) {
-      const current = candidate === view;
+      // 案件登録は案件画面の一部として扱い、ヘッダーでは案件を現在地とする。
+      const current =
+        candidate === view || (candidate === VIEW.PROJECTS && view === VIEW.PROJECT_FORM);
       button.classList.toggle('header__nav-item--active', current);
       button.setAttribute('aria-current', current ? 'page' : 'false');
     }
   }
 
   return { warningBar, treePane, detailPane, statusBar, setActiveView };
-}
-
-/**
- * 左ペインの空表示。Step 5 で案件ツリーへ差し替える。
- *
- * @returns {HTMLElement}
- */
-export function renderTreePlaceholder() {
-  return el('p', {
-    class: 'placeholder',
-    text: '案件・実施回の一覧は次の段階で実装する。',
-  });
 }

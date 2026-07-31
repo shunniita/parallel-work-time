@@ -4,13 +4,14 @@
  * 流れは次のとおり。
  *
  *   サンプルJSON読込 → bootstrap（初期化・初回投入）→ ストア生成
- *   → 骨格の描画 → 画面の描画
+ *   → 骨格の描画 → ツリーと詳細ペインの描画
  *
  * サンプルテンプレートJSONの読み込みはここで行う。同一オリジンの相対パスであり、
  * 外部通信は発生しない（仕様書5.1.4、13章）。
  *
- * 画面は実装計画 Step 4 の時点でテンプレート画面のみ。Step 5 以降でヘッダーの
- * 各画面と左ツリーを埋めていく。
+ * 専用ルーティングは持たず、単一ページ内のビュー切替で画面を表現する（12.2）。
+ * 実装計画 Step 5 の時点で動くのは、テンプレート・案件登録・案件詳細・
+ * 実施回詳細（閲覧）である。集計・アーカイブ・設定は Step 8 以降。
  */
 
 import { SCHEMA_VERSION } from './config.js';
@@ -21,10 +22,20 @@ import {
   createTemplate,
   reviseTemplateAction,
 } from './app/actions/templateActions.js';
+import {
+  createProjectGroup,
+  createWorkRun,
+  updateRunQuantity,
+  updateTotalQuantity,
+} from './app/actions/projectActions.js';
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
-import { VIEW, renderShell, renderTreePlaceholder } from './ui/shell.js';
+import { VIEW, renderShell } from './ui/shell.js';
 import { renderStatusBar } from './ui/statusBar.js';
+import { createTree } from './ui/tree.js';
 import { createTemplateView } from './ui/views/templateView.js';
+import { createProjectFormView } from './ui/views/projectFormView.js';
+import { createProjectView } from './ui/views/projectView.js';
+import { createRunView } from './ui/views/runView.js';
 import { el, replaceChildren } from './ui/dom.js';
 
 /** サンプルテンプレートの配置（仕様書8.1.6）。 */
@@ -81,44 +92,193 @@ async function main() {
     return;
   }
 
-  const store = createStore({ dataset, view: VIEW.TEMPLATES });
+  const store = createStore({
+    dataset,
+    // 案件が無い状態ではテンプレート画面から始める。あるなら案件一覧側へ。
+    view: dataset.projectGroups.length === 0 ? VIEW.TEMPLATES : VIEW.PROJECTS,
+    /** 左ツリーの選択。詳細ペインの表示内容を決める。 */
+    selection: { projectGroupId: null, runId: null, taskRecordId: null },
+  });
   const persistence = createPersistence(adapter);
 
-  const shell = renderShell(root, {
-    onNavigate: (view) => {
-      store.setState({ view });
-      shell.setActiveView(view);
-    },
-  });
-  shell.setActiveView(VIEW.TEMPLATES);
-
+  const shell = renderShell(root, { onNavigate: navigate });
   const statusBar = renderStatusBar(shell.statusBar, { schemaVersion: SCHEMA_VERSION });
   statusBar.update(persistence.getStatus());
   persistence.subscribe((status) => statusBar.update(status));
 
-  replaceChildren(shell.treePane, [renderTreePlaceholder()]);
-
-  // アクションへはストアの更新まで含めて渡す。画面側は保存後のデータセットを
-  // 自分で流し込まなくてよい。
   const deps = { adapter, persistence };
+
+  /**
+   * アクションの結果でストアを更新する薄い包み。
+   *
+   * 画面側は保存後のデータセットを自分で流し込まなくてよい。
+   *
+   * @param {Function} action
+   */
+  function wrap(action) {
+    return async (...args) => {
+      const result = await action(deps, ...args);
+      store.setState({ dataset: result.dataset });
+      return result;
+    };
+  }
+
+  const tree = createTree({
+    container: shell.treePane,
+    store,
+    handlers: {
+      onSelectProject: selectProject,
+      onSelectRun: selectRun,
+      onSelectTask: (runId, taskRecordId) => {
+        // 作業項目詳細は Step 6 で実装する。今は実施回詳細を開くところまで。
+        const run = store
+          .getState()
+          .dataset.workRuns.find((candidate) => candidate.runId === runId);
+        store.setState({
+          view: VIEW.PROJECTS,
+          selection: {
+            projectGroupId: run?.projectGroupId ?? null,
+            runId,
+            taskRecordId,
+          },
+        });
+        render();
+      },
+      onCreateProject: openProjectForm,
+    },
+  });
+
   const templateView = createTemplateView({
     container: shell.detailPane,
     store,
     actions: {
-      createTemplate: async (draft) => {
-        const result = await createTemplate(deps, draft);
-        store.setState({ dataset: result.dataset });
-        return result;
+      createTemplate: wrap(createTemplate),
+      reviseTemplate: wrap(reviseTemplateAction),
+    },
+  });
+
+  const projectFormView = createProjectFormView({
+    container: shell.detailPane,
+    store,
+    actions: { createProjectGroup: wrap(createProjectGroup) },
+    handlers: {
+      onCreated: (projectGroup) => {
+        tree.expand({ projectGroupId: projectGroup.projectGroupId });
+        selectProject(projectGroup.projectGroupId);
+        // 登録できたらそのまま実施回を作れるようにする。
+        projectView.openRunForm();
+        renderDetail();
       },
-      reviseTemplate: async (templateId, draft) => {
-        const result = await reviseTemplateAction(deps, templateId, draft);
-        store.setState({ dataset: result.dataset });
-        return result;
+      // 既存案件と衝突したときの「この案件へ実施回を追加」導線（仕様書8.2.6）。
+      onOpenExisting: (projectGroupId) => {
+        tree.expand({ projectGroupId });
+        selectProject(projectGroupId);
+        projectView.openRunForm();
+        renderDetail();
+      },
+      onCancel: () => {
+        store.setState({ view: VIEW.PROJECTS });
+        render();
       },
     },
   });
 
-  templateView.render();
+  const projectView = createProjectView({
+    container: shell.detailPane,
+    store,
+    actions: {
+      createWorkRun: wrap(createWorkRun),
+      updateTotalQuantity: wrap(updateTotalQuantity),
+      updateRunQuantity: wrap(updateRunQuantity),
+    },
+    handlers: { onSelectRun: selectRun },
+  });
+
+  const runView = createRunView({
+    container: shell.detailPane,
+    store,
+    handlers: {
+      onSelectTask: (taskRecordId) => {
+        store.setState({ selection: { ...store.getState().selection, taskRecordId } });
+      },
+      onSelectProject: selectProject,
+    },
+  });
+
+  /**
+   * 画面を切り替える。
+   *
+   * @param {string} view
+   */
+  function navigate(view) {
+    if (view === VIEW.PROJECTS) {
+      projectFormView.reset();
+      projectView.reset();
+    }
+    store.setState({ view });
+    render();
+  }
+
+  function openProjectForm() {
+    projectFormView.reset();
+    store.setState({ view: VIEW.PROJECT_FORM });
+    render();
+  }
+
+  function selectProject(projectGroupId) {
+    projectView.reset();
+    store.setState({
+      view: VIEW.PROJECTS,
+      selection: { projectGroupId, runId: null, taskRecordId: null },
+    });
+    render();
+  }
+
+  function selectRun(runId) {
+    const run = store.getState().dataset.workRuns.find((candidate) => candidate.runId === runId);
+    projectView.reset();
+    tree.expand({ projectGroupId: run?.projectGroupId, runId });
+    store.setState({
+      view: VIEW.PROJECTS,
+      selection: {
+        projectGroupId: run?.projectGroupId ?? null,
+        runId,
+        taskRecordId: null,
+      },
+    });
+    render();
+  }
+
+  /**
+   * 詳細ペインを描く。
+   *
+   * 案件画面では選択の深さで内容が変わる。実施回を選んでいれば実施回詳細、
+   * 案件だけなら案件詳細、どちらも無ければ案内を出す。
+   */
+  function renderDetail() {
+    const { view, selection } = store.getState();
+    if (view === VIEW.TEMPLATES) {
+      templateView.render();
+      return;
+    }
+    if (view === VIEW.PROJECT_FORM) {
+      projectFormView.render();
+      return;
+    }
+    if (selection.runId !== null) {
+      runView.render();
+      return;
+    }
+    projectView.render();
+  }
+
+  function render() {
+    shell.setActiveView(store.getState().view);
+    tree.render();
+    renderDetail();
+  }
+
+  render();
 }
 
 main();
