@@ -300,6 +300,20 @@ WorkRun は `tasks[] → intervals[] / directEntries[]` を内包する単一ド
 
 スナップショット用のストアは設けない（9.4）。
 
+### 3.1.1 `StorageAdapter` へ追加した操作
+
+仕様書5.3 は「最低限、次の操作を定義する」として6操作を挙げる。画面・計算層から IndexedDB API を直接呼ばせないため、次を追加した。
+
+| 操作 | 追加理由 |
+| ---- | -------- |
+| `saveEntities(entries)` | 一連の関連書き込みを同一トランザクションへまとめる（9.1）。テンプレート改訂は「新版の追加」と「旧版の無効化」が同時に成立しなければ整合せず、`saveEntity` の連続呼び出しでは有効版が2つ並ぶか0個になりうる |
+| `findTaskTemplates(targetType, variant, {activeOnly})` | 索引を画面から使うため。`activeOnly` は取得後にメモリ上で絞り込む（前項の理由） |
+| `findTemplateSeries(templateSeriesId)` | 版系列を辿る（6.3） |
+| `findProjectGroupByProjectId(projectId)` | 案件IDの一意性検証（8.2.6） |
+| `exportAll({exportedAt})` | `exportedAt` を任意で受け取る。渡さなければ現在時刻を使う。エクスポート往復のテストを決定的にするため |
+
+いずれも `IndexedDbAdapter` と `MemoryAdapter` の両方へ同一の契約テストを通す。
+
 ### 3.2 各エンティティ
 
 #### Settings（6.2）
@@ -468,13 +482,14 @@ parallel-work-time/
 │  │  ├─ retention.js             … 削除候補判定（archivedAt 起算、10.2、10.3）
 │  │  ├─ validation.js            … 入力検証（8.9）
 │  │  ├─ overlap.js               … 同一作業項目内の区間重複検出（8.9.5）
+│  │  ├─ templateOps.js           … テンプレートの組み立てと改訂（8.1、6.3）
 │  │  ├─ templateInstantiate.js   … テンプレート→実施回への値複製（6.3、8.3）
 │  │  ├─ aggregate.js             … 実施回集計・外部コードの自然順（8.7）
 │  │  ├─ naturalSort.js           … 外部項目コードの自然順比較（8.7.3）
 │  │  ├─ participants.js          … 参加者候補の抽出（8.4.7）
 │  │  └─ schema.js                … エクスポート/インポートJSONの検証（9.3）
 │  ├─ storage/
-│  │  ├─ StorageAdapter.js        … インターフェース定義とJSDoc（5.3の6操作）
+│  │  ├─ StorageAdapter.js        … インターフェース定義とJSDoc（5.3の6操作＋検索・一括保存）
 │  │  ├─ IndexedDbAdapter.js      … 初版実装（5.2、9.1のトランザクション/Quota対応）
 │  │  └─ MemoryAdapter.js         … テスト用。同一インターフェース
 │  ├─ app/
@@ -496,6 +511,7 @@ parallel-work-time/
 │  │  ├─ safetyExport.js          … 破壊的操作前の共通退避処理（9.4、10.5）
 │  │  └─ clipboard.js             … 転記値コピー（タブ区切り、8.7.7）
 │  ├─ ui/
+│  │  ├─ dom.js                   … 要素生成の補助（innerHTML を使わない）
 │  │  ├─ shell.js                 … ヘッダー・二分割レイアウト（12.1）
 │  │  ├─ warningBar.js            … 固定警告領域（8.8.1、8.10、9.5）
 │  │  ├─ statusBar.js             … 保存状態表示（9.1）

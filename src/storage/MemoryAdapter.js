@@ -22,11 +22,30 @@ import {
   assertKnownType,
   createEmptyDataset,
   entityKeyOf,
+  normalizeSaveEntries,
   toExportPayload,
 } from './StorageAdapter.js';
 
 function clone(value) {
   return structuredClone(value);
+}
+
+/**
+ * 案件グループの集まりに案件IDの重複が無いことを確かめる（仕様書8.2.6）。
+ *
+ * @param {Map<string, object>} groups
+ */
+function assertProjectIdsUnique(groups) {
+  const seen = new Set();
+  for (const group of groups.values()) {
+    if (seen.has(group.projectId)) {
+      throw new StorageError(
+        STORAGE_ERROR_KIND.CONSTRAINT,
+        `一意制約に違反しています（${ENTITY_TYPE.PROJECT_GROUPS} の保存）。`,
+      );
+    }
+    seen.add(group.projectId);
+  }
 }
 
 export class MemoryAdapter extends StorageAdapter {
@@ -67,6 +86,37 @@ export class MemoryAdapter extends StorageAdapter {
       this.assertProjectIdUnique(entity, key);
     }
     this.stores.get(type).set(key, clone(entity));
+  }
+
+  async saveEntities(entries) {
+    this.assertInitialized();
+    const normalized = normalizeSaveEntries(entries);
+    if (normalized.length === 0) {
+      return;
+    }
+
+    // 関与するストアだけを写し取り、そこへ全件を適用してから検査する。
+    // 検査を通ったあとに元へ差し替えるため、途中で失敗しても既存データは残る。
+    const drafts = new Map();
+    for (const { type } of normalized) {
+      if (!drafts.has(type)) {
+        drafts.set(type, new Map(this.stores.get(type)));
+      }
+    }
+    for (const { type, entity, key } of normalized) {
+      drafts.get(type).set(key, clone(entity));
+    }
+
+    // 案件IDの一意性は一括適用後の状態に対して見る。同じ案件グループの更新や、
+    // 案件IDの入れ替えを含む一括保存を誤って弾かないため。
+    const groupDraft = drafts.get(ENTITY_TYPE.PROJECT_GROUPS);
+    if (groupDraft !== undefined) {
+      assertProjectIdsUnique(groupDraft);
+    }
+
+    for (const [type, draft] of drafts) {
+      this.stores.set(type, draft);
+    }
   }
 
   /**
