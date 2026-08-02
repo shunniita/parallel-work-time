@@ -94,7 +94,7 @@
 
 ## 開発環境の準備
 
-Node.jsはmiseを使用して管理します。
+Node.jsはmiseを使用して管理します。使用する版は`mise.toml`が指定します（Node.js 24系）。`package.json`の`engines`にも同じ下限を書いてあり、mise以外で用意した場合でも版違いに気づけます。
 
 ```powershell
 mise install
@@ -102,6 +102,8 @@ mise current
 node --version
 npm --version
 ```
+
+開発時のコマンドは`mise exec --`を付けて実行します。付けずに実行すると、環境に残っている別の版のNode.jsを拾うことがあります。
 
 ## ローカルでの起動
 
