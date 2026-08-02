@@ -11,8 +11,9 @@ export default defineConfig({
     // `// @vitest-environment happy-dom` を書いて個別に切り替える（`tests/unit/ui/`）。
     // 設定側のglob指定（`environmentMatchGlobs`）は Vitest 4 で廃止された。
     //
-    // jsdom ではなく happy-dom を使う。jsdom 27 は CJS から ESM を `require` する
-    // 依存を持ち、Node 22.1 では読み込みに失敗する。
+    // DOM 実装は happy-dom を使う。本アプリが触るのは要素生成・属性・イベント・
+    // `textContent` だけで（`innerHTML` を使わない、実装計画4.2）、CSS カスケードや
+    // レイアウトの再現は要らない。その範囲なら jsdom より軽く、起動も速い。
     environment: 'node',
     coverage: {
       provider: 'v8',
