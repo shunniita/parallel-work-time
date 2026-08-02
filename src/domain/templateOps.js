@@ -42,24 +42,46 @@ export function buildTemplate(draft, context) {
  * 対象種別とバリエーションは下書きで上書きできる。版系列の意味が変わるため
  * 通常は据え置くが、表記の誤りを直せるようにしてある。
  *
+ * 版番号は `context.version` で受け取る。改訂元の版に1を足すだけでは、旧版から
+ * 改訂したときに既存の版番号と重複する。系列内の最大版を知っているのは呼び出し
+ * 側なので（{@link nextTemplateVersion}）、判断をそちらへ預ける。省略時は
+ * 改訂元の次の版とする。
+ *
  * @param {object} current 改訂元のテンプレート
  * @param {{targetType?: string, variant?: string, tasks: object[]}} draft
- * @param {{createdAt: string, templateId: string, newId: () => string}} context
+ * @param {{createdAt: string, templateId: string, version?: number,
+ *          newId: () => string}} context
  * @returns {object} 新しい版の TaskTemplate
  */
 export function reviseTemplate(current, draft, context) {
-  const { createdAt, templateId, newId } = context;
+  const { createdAt, templateId, version, newId } = context;
   return {
     // 版系列の識別子は改訂しても変わらない（仕様書6.3）。
     templateSeriesId: current.templateSeriesId,
     templateId,
     targetType: (draft.targetType ?? current.targetType).trim(),
     variant: (draft.variant ?? current.variant).trim(),
-    version: current.version + 1,
+    version: version ?? current.version + 1,
     active: true,
     createdAt,
     tasks: normalizeTaskDefinitions(draft.tasks, newId),
   };
+}
+
+/**
+ * 版系列の次の版番号を返す（仕様書6.3）。
+ *
+ * 系列内の最大版に1を足す。改訂元が旧版であっても、既存の版番号と重複しない。
+ *
+ * @param {object[]} templates 全テンプレート（版を問わない）
+ * @param {string} templateSeriesId
+ * @returns {number}
+ */
+export function nextTemplateVersion(templates, templateSeriesId) {
+  const versions = templates
+    .filter((template) => template.templateSeriesId === templateSeriesId)
+    .map((template) => (Number.isInteger(template.version) ? template.version : 0));
+  return versions.length === 0 ? 1 : Math.max(...versions) + 1;
 }
 
 /**

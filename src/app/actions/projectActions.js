@@ -2,15 +2,19 @@
  * 案件グループと実施回の作成・修正（仕様書8.2、8.3）。
  *
  * 検証と組み立ては `src/domain/` の純関数へ委ね、ここは順序と保存だけを持つ。
+ * 例外の定義は `src/app/errors.js` にある。
  *
  * 累計超過は警告であって拒否ではない（仕様書8.9.7）。画面が確認を取ったうえで
  * `confirmedOverflow: true` を渡すと保存へ進む。確認なしで超過する場合は
  * `QuantityOverflowError` を投げ、画面は警告文を出して確認を求める。
+ *
+ * 読み込みから書き込みまでは `persistence.run()` の中で行う。累計の判定は他の
+ * 実施回の内容に依存するため、読み込んだ後に別の操作が割り込むと判断の前提が
+ * 崩れる（`src/app/persistence.js`）。
  */
 
 import { toIsoSecond } from '../../domain/datetime.js';
-import { newId as defaultNewId } from '../../domain/ids.js';
-import { previewQuantity } from '../../domain/quantity.js';
+import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
 import {
   generatableTasks,
   instantiateProjectGroup,
@@ -25,53 +29,13 @@ import {
   validateTotalQuantityChange,
 } from '../../domain/validation.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
-import { ValidationError } from './templateActions.js';
-
-/**
- * 案件IDが既に使われていることを表す例外（仕様書8.2.6）。
- *
- * 単なる検証エラーと分けてある。画面は既存案件の対象種別・バリエーションを示し、
- * その案件へ実施回を追加する導線を出す必要があるため、`conflict` を運ぶ。
- */
-export class ProjectIdConflictError extends ValidationError {
-  /**
-   * @param {string[]} errors
-   * @param {object} conflict 既存の案件グループ
-   */
-  constructor(errors, conflict) {
-    super(errors);
-    this.name = 'ProjectIdConflictError';
-    this.conflict = conflict;
-  }
-}
-
-/**
- * 累計が総予定数を超えることを表す例外（仕様書8.9.7）。
- *
- * 保存を禁止する意味ではない。確認を求めるための差し戻しであり、画面が
- * `confirmedOverflow: true` を付けて呼び直せば保存される。
- */
-export class QuantityOverflowError extends Error {
-  /**
-   * @param {string[]} warnings
-   * @param {object} preview {@link previewQuantity} の結果
-   */
-  constructor(warnings, preview) {
-    super(warnings.join(' / '));
-    this.name = 'QuantityOverflowError';
-    this.warnings = warnings;
-    this.preview = preview;
-  }
-}
-
-function resolveDeps(deps) {
-  return {
-    adapter: deps.adapter,
-    persistence: deps.persistence,
-    now: deps.now ?? (() => new Date()),
-    newId: deps.newId ?? defaultNewId,
-  };
-}
+import {
+  ProjectIdConflictError,
+  QuantityOverflowError,
+  RunNotEditableError,
+  ValidationError,
+} from '../errors.js';
+import { resolveDeps } from './deps.js';
 
 /**
  * 案件グループを登録する（仕様書8.2.1、8.2.6）。
@@ -93,31 +57,35 @@ export async function createProjectGroup(deps, draft) {
     throw new ValidationError(shape.errors);
   }
 
-  const { projectGroups, taskTemplates } = await adapter.loadAll();
+  const { dataset, value: projectGroup } = await persistence.run(
+    async ({ projectGroups, taskTemplates }) => {
+      const availability = validateProjectIdAvailable(projectGroups, draft.projectId);
+      if (!availability.ok) {
+        throw new ProjectIdConflictError(availability.errors, availability.conflict);
+      }
 
-  const availability = validateProjectIdAvailable(projectGroups, draft.projectId);
-  if (!availability.ok) {
-    throw new ProjectIdConflictError(availability.errors, availability.conflict);
-  }
+      // 対象種別×バリエーションに有効なテンプレートが無いと実施回を作れない
+      // （仕様書8.3.1）。案件登録の時点で気づけるようにする。
+      const template = findActiveTemplate(taskTemplates, draft.targetType, draft.variant);
+      if (template === null) {
+        throw new ValidationError([
+          `対象種別とバリエーション: ${draft.targetType.trim()} / ${draft.variant.trim()} の` +
+            '有効なテンプレートが無い。テンプレート画面で登録する。',
+        ]);
+      }
 
-  // 対象種別×バリエーションに有効なテンプレートが無いと実施回を作れない
-  // （仕様書8.3.1）。案件登録の時点で気づけるようにする。
-  const template = findActiveTemplate(taskTemplates, draft.targetType, draft.variant);
-  if (template === null) {
-    throw new ValidationError([
-      `対象種別とバリエーション: ${draft.targetType.trim()} / ${draft.variant.trim()} の` +
-        '有効なテンプレートが無い。テンプレート画面で登録する。',
-    ]);
-  }
+      const built = instantiateProjectGroup(draft, {
+        createdAt: toIsoSecond(now()),
+        projectGroupId: newId(),
+      });
 
-  const projectGroup = instantiateProjectGroup(draft, {
-    createdAt: toIsoSecond(now()),
-    projectGroupId: newId(),
-  });
-
-  const dataset = await persistence.run(() =>
-    adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, projectGroup),
+      return {
+        write: () => adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, built),
+        value: built,
+      };
+    },
   );
+
   return { dataset, projectGroup };
 }
 
@@ -136,55 +104,60 @@ export async function createProjectGroup(deps, draft) {
 export async function createWorkRun(deps, projectGroupId, draft) {
   const { adapter, persistence, now, newId } = resolveDeps(deps);
 
-  const { projectGroups, workRuns, taskTemplates } = await adapter.loadAll();
-  const projectGroup = projectGroups.find(
-    (group) => group.projectGroupId === projectGroupId,
-  );
-  if (projectGroup === undefined) {
-    throw new ValidationError([`案件: 見つからない（${projectGroupId}）`]);
-  }
+  const { dataset, value } = await persistence.run(
+    async ({ projectGroups, workRuns, taskTemplates }) => {
+      const projectGroup = projectGroups.find(
+        (group) => group.projectGroupId === projectGroupId,
+      );
+      if (projectGroup === undefined) {
+        throw new ValidationError([`案件: 見つからない（${projectGroupId}）`]);
+      }
 
-  const template = findActiveTemplate(
-    taskTemplates,
-    projectGroup.targetType,
-    projectGroup.variant,
-  );
-  if (template === null) {
-    throw new ValidationError([
-      `対象種別とバリエーション: ${projectGroup.targetType} / ${projectGroup.variant} の` +
-        '有効なテンプレートが無い。テンプレート画面で登録する。',
-    ]);
-  }
+      const template = findActiveTemplate(
+        taskTemplates,
+        projectGroup.targetType,
+        projectGroup.variant,
+      );
+      if (template === null) {
+        throw new ValidationError([
+          `対象種別とバリエーション: ${projectGroup.targetType} / ${projectGroup.variant} の` +
+            '有効なテンプレートが無い。テンプレート画面で登録する。',
+        ]);
+      }
 
-  const runs = workRuns.filter((run) => run.projectGroupId === projectGroupId);
-  const result = validateRunDraft(draft, {
-    projectGroup,
-    runs,
-    generatableCount: generatableTasks(template).length,
-  });
-  if (!result.ok) {
-    throw new ValidationError(result.errors);
-  }
-  // 超過は確認を取れば続行できる（仕様書8.9.7）。
-  if (result.warnings.length > 0 && draft.confirmedOverflow !== true) {
-    throw new QuantityOverflowError(result.warnings, result.preview);
-  }
+      const runs = workRuns.filter((run) => run.projectGroupId === projectGroupId);
+      const result = validateRunDraft(draft, {
+        projectGroup,
+        runs,
+        generatableCount: generatableTasks(template).length,
+      });
+      if (!result.ok) {
+        throw new ValidationError(result.errors);
+      }
+      // 超過は確認を取れば続行できる（仕様書8.9.7）。
+      if (result.warnings.length > 0 && draft.confirmedOverflow !== true) {
+        throw new QuantityOverflowError(result.warnings, result.preview);
+      }
 
-  const workRun = instantiateRun(
-    {
-      template,
-      projectGroupId,
-      workDate: draft.workDate,
-      runQuantity: draft.runQuantity,
-      excludedTaskDefinitionIds: draft.excludedTaskDefinitionIds ?? [],
+      const workRun = instantiateRun(
+        {
+          template,
+          projectGroupId,
+          workDate: draft.workDate,
+          runQuantity: draft.runQuantity,
+          excludedTaskDefinitionIds: draft.excludedTaskDefinitionIds ?? [],
+        },
+        { createdAt: toIsoSecond(now()), runId: newId(), newId },
+      );
+
+      return {
+        write: () => adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, workRun),
+        value: { workRun, warnings: result.warnings },
+      };
     },
-    { createdAt: toIsoSecond(now()), runId: newId(), newId },
   );
 
-  const dataset = await persistence.run(() =>
-    adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, workRun),
-  );
-  return { dataset, workRun, warnings: result.warnings };
+  return { dataset, workRun: value.workRun, warnings: value.warnings };
 }
 
 /**
@@ -201,36 +174,44 @@ export async function createWorkRun(deps, projectGroupId, draft) {
 export async function updateTotalQuantity(deps, projectGroupId, change) {
   const { adapter, persistence, now } = resolveDeps(deps);
 
-  const { projectGroups, workRuns } = await adapter.loadAll();
-  const current = projectGroups.find((group) => group.projectGroupId === projectGroupId);
-  if (current === undefined) {
-    throw new ValidationError([`案件: 見つからない（${projectGroupId}）`]);
-  }
+  const { dataset, value } = await persistence.run(async ({ projectGroups, workRuns }) => {
+    const current = projectGroups.find((group) => group.projectGroupId === projectGroupId);
+    if (current === undefined) {
+      throw new ValidationError([`案件: 見つからない（${projectGroupId}）`]);
+    }
 
-  const runs = workRuns.filter((run) => run.projectGroupId === projectGroupId);
-  const result = validateTotalQuantityChange(runs, change.totalQuantity);
-  if (!result.ok) {
-    throw new ValidationError(result.errors);
-  }
-  if (result.warnings.length > 0 && change.confirmedOverflow !== true) {
-    throw new QuantityOverflowError(result.warnings, result.preview);
-  }
+    const runs = workRuns.filter((run) => run.projectGroupId === projectGroupId);
+    const result = validateTotalQuantityChange(runs, change.totalQuantity);
+    if (!result.ok) {
+      throw new ValidationError(result.errors);
+    }
+    if (result.warnings.length > 0 && change.confirmedOverflow !== true) {
+      throw new QuantityOverflowError(result.warnings, result.preview);
+    }
 
-  // 案件IDと対象種別・バリエーションは触らない（仕様書8.2.6）。
-  const projectGroup = {
-    ...current,
-    totalQuantity: change.totalQuantity,
-    updatedAt: toIsoSecond(now()),
-  };
+    // 総予定数は案件グループの値であり、実施回の状態ガード（仕様書7.2）の対象で
+    // はない。転記済みの実施回があっても案件の予定数そのものは修正できる。
 
-  const dataset = await persistence.run(() =>
-    adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, projectGroup),
-  );
-  return { dataset, projectGroup, warnings: result.warnings };
+    // 案件IDと対象種別・バリエーションは触らない（仕様書8.2.6）。
+    const projectGroup = {
+      ...current,
+      totalQuantity: change.totalQuantity,
+      updatedAt: toIsoSecond(now()),
+    };
+
+    return {
+      write: () => adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, projectGroup),
+      value: { projectGroup, warnings: result.warnings },
+    };
+  });
+
+  return { dataset, projectGroup: value.projectGroup, warnings: value.warnings };
 }
 
 /**
  * 今回数量を修正する（仕様書8.2.7）。
+ *
+ * 実施回の内容を書き換えるため、状態ガードを通す（仕様書7.2、`runStatus.js`）。
  *
  * @param {{adapter: object, persistence: object, now?: () => Date}} deps
  * @param {string} runId
@@ -240,40 +221,46 @@ export async function updateTotalQuantity(deps, projectGroupId, change) {
 export async function updateRunQuantity(deps, runId, change) {
   const { adapter, persistence, now } = resolveDeps(deps);
 
-  const { projectGroups, workRuns } = await adapter.loadAll();
-  const current = workRuns.find((run) => run.runId === runId);
-  if (current === undefined) {
-    throw new ValidationError([`実施回: 見つからない（${runId}）`]);
-  }
-  const projectGroup = projectGroups.find(
-    (group) => group.projectGroupId === current.projectGroupId,
-  );
-  if (projectGroup === undefined) {
-    throw new ValidationError([`案件: 見つからない（${current.projectGroupId}）`]);
-  }
+  const { dataset, value } = await persistence.run(async ({ projectGroups, workRuns }) => {
+    const current = workRuns.find((run) => run.runId === runId);
+    if (current === undefined) {
+      throw new ValidationError([`実施回: 見つからない（${runId}）`]);
+    }
+    if (!isRunEditable(current)) {
+      throw new RunNotEditableError(describeNotEditable(current), current.status);
+    }
+    const projectGroup = projectGroups.find(
+      (group) => group.projectGroupId === current.projectGroupId,
+    );
+    if (projectGroup === undefined) {
+      throw new ValidationError([`案件: 見つからない（${current.projectGroupId}）`]);
+    }
 
-  const runs = workRuns.filter((run) => run.projectGroupId === current.projectGroupId);
-  const result = validateRunDraft(
-    { workDate: current.workDate, runQuantity: change.runQuantity },
-    { projectGroup, runs, excludeRunId: runId },
-  );
-  if (!result.ok) {
-    throw new ValidationError(result.errors);
-  }
-  if (result.warnings.length > 0 && change.confirmedOverflow !== true) {
-    throw new QuantityOverflowError(result.warnings, result.preview);
-  }
+    const runs = workRuns.filter((run) => run.projectGroupId === current.projectGroupId);
+    const result = validateRunDraft(
+      { workDate: current.workDate, runQuantity: change.runQuantity },
+      { projectGroup, runs, excludeRunId: runId },
+    );
+    if (!result.ok) {
+      throw new ValidationError(result.errors);
+    }
+    if (result.warnings.length > 0 && change.confirmedOverflow !== true) {
+      throw new QuantityOverflowError(result.warnings, result.preview);
+    }
 
-  const workRun = {
-    ...current,
-    runQuantity: change.runQuantity,
-    updatedAt: toIsoSecond(now()),
-  };
+    const workRun = {
+      ...current,
+      runQuantity: change.runQuantity,
+      updatedAt: toIsoSecond(now()),
+    };
 
-  const dataset = await persistence.run(() =>
-    adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, workRun),
-  );
-  return { dataset, workRun, warnings: result.warnings };
+    return {
+      write: () => adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, workRun),
+      value: { workRun, warnings: result.warnings },
+    };
+  });
+
+  return { dataset, workRun: value.workRun, warnings: value.warnings };
 }
 
 /**

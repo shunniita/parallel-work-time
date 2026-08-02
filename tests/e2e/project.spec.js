@@ -413,6 +413,107 @@ test.describe('数量の修正（仕様書8.2.7）', () => {
     await expect(page.getByTestId('project-errors')).toContainText('総予定数');
     await expect(page.getByTestId('total-quantity-value')).toHaveText('100');
   });
+
+  test('整数でない値は拒否する（仕様書8.9.2）', async ({ page }) => {
+    await page.getByTestId('edit-total-quantity-toggle').click();
+    // 先頭だけ読む変換だと 1 として保存されてしまう入力。
+    await page.getByTestId('edit-total-quantity').fill('1.5');
+    await page.getByTestId('save-total-quantity').click();
+
+    await expect(page.getByTestId('project-errors')).toContainText('整数');
+    await expect(page.getByTestId('total-quantity-value')).toHaveText('100');
+  });
+
+  test('数量を修正すると左ツリーの残数も同時に更新される', async ({ page }) => {
+    await expect(page.getByTestId('tree-remaining')).toHaveText('残40');
+
+    await page.getByTestId('edit-run-quantity-toggle').first().click();
+    await page.getByTestId('edit-run-quantity').fill('80');
+    await page.getByTestId('save-run-quantity').click();
+
+    // 詳細ペインだけでなくツリーも描き直される（同じデータを見る表示は
+    // 1つの経路でまとめて更新する）。
+    await expect(page.getByTestId('remaining-value')).toHaveText('20');
+    await expect(page.getByTestId('tree-remaining')).toHaveText('残20');
+  });
+});
+
+test.describe('入力中のフォーカス保持', () => {
+  test.beforeEach(async ({ page }) => {
+    await createProject(page, { projectId: 'PJ-0001', totalQuantity: 100 });
+  });
+
+  /**
+   * 現在フォーカスがある要素の `data-testid` を読む。
+   *
+   * @param {import('@playwright/test').Page} page
+   */
+  function focusedTestId(page) {
+    return page.evaluate(() => document.activeElement?.dataset?.testid ?? null);
+  }
+
+  test('今回数量を1文字ずつ打ってもフォーカスと値が保たれる', async ({ page }) => {
+    const input = page.getByTestId('run-quantity-input');
+    await input.click();
+    // `fill()` は input イベントを1回しか出さないため、この不具合を検出しない。
+    // 実際の打鍵と同じく1文字ずつ送る。
+    await page.keyboard.type('123');
+
+    expect(await focusedTestId(page)).toBe('run-quantity-input');
+    await expect(input).toHaveValue('123');
+    await expect(page.getByTestId('quantity-preview')).toContainText('123');
+  });
+
+  test('対象種別を1文字ずつ打ってもフォーカスと値が保たれる', async ({ page }) => {
+    await page.getByTestId('cancel-run').click();
+    await page.getByTestId('new-project').click();
+    await expect(page.getByTestId('project-form')).toBeVisible();
+
+    const input = page.getByTestId('target-type');
+    await input.click();
+    await page.keyboard.type('対象種別A');
+
+    expect(await focusedTestId(page)).toBe('target-type');
+    await expect(input).toHaveValue('対象種別A');
+  });
+
+  test('生成対象のチェックを外してもフォーカスが残り、件数だけ変わる', async ({ page }) => {
+    const checkbox = page
+      .getByTestId('task-selection')
+      .locator('li')
+      .filter({ hasText: '前処理' })
+      .getByTestId('task-include');
+    await checkbox.uncheck();
+
+    expect(await focusedTestId(page)).toBe('task-include');
+    await expect(page.getByTestId('task-selection')).toContainText('4 / 5件');
+  });
+
+  test('ラベルを押すと対応する入力欄へフォーカスが移る', async ({ page }) => {
+    await page.getByTestId('cancel-run').click();
+    await page.getByTestId('new-project').click();
+    await expect(page.getByTestId('project-form')).toBeVisible();
+
+    await page.getByText('対象種別', { exact: true }).click();
+
+    expect(await focusedTestId(page)).toBe('target-type');
+  });
+});
+
+test.describe('作業項目の選択（仕様書12.3）', () => {
+  test('実施回詳細で作業項目をクリックすると選択状態になる', async ({ page }) => {
+    await createProject(page, { projectId: 'PJ-0001', totalQuantity: 100 });
+    await createRun(page, { workDate: '2026-08-01', runQuantity: 40 });
+
+    const firstRow = page.getByTestId('task-list').getByTestId('task-row').first();
+    await firstRow.getByTestId('task-name').click();
+
+    // 表でも左ツリーでも同じ作業項目が選択として示される。
+    await expect(firstRow).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByTestId('tree-task').and(page.locator('[aria-current="true"]'))).toHaveCount(
+      1,
+    );
+  });
 });
 
 test.describe('階層ツリー（仕様書12.1）', () => {

@@ -13,13 +13,18 @@ export const SAMPLE_COUNT = 3;
 /**
  * 保存済みデータを空にしてから開く。
  *
+ * 初期化はこの1本に統一する。試験ファイルごとに別方式を書くと、実行順や
+ * `--grep` での単体実行で「前のファイルのデータが残る → 起動ビューが変わる →
+ * タイムアウト」という形で落ちる。
+ *
  * `deleteDatabase` は使わない。アプリが接続を保持しているあいだは削除が
  * ブロックされ、`onblocked` が返るだけで実際には消えないため、試験間で
  * データが残ってしまう。オブジェクトストアの `clear` は他の接続があっても
  * 通るので、そちらで空にする。
  *
  * テンプレートも消す。再読み込み時にサンプルが投入され直し、初回起動と同じ
- * 状態から始まる（仕様書8.1.6）。
+ * 状態から始まる（仕様書8.1.6）。設定も消す。`initialize()` が既定値を入れ直す
+ * ため（`IndexedDbAdapter`）、設定画面の実装後も試験間で設定が漏れない。
  *
  * @param {import('@playwright/test').Page} page
  */
@@ -34,7 +39,13 @@ export async function openFresh(page) {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
-    const stores = ['taskTemplates', 'projectGroups', 'workRuns', 'changeHistory'];
+    const stores = [
+      'settings',
+      'taskTemplates',
+      'projectGroups',
+      'workRuns',
+      'changeHistory',
+    ];
     await new Promise((resolve, reject) => {
       const tx = db.transaction(stores, 'readwrite');
       for (const name of stores) {
