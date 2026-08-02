@@ -20,6 +20,17 @@ export const INTERVAL_TYPE = {
 };
 
 /**
+ * 区間種別の表示名。
+ *
+ * 種別の定義と同じ場所へ置く。画面と、変更履歴の要約文（仕様書11章）の
+ * 両方が同じ語を使う必要があるためである。
+ */
+export const INTERVAL_TYPE_LABEL = {
+  [INTERVAL_TYPE.WORK]: '作業',
+  [INTERVAL_TYPE.BREAK]: '休憩',
+};
+
+/**
  * 未終了区間かどうかを判定する（仕様書6.7）。
  *
  * @param {{endAt: string|null}} interval

@@ -1,0 +1,184 @@
+/**
+ * 簡易変更履歴の組み立て（仕様書11章）。
+ *
+ * 全面的な監査ログは初版では設けない。履歴を残すのは次の3種の操作に限る。
+ *
+ * - 転記済み状態からの後退
+ * - 作業区間または直接入力の削除
+ * - 実施回または案件グループの削除
+ *
+ * いずれも `reason` が必須である。ここは「履歴1件を作る」ことと「何を削除
+ * したかを1行で言い表す」ことだけを持つ純関数である。書き込みは
+ * `src/app/actions/` が行い、削除本体と同一の保存へまとめる。
+ *
+ * ## Step 6 で作る理由
+ *
+ * 計画上は変更履歴が Step 10 で、区間削除が Step 6 である。履歴を後から足すと
+ * その間「履歴を残さずに削除できる」期間が生まれ、仕様書11章を満たさない記録が
+ * 実データへ残る。`changeHistory` のスキーマと検証（`schema.js`）は既にあるため、
+ * 削除と同時に書き込む（設計メモ PWT-DESIGN-006 §6.1 の案B）。
+ *
+ * Step 10 で残る3操作を足すときも、入口はこのモジュールにする。
+ */
+
+import { INTERVAL_TYPE_LABEL, intervalEffortSeconds, isOpenInterval } from './effort.js';
+import { dateKeyOf, isValidIsoSecond } from './datetime.js';
+import { HISTORY_ENTITY_TYPE, HISTORY_OPERATION } from './schema.js';
+
+/** 履歴の対象種別（仕様書11章）。`schema.js` の一覧へ名前を付けたもの。 */
+export const HISTORY_ENTITY = {
+  WORK_RUN: 'workRun',
+  PROJECT_GROUP: 'projectGroup',
+  INTERVAL: 'interval',
+  DIRECT_ENTRY: 'directEntry',
+};
+
+/** 履歴の操作種別（仕様書11章）。 */
+export const HISTORY_OP = {
+  STATUS_REVERTED: 'statusReverted',
+  INTERVAL_DELETED: 'intervalDeleted',
+  DIRECT_ENTRY_DELETED: 'directEntryDeleted',
+  WORK_RUN_DELETED: 'workRunDeleted',
+  PROJECT_GROUP_DELETED: 'projectGroupDeleted',
+};
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/**
+ * 履歴1件を組み立てる（仕様書11章）。
+ *
+ * 検証を通らない場合は組み立てない。履歴だけが欠けた削除も、内容の欠けた履歴も
+ * 後から埋め合わせられないためである。
+ *
+ * `reason` は必須である。仕様書11章は「転記済み状態からの後退および削除の場合に
+ * 必須」と定めており、履歴を残す操作はいまのところすべてどちらかに当たる。
+ * 前後空白だけの理由は未入力として扱う。
+ *
+ * @param {{entityType: string, targetId: string, operation: string,
+ *          summary: string, reason: string}} draft
+ * @param {{historyId: string, timestamp: string}} meta
+ * @returns {{ok: boolean, errors: string[], entry: object|null}}
+ */
+export function buildHistoryEntry(draft, meta) {
+  const errors = [];
+
+  if (!HISTORY_ENTITY_TYPE.includes(draft.entityType)) {
+    errors.push(`対象種別: ${HISTORY_ENTITY_TYPE.join(' / ')} のいずれかである`);
+  }
+  if (!isNonEmptyString(draft.targetId)) {
+    errors.push('対象: 識別子が必要である');
+  }
+  if (!HISTORY_OPERATION.includes(draft.operation)) {
+    errors.push(`操作: ${HISTORY_OPERATION.join(' / ')} のいずれかである`);
+  }
+  if (typeof draft.summary !== 'string') {
+    errors.push('要約: 文字列である');
+  }
+  if (!isNonEmptyString(draft.reason)) {
+    errors.push('理由: 必須項目である（仕様書11章）');
+  }
+  if (!isNonEmptyString(meta.historyId)) {
+    errors.push('履歴ID: 識別子が必要である');
+  }
+  if (!isValidIsoSecond(meta.timestamp)) {
+    errors.push('記録日時: オフセット付きISO 8601（秒精度）が必要である');
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, errors, entry: null };
+  }
+
+  return {
+    ok: true,
+    errors: [],
+    entry: {
+      historyId: meta.historyId,
+      timestamp: meta.timestamp,
+      entityType: draft.entityType,
+      targetId: draft.targetId,
+      operation: draft.operation,
+      summary: draft.summary,
+      reason: draft.reason.trim(),
+    },
+  };
+}
+
+/**
+ * 日時を画面と履歴で読める形へ直す。
+ *
+ * 保存形式（`2026-07-30T09:00:00+09:00`）のままでは要約として読みにくい。
+ * オフセットは落とす。区間の開始と終了は同じオフセットで記録されるため、
+ * 前後関係の判断に要らない。
+ *
+ * @param {string} iso
+ * @returns {string} 例: `2026-07-30 09:00:00`
+ */
+export function formatIsoForHuman(iso) {
+  return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
+}
+
+/**
+ * 区間の時間帯を1行で表す。
+ *
+ * 日をまたぐ場合だけ終了側にも日付を付ける（仕様書8.4.8）。同日なら時刻だけに
+ * して、一覧で開始と終了を見比べやすくする。
+ *
+ * @param {{startAt: string, endAt: string|null}} interval
+ * @returns {string}
+ */
+export function formatIntervalRange(interval) {
+  const start = formatIsoForHuman(interval.startAt);
+  if (isOpenInterval(interval)) {
+    return `${start} 〜 未終了`;
+  }
+  const sameDay = dateKeyOf(interval.startAt) === dateKeyOf(interval.endAt);
+  const end = sameDay
+    ? interval.endAt.slice(11, 19)
+    : formatIsoForHuman(interval.endAt);
+  return `${start} 〜 ${end}`;
+}
+
+/**
+ * 区間1件の内容を1行で表す。
+ *
+ * 削除前の確認と、履歴の要約の両方で使う。確認画面と履歴で表記が食い違うと、
+ * 「確認したものが消えたか」を後から突き合わせられない。
+ *
+ * 工数を含めるのは、削除の影響が数字として分かるようにするためである。休憩は
+ * 0秒であり（仕様書8.6.2）、未終了区間は確定分に含めない（仕様書8.6.5）ので、
+ * どちらも「0秒」と出る。
+ *
+ * @param {{type: string, startAt: string, endAt: string|null, participants: string[]}} interval
+ * @returns {string}
+ */
+export function describeInterval(interval) {
+  const type = INTERVAL_TYPE_LABEL[interval.type] ?? interval.type;
+  const participants =
+    interval.participants.length === 0 ? 'なし' : interval.participants.join('、');
+  const effort = intervalEffortSeconds(interval);
+  return (
+    `${type} ${formatIntervalRange(interval)} / ` +
+    `参加者: ${participants} / 工数: ${effort}秒`
+  );
+}
+
+/**
+ * 区間削除の要約文を作る（仕様書11章）。
+ *
+ * 変更前後の完全な複製は必須ではない（仕様書11章）。ただし「どの実施回の
+ * どの作業項目から、どの時間帯の区間が消えたか」が分からない履歴は、後から
+ * 突き合わせる用を成さない。実施回・作業項目・区間の内容をこの1行へ入れる。
+ *
+ * @param {{workDate: string}} workRun
+ * @param {{name: string}} taskRecord
+ * @param {object} interval
+ * @returns {string}
+ */
+export function summarizeIntervalDeletion(workRun, taskRecord, interval) {
+  return (
+    `実施回 ${workRun.workDate} / 作業項目「${taskRecord.name}」の作業区間を削除` +
+    `（${describeInterval(interval)}）`
+  );
+}

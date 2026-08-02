@@ -37,7 +37,7 @@ Step 6 着手前の分として次の14件へ対応した。残る15件は各 St
 | C（データ整合） | C-7、C-11、C-12 | C-8、C-9、C-10、C-13 |
 | D（UI・表示） | D-17 | D-14、D-15、D-16、D-18、D-19 |
 | E（テスト・開発体験） | E-20、E-22、E-23、E-24 | E-21 |
-| F（軽微・設計の芽） | F-27 | F-25（Step 6 の実装と同時）、F-26、F-28、F-29 |
+| F（軽微・設計の芽） | F-27、F-25 | F-26、F-28、F-29 |
 
 対応で新設・変更した規約は次の3つである。個別の指摘ではなく、以後の実装が従う土台として扱う。
 
@@ -164,12 +164,14 @@ Step 6 着手前の分として次の14件へ対応した。残る15件は各 St
 - 対象: `src/domain/validation.js:244-283`、`src/app/actions/projectActions.js:169-171,215-217,263-265`
 - 内容: アクション側が `warnings.length > 0` を無条件に `QuantityOverflowError`（累計超過の確認）へ変換する。Step 7 の直接入力重複候補警告（8.9.8）など別種の警告を足した瞬間に誤爆する。警告へ種別コード（`{code, path, message}`）を持たせる。
 - 推奨対応時期: Step 7 前
+- 状況: 一部先行（2026-08-03、Step 6 PR-A）。Step 6 で新設した `intervalOps.js` の警告は最初から `{code, path, message}` 形式であり（`INTERVAL_WARNING.overlap`）、区間の重複は例外へ変換せず返り値の `warnings` で返す。`validateRunDraft` 側の文字列警告と 2 形式が併存しているが、呼び出し経路が分かれているため衝突しない。既存側を揃えるのは予定どおり Step 7 前に行う。
 
 ### D-16 状態ラベル定数の重複
 
 - 対象: `RUN_STATUS_LABEL` が `src/ui/tree.js:29-34` / `src/ui/views/projectView.js:25-30` / `src/ui/views/runView.js:26-31` に3重複。`TASK_STATE_LABEL` が `tree.js:21-26` / `runView.js:18-23` に2重複
 - 内容: Step 8 の集計画面でさらに増える前に `src/ui/labels.js` 等へ一本化する。`runView.js:45-52` の `toMinutesLabel` も集計画面で共有になる。
 - 推奨対応時期: Step 8 前
+- 状況: 寄せ先を用意した（2026-08-03、Step 6 PR-A）。`TASK_STATE_LABEL` を `src/domain/taskState.js`、`INTERVAL_TYPE_LABEL` を `src/domain/effort.js` へ、それぞれ状態・種別の定義と同じ場所に置いた。状態が合わない操作の拒否文（`intervalOps.js`）と変更履歴の要約（`history.js`）が語を必要とするためである。UI 側の重複をここへ向け直すのは予定どおり Step 8 前に行う。
 
 ### D-17 `label` の `for` が実際の入力欄と紐づいていない
 
@@ -240,7 +242,7 @@ Step 6 着手前の分として次の14件へ対応した。残る15件は各 St
 - 対象: `src/domain/datetime.js:31-38` vs `:86-94`
 - 内容: 同一モジュール内で `offsetMinutes` が `getTimezoneOffset` 規約（西が正）と ISO 規約（東が正）の逆符号で使われている。現時点で実害はないが Step 6 でオフセット計算を触るときの事故要因。また Step 6 に必要な (a) `datetime-local` 値 → オフセット付き ISO 変換、(b) ISO 同士の大小比較、(c) 秒の加減算が未整備で、各所へ `parseIso` 数値比較が散らばる前にここへ集約する。
 - 推奨対応時期: Step 6 着手時
-- 状況: 未対応。Step 6 の実装と同時に行う。必要な API の形は、実際にオフセット計算を使うコードを書きながらでないと決まらないため。
+- 状況: **対応済み（2026-08-03、Step 6 PR-A）**。公開 API の `offsetMinutes` を ISO 規約（東が正）へ統一し、`Date#getTimezoneOffset()` を呼ぶ箇所を `localOffsetMinutes()` の1か所へ閉じた。`formatOffset()` の引数の意味が変わるため単体テストも直してある。Step 6 向けに `fromDateTimeLocal` / `toDateTimeLocal` / `compareIso` / `addSeconds` と、実装しながら必要になった `localOffsetMinutes` / `offsetMinutesOf` / `isValidDateTimeLocal` を足した。区間の前後判定は `intervalOps.js` から `compareIso` を呼ぶ形にし、`parseIso` の数値比較は散らばっていない。
 
 ### F-26 定数・関数の配置の不自然さ
 
