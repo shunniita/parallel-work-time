@@ -5,15 +5,19 @@
  * 依存は引数で受け取り、テストで時刻とID生成を固定できるようにする。
  *
  * 検証に失敗した場合は保存を呼ばない。`ValidationError` を投げるので、画面は
- * `errors` をそのまま表示できる。
+ * `errors` をそのまま表示できる。例外の定義は `src/app/errors.js` にある。
+ *
+ * 読み込みから書き込みまでは `persistence.run()` の中で行う。読み込んだ内容を
+ * もとに検証してから書き戻すため、その間に別の操作が割り込むと判断の前提が
+ * 崩れる（`src/app/persistence.js`）。
  */
 
-import { newId as defaultNewId } from '../../domain/ids.js';
 import { toIsoSecond } from '../../domain/datetime.js';
 import {
   activeTemplates,
   buildTemplate,
   deactivate,
+  nextTemplateVersion,
   reviseTemplate,
 } from '../../domain/templateOps.js';
 import {
@@ -21,38 +25,8 @@ import {
   validateTemplateIsNew,
 } from '../../domain/validation.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
-
-/**
- * 入力検証で保存を拒否したことを表す例外。
- *
- * 保存層の `StorageError` とは別にしてある。保存領域の問題と入力の問題は
- * 画面での扱いが違い、後者は入力を保持したまま直させたいため。
- */
-export class ValidationError extends Error {
-  /**
-   * @param {string[]} errors 「場所: 説明」形式
-   */
-  constructor(errors) {
-    super(errors.join(' / '));
-    this.name = 'ValidationError';
-    this.errors = errors;
-  }
-}
-
-/**
- * 依存を既定値で補う。
- *
- * @param {{adapter: object, persistence: object, now?: () => Date,
- *          newId?: () => string}} deps
- */
-function resolveDeps(deps) {
-  return {
-    adapter: deps.adapter,
-    persistence: deps.persistence,
-    now: deps.now ?? (() => new Date()),
-    newId: deps.newId ?? defaultNewId,
-  };
-}
+import { ValidationError } from '../errors.js';
+import { resolveDeps } from './deps.js';
 
 /**
  * 新しい作業テンプレートを登録する（仕様書8.1.1、8.1.2）。
@@ -72,24 +46,27 @@ export async function createTemplate(deps, draft) {
     throw new ValidationError(shape.errors);
   }
 
-  const { taskTemplates } = await adapter.loadAll();
-  const uniqueness = validateTemplateIsNew(activeTemplates(taskTemplates), draft);
-  if (!uniqueness.ok) {
-    throw new ValidationError(uniqueness.errors);
-  }
+  const { dataset, value: template } = await persistence.run(async ({ taskTemplates }) => {
+    const uniqueness = validateTemplateIsNew(activeTemplates(taskTemplates), draft);
+    if (!uniqueness.ok) {
+      throw new ValidationError(uniqueness.errors);
+    }
 
-  // 版1では版系列の識別子と版の識別子を別々に採番する。改訂で templateId だけが
-  // 変わり、templateSeriesId は据え置かれる（仕様書6.3）。
-  const template = buildTemplate(draft, {
-    createdAt: toIsoSecond(now()),
-    templateSeriesId: newId(),
-    templateId: newId(),
-    newId,
+    // 版1では版系列の識別子と版の識別子を別々に採番する。改訂で templateId だけが
+    // 変わり、templateSeriesId は据え置かれる（仕様書6.3）。
+    const built = buildTemplate(draft, {
+      createdAt: toIsoSecond(now()),
+      templateSeriesId: newId(),
+      templateId: newId(),
+      newId,
+    });
+
+    return {
+      write: () => adapter.saveEntity(ENTITY_TYPE.TASK_TEMPLATES, built),
+      value: built,
+    };
   });
 
-  const dataset = await persistence.run(() =>
-    adapter.saveEntity(ENTITY_TYPE.TASK_TEMPLATES, template),
-  );
   return { dataset, template };
 }
 
@@ -102,6 +79,12 @@ export async function createTemplate(deps, draft) {
  *
  * 旧版のレコードは削除せず保持する。既存の実施回は作業項目定義を値として
  * 複製しているため、改訂しても変化しない（仕様書8.1.4、A-09）。
+ *
+ * 改訂元は有効版でなければならない。旧版を指定できてしまうと、本当の有効版が
+ * 残ったまま新版も有効として保存され、同一の対象種別 × バリエーションに有効版が
+ * 2つ並ぶ。この不変条件は `findActiveTemplate` と `activeTemplates` が暗黙に
+ * 前提としており、壊れるとどちらが選ばれるかは実装依存になる。画面が旧版のIDを
+ * 渡さない作りであっても、入口で確かめる。
  *
  * @param {{adapter: object, persistence: object, now?: () => Date, newId?: () => string}} deps
  * @param {string} templateId 改訂元の版の識別子
@@ -120,24 +103,36 @@ export async function reviseTemplateAction(deps, templateId, draft) {
     throw new ValidationError(shape.errors);
   }
 
-  const { taskTemplates } = await adapter.loadAll();
-  const current = taskTemplates.find((template) => template.templateId === templateId);
-  if (current === undefined) {
-    throw new ValidationError([`テンプレート: 改訂元が見つからない（${templateId}）`]);
-  }
+  const { dataset, value: revised } = await persistence.run(async ({ taskTemplates }) => {
+    const current = taskTemplates.find((template) => template.templateId === templateId);
+    if (current === undefined) {
+      throw new ValidationError([`テンプレート: 改訂元が見つからない（${templateId}）`]);
+    }
+    if (current.active !== true) {
+      throw new ValidationError([
+        `テンプレート: 改訂元が有効版でない（${current.targetType} / ${current.variant} 版${current.version}）。` +
+          '有効版から改訂する。',
+      ]);
+    }
 
-  const revised = reviseTemplate(current, draft, {
-    createdAt: toIsoSecond(now()),
-    templateId: newId(),
-    newId,
+    const built = reviseTemplate(current, draft, {
+      createdAt: toIsoSecond(now()),
+      templateId: newId(),
+      // 系列内の最大版を基準にする。改訂元の版に1を足すだけでは版番号が重複しうる。
+      version: nextTemplateVersion(taskTemplates, current.templateSeriesId),
+      newId,
+    });
+
+    return {
+      write: () =>
+        adapter.saveEntities([
+          { type: ENTITY_TYPE.TASK_TEMPLATES, entity: deactivate(current) },
+          { type: ENTITY_TYPE.TASK_TEMPLATES, entity: built },
+        ]),
+      value: built,
+    };
   });
 
-  const dataset = await persistence.run(() =>
-    adapter.saveEntities([
-      { type: ENTITY_TYPE.TASK_TEMPLATES, entity: deactivate(current) },
-      { type: ENTITY_TYPE.TASK_TEMPLATES, entity: revised },
-    ]),
-  );
   return { dataset, template: revised };
 }
 

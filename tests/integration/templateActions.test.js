@@ -9,11 +9,11 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  ValidationError,
   createTemplate,
   reviseTemplateAction,
   toDraft,
 } from '../../src/app/actions/templateActions.js';
+import { ValidationError } from '../../src/app/errors.js';
 import { SAVE_STATE, createPersistence } from '../../src/app/persistence.js';
 import { MemoryAdapter } from '../../src/storage/MemoryAdapter.js';
 import { IndexedDbAdapter } from '../../src/storage/IndexedDbAdapter.js';
@@ -262,6 +262,34 @@ describe('templateActions', () => {
       await expect(
         reviseTemplateAction(deps, 'template-missing', draft()),
       ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it('旧版からは改訂できない（有効版が2つ並ばない）', async () => {
+      const v1 = await seedVersion1();
+      await reviseTemplateAction(deps, v1.templateId, toDraft(v1));
+
+      // 版1は無効化済み。ここから改訂できると、本当の有効版（版2）が残ったまま
+      // 新版も active: true で保存され、同一の対象種別×バリエーションに有効版が
+      // 2つ並ぶ。
+      await expect(
+        reviseTemplateAction(deps, v1.templateId, toDraft(v1)),
+      ).rejects.toBeInstanceOf(ValidationError);
+
+      const dataset = await adapter.loadAll();
+      expect(activeTemplates(dataset.taskTemplates)).toHaveLength(1);
+      expect(dataset.taskTemplates).toHaveLength(2);
+    });
+
+    it('版番号は系列内の最大版を基準に繰り上げる', async () => {
+      const v1 = await seedVersion1();
+      const { template: v2 } = await reviseTemplateAction(deps, v1.templateId, toDraft(v1));
+      const { template: v3 } = await reviseTemplateAction(deps, v2.templateId, toDraft(v2));
+
+      expect(v3.version).toBe(3);
+      const versions = (await adapter.loadAll()).taskTemplates
+        .map((template) => template.version)
+        .sort();
+      expect(new Set(versions).size).toBe(versions.length);
     });
 
     it('検証失敗時は保存を呼ばない', async () => {

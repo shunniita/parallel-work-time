@@ -9,13 +9,17 @@
  * 既存案件の対象種別・バリエーションは上書きしない。実施回は作成時に
  * テンプレートから作業項目を複製しており、後から案件の対象種別が変わると
  * 過去の実施回と食い違うためである。
+ *
+ * 描画の方針は `src/app/store.js` の規約に従う。入力欄への打ち込みでは再描画
+ * しない。対象種別に連動するバリエーションの候補は、`datalist` の中身だけを
+ * 差し替える。
  */
 
 import { summarizeQuantity } from '../../domain/quantity.js';
 import { activeTemplates } from '../../domain/templateOps.js';
-import { ProjectIdConflictError } from '../../app/actions/projectActions.js';
-import { ValidationError } from '../../app/actions/templateActions.js';
-import { el, field, replaceChildren } from '../dom.js';
+import { ProjectIdConflictError, toErrorMessages } from '../../app/errors.js';
+import { el, field, replaceChildren, replaceOptions } from '../dom.js';
+import { toIntegerInput } from '../numeric.js';
 
 /**
  * 案件登録フォームを作る。
@@ -33,6 +37,12 @@ export function createProjectFormView({ container, store, actions, handlers }) {
     /** @type {object|null} 既存案件と衝突したときの相手 */
     conflict: null,
     busy: false,
+  };
+
+  /** 部分更新で書き換えるノード。`render()` のたびに張り直す。 */
+  const refs = {
+    /** @type {HTMLElement|null} バリエーションの候補（対象種別に連動する） */
+    variantOptions: null,
   };
 
   function emptyDraft() {
@@ -76,19 +86,17 @@ export function createProjectFormView({ container, store, actions, handlers }) {
         projectId: local.draft.projectId,
         targetType: local.draft.targetType,
         variant: local.draft.variant,
-        // 画面の値は文字列なので、ここで数値へ変換する。変換できない入力は
+        // 画面の値は文字列なので、ここで数値へ変換する。整数でない入力は
         // NaN になり、検証（仕様書8.9.2）が捕まえる。
-        totalQuantity: Number.parseInt(local.draft.totalQuantity, 10),
+        totalQuantity: toIntegerInput(local.draft.totalQuantity),
       });
       created = result.projectGroup;
     } catch (error) {
       if (error instanceof ProjectIdConflictError) {
         local.errors = error.errors;
         local.conflict = error.conflict;
-      } else if (error instanceof ValidationError) {
-        local.errors = error.errors;
       } else {
-        local.errors = [`保存: ${error?.message ?? String(error)}`];
+        local.errors = toErrorMessages(error);
       }
     }
     local.busy = false;
@@ -184,14 +192,18 @@ export function createProjectFormView({ container, store, actions, handlers }) {
    * するだけにする。テンプレート登録の前後で入力できる内容が変わると分かり
    * にくいため、`datalist` で候補を出す形にした。
    *
+   * 入力欄と `datalist` を別々に返す。両者をラッパー要素で包むと `field()` が
+   * ラッパーへ `id` を付けてしまい、`<label for>` が実際の入力欄と結び付かない。
+   *
    * @param {string} id
    * @param {string} key
    * @param {string[]} options
+   * @returns {{input: HTMLElement, datalist: HTMLElement}}
    */
   function suggestInput(id, key, options) {
     const listId = `${id}-options`;
-    return el('span', { class: 'suggest' }, [
-      el('input', {
+    return {
+      input: el('input', {
         type: 'text',
         class: 'input',
         list: listId,
@@ -200,22 +212,28 @@ export function createProjectFormView({ container, store, actions, handlers }) {
         on: {
           input: (event) => {
             local.draft[key] = event.target.value;
-            // 対象種別を変えるとバリエーションの候補が変わるため描き直す。
+            // 対象種別を変えるとバリエーションの候補が変わる。ここで `render()`
+            // を呼ぶと、打ち込み中の入力欄ごと DOM が作り直されてフォーカスが
+            // 外れる。候補リストの中身だけを差し替える。
             if (key === 'targetType') {
-              render();
+              replaceOptions(refs.variantOptions, variantOptions());
             }
           },
         },
       }),
-      el(
+      datalist: el(
         'datalist',
         { id: listId },
         options.map((option) => el('option', { value: option })),
       ),
-    ]);
+    };
   }
 
   function render() {
+    const targetTypeSuggest = suggestInput('target-type', 'targetType', targetTypeOptions());
+    const variantSuggest = suggestInput('variant', 'variant', variantOptions());
+    refs.variantOptions = variantSuggest.datalist;
+
     replaceChildren(container, [
       el('div', { class: 'view__head' }, [
         el('h2', { class: 'view__title', text: '案件登録' }),
@@ -243,12 +261,14 @@ export function createProjectFormView({ container, store, actions, handlers }) {
           field({
             id: 'target-type',
             label: '対象種別',
-            input: suggestInput('target-type', 'targetType', targetTypeOptions()),
+            input: targetTypeSuggest.input,
+            after: targetTypeSuggest.datalist,
           }),
           field({
             id: 'variant',
             label: 'バリエーション',
-            input: suggestInput('variant', 'variant', variantOptions()),
+            input: variantSuggest.input,
+            after: variantSuggest.datalist,
           }),
           field({
             id: 'total-quantity',
