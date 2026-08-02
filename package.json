@@ -8,13 +8,16 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --grep-invert @screenshot",
     "test:e2e:shots": "playwright test --grep @screenshot",
     "serve": "node tools/static-server.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^20.11.1",
     "vitest": "^4.1.10"
   }
 }
