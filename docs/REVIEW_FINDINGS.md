@@ -221,7 +221,7 @@ Step 6 着手前の分として次の14件へ対応した。残る15件は各 St
 - ~~E2E の追加候補: `fill()` だけでなく、対象種別と今回数量をキーボードで1文字ずつ入力し、複数桁入力後もフォーカスと値が保たれることを確認する。また、総予定数・今回数量の修正後に、案件詳細だけでなく左ツリーの残数も同時に更新されることを検証する。~~ 対応済み（2026-08-02。A-1・A-2 の回帰試験として `tests/e2e/project.spec.js` へ追加）。
 - 推奨対応時期: Step 6 以降、UI が複雑化するのに合わせて
 - 状況: **対応済み（2026-08-03）**。`@vitest/coverage-v8` と `happy-dom` を開発依存へ追加し、`npm run test:coverage` で計測できるようにした（出力は `test-results/coverage/`）。UI 層の単体テストを新設し、`dom.js`（属性の扱い・部分更新・`field` の `for` 結線）と `numeric.js` は行・分岐とも100%、`tree.js` は並べ替え・展開キー・アーカイブ除外・状態記号・通知を含めて行100%／分岐97.9%。全体は行68.0%で、未計測の大半は `src/ui/views/`（E2Eが受け持つ）である。
-- 補足: DOM 実装は jsdom ではなく happy-dom を選んだ。jsdom 27 は CJS から ESM を `require` する依存を持ち、現在の Node 22.1 では読み込みに失敗する。あわせて `environmentMatchGlobs` が Vitest 4 で廃止されているため、対象ファイル先頭の `// @vitest-environment happy-dom` で切り替えている。
+- 補足: DOM 実装は happy-dom を選んだ。本アプリが触るのは要素生成・属性・イベント・`textContent` だけで（`innerHTML` 不使用、計画書§4.2）、CSS カスケードやレイアウトの再現は要らない。その範囲なら jsdom より軽い。あわせて `environmentMatchGlobs` が Vitest 4 で廃止されているため、対象ファイル先頭の `// @vitest-environment happy-dom` で切り替えている。
 - 派生: `toIntegerInput` の契約を明確にした。`0x10` / `0b11` / `Infinity` を10進数の形で弾き、指数表記（`1e3` → 1000）は `type="number"` が受け付ける表記として通す。
 
 ### E-24 開発サーバーが不正な URL エンコードでプロセスごと落ちる
