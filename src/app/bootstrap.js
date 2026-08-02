@@ -32,11 +32,14 @@ export async function bootstrap(adapter, options = {}) {
   let seededTemplateCount = 0;
   if (dataset.taskTemplates.length === 0 && sampleTemplates !== null) {
     const templates = buildSeedTemplates(sampleTemplates, toIsoSecond(now));
-    for (const template of templates) {
-      await adapter.saveEntity(ENTITY_TYPE.TASK_TEMPLATES, template);
-    }
-    seededTemplateCount = templates.length;
-    if (seededTemplateCount > 0) {
+    if (templates.length > 0) {
+      // 1トランザクションで全か無かにする。1件ずつ保存すると、途中で失敗した
+      // ときに「1件は入っているので件数0ではない」状態になり、次回以降の起動で
+      // 二度と投入されない（回復不能な部分投入）。
+      await adapter.saveEntities(
+        templates.map((template) => ({ type: ENTITY_TYPE.TASK_TEMPLATES, entity: template })),
+      );
+      seededTemplateCount = templates.length;
       dataset = await adapter.loadAll();
     }
   }

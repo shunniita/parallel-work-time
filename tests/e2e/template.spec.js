@@ -8,27 +8,7 @@
 
 import { expect, test } from '@playwright/test';
 
-/** サンプルテンプレートの件数（`data/sample-task-templates.json`）。 */
-const SAMPLE_COUNT = 3;
-
-/**
- * IndexedDB を消してから開く。試験ごとに初回起動の状態から始める。
- *
- * @param {import('@playwright/test').Page} page
- */
-async function openFresh(page) {
-  await page.goto('/');
-  await page.evaluate(async () => {
-    await new Promise((resolve) => {
-      const request = indexedDB.deleteDatabase('parallel-work-time');
-      request.onsuccess = resolve;
-      request.onerror = resolve;
-      request.onblocked = resolve;
-    });
-  });
-  await page.reload();
-  await expect(page.getByTestId('template-list')).toBeVisible();
-}
+import { SAMPLE_COUNT, openFresh } from './helpers.js';
 
 test.beforeEach(async ({ page }) => {
   await openFresh(page);

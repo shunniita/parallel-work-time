@@ -14,8 +14,10 @@ import {
   nextOrder,
   sortTaskDefinitions,
 } from '../../domain/templateOps.js';
-import { ValidationError, toDraft } from '../../app/actions/templateActions.js';
+import { toDraft } from '../../app/actions/templateActions.js';
+import { toErrorMessages } from '../../app/errors.js';
 import { el, field, replaceChildren } from '../dom.js';
+import { toOptionalIntegerInput } from '../numeric.js';
 
 /**
  * テンプレート画面を作る。
@@ -90,10 +92,7 @@ export function createTemplateView({ container, store, actions }) {
     try {
       await operation();
     } catch (error) {
-      local.errors =
-        error instanceof ValidationError
-          ? error.errors
-          : [`保存: ${error?.message ?? String(error)}`];
+      local.errors = toErrorMessages(error);
     } finally {
       local.busy = false;
       render();
@@ -236,8 +235,9 @@ export function createTemplateView({ container, store, actions }) {
                 dataset: { testid: 'task-order' },
                 on: {
                   input: (event) => {
-                    const parsed = Number.parseInt(event.target.value, 10);
-                    task.order = Number.isNaN(parsed) ? undefined : parsed;
+                    // 空欄は未設定、`1.5` のような非整数は NaN のまま渡して
+                    // 検証（`validateTaskTemplate`）に捕まえさせる。
+                    task.order = toOptionalIntegerInput(event.target.value);
                   },
                 },
               }),

@@ -12,6 +12,11 @@
  * 専用ルーティングは持たず、単一ページ内のビュー切替で画面を表現する（12.2）。
  * 実装計画 Step 5 の時点で動くのは、テンプレート・案件登録・案件詳細・
  * 実施回詳細（閲覧）である。集計・アーカイブ・設定は Step 8 以降。
+ *
+ * 再描画はここが持つストア購読1本に集約する（規約は `src/app/store.js` 参照）。
+ * `store.setState()` を呼んだ側は `render()` を書かない。書き忘れが「クリック
+ * しても何も起きない」「左ツリーだけ古い値が残る」という形で表に出るため、
+ * 更新と描画を1つの経路へまとめる。
  */
 
 import { SCHEMA_VERSION } from './config.js';
@@ -111,14 +116,20 @@ async function main() {
   /**
    * アクションの結果でストアを更新する薄い包み。
    *
-   * 画面側は保存後のデータセットを自分で流し込まなくてよい。
+   * 画面側は保存後のデータセットを自分で流し込まなくてよい。`setState` が購読を
+   * 通して全体を描き直すため、左ツリーの残数のように呼び出し元のビュー外にある
+   * 表示もここで一緒に更新される。
    *
    * @param {Function} action
    */
   function wrap(action) {
     return async (...args) => {
       const result = await action(deps, ...args);
-      store.setState({ dataset: result.dataset });
+      // 書き込みは成功したが読み直しに失敗した場合は null が返る。古い内容で
+      // 上書きせず、保存状態表示の注記に任せる（`persistence.run` 参照）。
+      if (result.dataset !== null) {
+        store.setState({ dataset: result.dataset });
+      }
       return result;
     };
   }
@@ -142,7 +153,6 @@ async function main() {
             taskRecordId,
           },
         });
-        render();
       },
       onCreateProject: openProjectForm,
     },
@@ -165,20 +175,20 @@ async function main() {
       onCreated: (projectGroup) => {
         tree.expand({ projectGroupId: projectGroup.projectGroupId });
         selectProject(projectGroup.projectGroupId);
-        // 登録できたらそのまま実施回を作れるようにする。
+        // 登録できたらそのまま実施回を作れるようにする。案件詳細を出したうえで
+        // フォームを開くため、ここだけはビュー内部の状態変更として描き直す。
         projectView.openRunForm();
-        renderDetail();
+        projectView.render();
       },
       // 既存案件と衝突したときの「この案件へ実施回を追加」導線（仕様書8.2.6）。
       onOpenExisting: (projectGroupId) => {
         tree.expand({ projectGroupId });
         selectProject(projectGroupId);
         projectView.openRunForm();
-        renderDetail();
+        projectView.render();
       },
       onCancel: () => {
         store.setState({ view: VIEW.PROJECTS });
-        render();
       },
     },
   });
@@ -199,7 +209,10 @@ async function main() {
     store,
     handlers: {
       onSelectTask: (taskRecordId) => {
-        store.setState({ selection: { ...store.getState().selection, taskRecordId } });
+        const { selection } = store.getState();
+        // 選んだ作業項目が左ツリー側でも見えるように実施回を開いておく。
+        tree.expand({ projectGroupId: selection.projectGroupId, runId: selection.runId });
+        store.setState({ selection: { ...selection, taskRecordId } });
       },
       onSelectProject: selectProject,
     },
@@ -216,13 +229,11 @@ async function main() {
       projectView.reset();
     }
     store.setState({ view });
-    render();
   }
 
   function openProjectForm() {
     projectFormView.reset();
     store.setState({ view: VIEW.PROJECT_FORM });
-    render();
   }
 
   function selectProject(projectGroupId) {
@@ -231,7 +242,6 @@ async function main() {
       view: VIEW.PROJECTS,
       selection: { projectGroupId, runId: null, taskRecordId: null },
     });
-    render();
   }
 
   function selectRun(runId) {
@@ -246,7 +256,6 @@ async function main() {
         taskRecordId: null,
       },
     });
-    render();
   }
 
   /**
@@ -278,6 +287,9 @@ async function main() {
     renderDetail();
   }
 
+  // 再描画の唯一のきっかけ。`setState` を呼べば必ずここを通るため、更新した側が
+  // 描画を書き忘れても表示が取り残されることがない。
+  store.subscribe(render);
   render();
 }
 

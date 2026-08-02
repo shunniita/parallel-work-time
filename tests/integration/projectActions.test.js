@@ -9,8 +9,6 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  ProjectIdConflictError,
-  QuantityOverflowError,
   createProjectGroup,
   createWorkRun,
   findActiveTemplate,
@@ -19,12 +17,17 @@ import {
   updateTotalQuantity,
 } from '../../src/app/actions/projectActions.js';
 import {
-  ValidationError,
   createTemplate,
   reviseTemplateAction,
   toDraft,
 } from '../../src/app/actions/templateActions.js';
-import { createPersistence } from '../../src/app/persistence.js';
+import {
+  ProjectIdConflictError,
+  QuantityOverflowError,
+  RunNotEditableError,
+  ValidationError,
+} from '../../src/app/errors.js';
+import { SAVE_STATE, createPersistence } from '../../src/app/persistence.js';
 import { summarizeQuantity } from '../../src/domain/quantity.js';
 import { MemoryAdapter } from '../../src/storage/MemoryAdapter.js';
 import { ENTITY_TYPE } from '../../src/storage/StorageAdapter.js';
@@ -577,6 +580,134 @@ describe('projectActions', () => {
       await expect(
         updateRunQuantity(deps, 'run-missing', { runQuantity: 10 }),
       ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    describe('状態ガード（仕様書7.2）', () => {
+      /**
+       * 実施回の状態を直接書き換える。状態遷移の操作は Step 10 で実装するため、
+       * ここでは保存層へ直接書いて「転記済み／アーカイブ」を作る。
+       */
+      async function seedRunWithStatus(status) {
+        const group = await seedProject({ totalQuantity: 100 });
+        const { workRun } = await createWorkRun(deps, group.projectGroupId, {
+          workDate: '2026-08-01',
+          runQuantity: 30,
+        });
+        await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, { ...workRun, status });
+        return workRun;
+      }
+
+      it('転記済みの実施回は数量を変更できない', async () => {
+        const workRun = await seedRunWithStatus('transferred');
+
+        await expect(
+          updateRunQuantity(deps, workRun.runId, { runQuantity: 40 }),
+        ).rejects.toBeInstanceOf(RunNotEditableError);
+
+        const saved = (await adapter.loadAll()).workRuns.find(
+          (run) => run.runId === workRun.runId,
+        );
+        expect(saved.runQuantity).toBe(30);
+      });
+
+      it('アーカイブ済みの実施回は数量を変更できない', async () => {
+        const workRun = await seedRunWithStatus('archived');
+
+        await expect(
+          updateRunQuantity(deps, workRun.runId, { runQuantity: 40 }),
+        ).rejects.toBeInstanceOf(RunNotEditableError);
+      });
+
+      it('集計済みの実施回は数量を変更できる', async () => {
+        const workRun = await seedRunWithStatus('aggregated');
+
+        await expect(
+          updateRunQuantity(deps, workRun.runId, { runQuantity: 40 }),
+        ).resolves.toBeDefined();
+      });
+    });
+  });
+
+  describe('保存経路の直列化（lost update 対策）', () => {
+    it('同時に実施回を作ると、2件目は1件目を見たうえで超過判定される', async () => {
+      const group = await seedProject({ totalQuantity: 100 });
+
+      // どちらも「読み込み → 累計を判定 → 書き戻し」である。直列化していないと
+      // 2つとも累計0を読むため、どちらも超過に気づかず合計120が黙って通る。
+      const results = await Promise.allSettled([
+        createWorkRun(deps, group.projectGroupId, {
+          workDate: '2026-08-01',
+          runQuantity: 60,
+        }),
+        createWorkRun(deps, group.projectGroupId, {
+          workDate: '2026-08-02',
+          runQuantity: 60,
+        }),
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected']);
+      expect(results[1].reason).toBeInstanceOf(QuantityOverflowError);
+      expect((await adapter.loadAll()).workRuns).toHaveLength(1);
+    });
+
+    it('実施回の追加と数量修正が同時でも累計判定が最新を見る', async () => {
+      const group = await seedProject({ totalQuantity: 100 });
+      const { workRun } = await createWorkRun(deps, group.projectGroupId, {
+        workDate: '2026-08-01',
+        runQuantity: 40,
+      });
+
+      // 修正で90へ上げたあと、さらに30の実施回を足すと累計120で超過する。
+      const results = await Promise.allSettled([
+        updateRunQuantity(deps, workRun.runId, { runQuantity: 90 }),
+        createWorkRun(deps, group.projectGroupId, {
+          workDate: '2026-08-02',
+          runQuantity: 30,
+        }),
+      ]);
+
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1].status).toBe('rejected');
+      expect(results[1].reason).toBeInstanceOf(QuantityOverflowError);
+    });
+
+    it('1つ失敗しても後続の保存は止まらない', async () => {
+      const group = await seedProject({ totalQuantity: 100 });
+
+      await expect(
+        updateTotalQuantity(deps, group.projectGroupId, { totalQuantity: 0 }),
+      ).rejects.toBeInstanceOf(ValidationError);
+
+      await expect(
+        updateTotalQuantity(deps, group.projectGroupId, { totalQuantity: 150 }),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe('書き込み後の読み直しに失敗した場合（仕様書9.1）', () => {
+    it('「保存に失敗」とは表示せず、注記を添えて成功として扱う', async () => {
+      const group = await seedProject({ totalQuantity: 100 });
+      let calls = 0;
+      const loadAll = adapter.loadAll.bind(adapter);
+      vi.spyOn(adapter, 'loadAll').mockImplementation(async () => {
+        calls += 1;
+        // 1回目（検証用の読み込み）は通し、書き込み後の読み直しだけ失敗させる。
+        if (calls >= 2) {
+          throw new Error('読み直しに失敗');
+        }
+        return loadAll();
+      });
+
+      const { dataset } = await updateTotalQuantity(deps, group.projectGroupId, {
+        totalQuantity: 150,
+      });
+
+      // 書き込みは成功しているので、画面へ流す内容が無いだけである。
+      expect(dataset).toBeNull();
+      const status = persistence.getStatus();
+      expect(status.state).toBe(SAVE_STATE.SAVED);
+      expect(status.message).not.toContain('失敗');
+      expect(status.details.join('')).toContain('読み直し');
     });
   });
 

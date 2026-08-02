@@ -249,10 +249,6 @@
   cursor: pointer;
 }
 
-.suggest {
-  display: block;
-}
-
 /* 表内から詳細へ移動するための文字リンク。見た目はリンク、実体はボタン。 */
 .link {
   padding: 0;
