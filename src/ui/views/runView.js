@@ -97,8 +97,16 @@ export function createRunView({ container, store, handlers }) {
   function renderTaskRow(task) {
     const state = taskState(task);
     const summary = summarizeTask(task);
+    const { selection = {} } = store.getState();
+    const current = selection.taskRecordId === task.taskRecordId;
 
-    return el('tr', { dataset: { testid: 'task-row', taskRecordId: task.taskRecordId } }, [
+    const rowAttrs = {
+      class: current ? 'table__row--selected' : '',
+      'aria-current': current ? 'true' : 'false',
+      dataset: { testid: 'task-row', taskRecordId: task.taskRecordId },
+    };
+
+    return el('tr', rowAttrs, [
       el('td', {}, [
         el('button', {
           type: 'button',

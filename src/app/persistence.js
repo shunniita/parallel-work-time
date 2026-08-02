@@ -1,12 +1,17 @@
 /**
  * 保存の一元化と成否通知（仕様書9.1）。
  *
- * 保存を伴う操作はすべてここを通す。理由は2つある。
+ * 保存を伴う操作はすべてここを通す。理由は3つある。
  *
  * 1. 保存の成否を画面へ必ず出す。捕捉しないと失敗が沈黙し、記録の欠落に
  *    気づけない（特に `QuotaExceededError`）。
  * 2. 保存後に読み直したデータセットを1か所で作る。アクション側が
  *    `loadAll()` を呼ぶ順序を気にしなくてよくなる。
+ * 3. 「読み込み → メモリ上で改変 → 書き戻し」を直列化する。各操作が独立に
+ *    `loadAll()` してから WorkRun 全体を書き戻す作りのため、同一レコードへの
+ *    2操作が重なると後勝ちで前者が消える（lost update）。Step 6 では
+ *    「項目Aで開始 → 項目Bで開始」のように同一 WorkRun への連続書き込みが
+ *    常態になるため、版管理を持たない現状では直列化で防ぐ。
  *
  * 警告領域との結線は実装計画 Step 11 で行う。ここでは購読の仕組みだけ用意する。
  */
@@ -21,6 +26,10 @@ export const SAVE_STATE = {
   SAVED: 'saved',
   FAILED: 'failed',
 };
+
+/** 書き込みは成功したが読み直しに失敗したときの注記。 */
+const RELOAD_FAILED_DETAIL =
+  '保存後の読み直しに失敗しました。表示が最新でない可能性があります。画面を再読み込みしてください。';
 
 /**
  * 失敗の種別ごとの案内文。
@@ -48,6 +57,13 @@ export function createPersistence(adapter, options = {}) {
   const listeners = new Set();
   let status = { state: SAVE_STATE.IDLE, at: null, message: '', details: [] };
 
+  /**
+   * 直列化の待ち行列。
+   *
+   * 常に「最後に積んだ操作」を指す。次の操作はこれが決着してから始まる。
+   */
+  let tail = Promise.resolve();
+
   function getStatus() {
     return status;
   }
@@ -69,35 +85,76 @@ export function createPersistence(adapter, options = {}) {
   }
 
   /**
-   * 保存処理を実行し、成否を通知したうえで最新のデータセットを返す。
+   * 待ち行列の末尾へ積む。
    *
-   * 失敗した場合は例外を投げ直す。呼び出し側が画面の入力内容を保持したまま
-   * やり直せるようにするためで、通知だけして成功したように見せない。
+   * 前の操作が失敗しても次は実行する。失敗の扱いは積んだ側の責務であり、
+   * 1回の失敗で以降の保存が全部止まる方が有害なため。
    *
-   * @param {() => Promise<void>} write 保存本体
-   * @returns {Promise<object>} `loadAll()` の結果
+   * @param {() => Promise<any>} task
+   * @returns {Promise<any>}
    */
-  async function run(write) {
-    setStatus({ state: SAVE_STATE.SAVING, at: null, message: '保存中…', details: [] });
-    try {
-      await write();
-      const dataset = await adapter.loadAll();
-      setStatus({
-        state: SAVE_STATE.SAVED,
-        at: toIsoSecond(now()),
-        message: '保存しました',
-        details: [],
-      });
-      return dataset;
-    } catch (error) {
-      setStatus({
-        state: SAVE_STATE.FAILED,
-        at: toIsoSecond(now()),
-        message: describeFailure(error),
-        details: error?.details ?? [],
-      });
-      throw error;
-    }
+  function enqueue(task) {
+    const result = tail.then(task, task);
+    tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  /**
+   * 保存を伴う操作を、読み込みから書き込みまで1つの区間として実行する。
+   *
+   * `plan` は待ち行列の中で最新のデータセットを受け取り、検証と組み立てを行って
+   * 書き込み本体（`write`）を返す。読み込みと書き込みの間に別の操作が割り込む
+   * 隙間が無くなるため、後勝ちで前の更新が消えることがない。
+   *
+   * 保存状態を動かすのは `write` を呼ぶ直前からである。`plan` が投げた場合
+   * （検証で弾いた場合）は保存を試みていないので、失敗表示も出さない。
+   *
+   * 書き込み後の読み直しに失敗しても「保存失敗」とはしない。書き込みは成功して
+   * いるため、失敗と表示すると利用者が同じ操作を繰り返す。この場合は成功として
+   * 注記を添え、`dataset` に `null` を返す。呼び出し側は画面へ流し込まない。
+   *
+   * @template T
+   * @param {(dataset: object) => Promise<{write: () => Promise<void>, value?: T}>} plan
+   * @returns {Promise<{dataset: object|null, value: T|undefined}>}
+   */
+  async function run(plan) {
+    return enqueue(async () => {
+      const loaded = await adapter.loadAll();
+      const { write, value } = await plan(loaded);
+
+      setStatus({ state: SAVE_STATE.SAVING, at: null, message: '保存中…', details: [] });
+      try {
+        await write();
+      } catch (error) {
+        setStatus({
+          state: SAVE_STATE.FAILED,
+          at: toIsoSecond(now()),
+          message: describeFailure(error),
+          details: error?.details ?? [],
+        });
+        // 呼び出し側が画面の入力内容を保持したままやり直せるよう投げ直す。
+        // 通知だけして成功したように見せない。
+        throw error;
+      }
+
+      const at = toIsoSecond(now());
+      try {
+        const dataset = await adapter.loadAll();
+        setStatus({ state: SAVE_STATE.SAVED, at, message: '保存しました', details: [] });
+        return { dataset, value };
+      } catch {
+        setStatus({
+          state: SAVE_STATE.SAVED,
+          at,
+          message: '保存しました',
+          details: [RELOAD_FAILED_DETAIL],
+        });
+        return { dataset: null, value };
+      }
+    });
   }
 
   return { run, getStatus, subscribe };

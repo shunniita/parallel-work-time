@@ -9,17 +9,19 @@
  *
  * 累計超過は警告であって拒否ではない（仕様書8.9.7）。確認を求めたうえで
  * `confirmedOverflow` を付けて呼び直す。
+ *
+ * 描画の方針は `src/app/store.js` の規約に従う。入力欄への打ち込みでは再描画
+ * しない。今回数量に連動する「追加後の累計」の先読みと、選択件数の表示は、
+ * 対象ノードのテキストだけを差し替える。
  */
 
 import { previewQuantity, summarizeQuantity } from '../../domain/quantity.js';
 import { generatableTasks } from '../../domain/templateInstantiate.js';
 import { toDateKey } from '../../domain/datetime.js';
-import {
-  QuantityOverflowError,
-  findActiveTemplate,
-} from '../../app/actions/projectActions.js';
-import { ValidationError } from '../../app/actions/templateActions.js';
-import { el, field, replaceChildren } from '../dom.js';
+import { findActiveTemplate } from '../../app/actions/projectActions.js';
+import { QuantityOverflowError, toErrorMessages } from '../../app/errors.js';
+import { el, field, replaceChildren, setNote, setText } from '../dom.js';
+import { toIntegerInput } from '../numeric.js';
 
 /** 実施回の状態表示（仕様書7章）。 */
 const RUN_STATUS_LABEL = {
@@ -56,6 +58,14 @@ export function createProjectView({ container, store, actions, handlers, now }) 
     /** @type {{warnings: string[], retry: () => Promise<void>}|null} */
     overflow: null,
     busy: false,
+  };
+
+  /** 部分更新で書き換えるノード。`render()` のたびに張り直す。 */
+  const refs = {
+    /** @type {HTMLElement|null} 今回数量に連動する「追加後の累計」の先読み */
+    quantityPreview: null,
+    /** @type {HTMLElement|null} 生成する作業項目の選択件数 */
+    taskSelectionLegend: null,
   };
 
   function reset() {
@@ -127,10 +137,8 @@ export function createProjectView({ container, store, actions, handlers, now }) 
           warnings: error.warnings,
           retry: () => submit((options) => operation({ ...options, confirmedOverflow: true })),
         };
-      } else if (error instanceof ValidationError) {
-        local.errors = error.errors;
       } else {
-        local.errors = [`保存: ${error?.message ?? String(error)}`];
+        local.errors = toErrorMessages(error);
       }
     }
     local.busy = false;
@@ -164,7 +172,7 @@ export function createProjectView({ container, store, actions, handlers, now }) 
     await submit(async ({ confirmedOverflow }) => {
       const { workRun } = await actions.createWorkRun(group.projectGroupId, {
         workDate: draft.workDate,
-        runQuantity: Number.parseInt(draft.runQuantity, 10),
+        runQuantity: toIntegerInput(draft.runQuantity),
         excludedTaskDefinitionIds: [...draft.excluded],
         confirmedOverflow,
       });
@@ -180,7 +188,7 @@ export function createProjectView({ container, store, actions, handlers, now }) 
     if (group === null || local.totalQuantityDraft === null) {
       return;
     }
-    const next = Number.parseInt(local.totalQuantityDraft, 10);
+    const next = toIntegerInput(local.totalQuantityDraft);
     await submit(async ({ confirmedOverflow }) => {
       await actions.updateTotalQuantity(group.projectGroupId, {
         totalQuantity: next,
@@ -195,7 +203,7 @@ export function createProjectView({ container, store, actions, handlers, now }) 
       return;
     }
     const runId = local.editingRunId;
-    const next = Number.parseInt(local.runQuantityDraft, 10);
+    const next = toIntegerInput(local.runQuantityDraft);
     await submit(async ({ confirmedOverflow }) => {
       await actions.updateRunQuantity(runId, {
         runQuantity: next,
@@ -419,6 +427,46 @@ export function createProjectView({ container, store, actions, handlers, now }) 
   }
 
   /**
+   * 今回数量から「追加後の累計」の先読み文言を組み立てる（仕様書8.2.5）。
+   *
+   * 整数として読めない間は空にして注記ごと隠す。入力中に毎回この文字列を作り
+   * 直し、`setNote` でノードへ流し込む。
+   *
+   * @param {object} group
+   * @param {object[]} runs
+   * @returns {{text: string, warn: boolean}}
+   */
+  function quantityPreviewState(group, runs) {
+    const parsed = toIntegerInput(local.runDraft?.runQuantity);
+    if (!Number.isInteger(parsed)) {
+      return { text: '', warn: false };
+    }
+    const preview = previewQuantity(group, runs, { runQuantity: parsed });
+    return preview.exceeded
+      ? {
+          text: `追加後の累計 ${preview.accumulated} は総予定数を ${preview.overBy} 超えます。`,
+          warn: true,
+        }
+      : {
+          text: `追加後の累計 ${preview.accumulated} ／ 残数 ${preview.remaining}`,
+          warn: false,
+        };
+  }
+
+  /**
+   * 生成する作業項目の選択件数（仕様書8.3.2）。
+   *
+   * @returns {string}
+   */
+  function taskSelectionLabel() {
+    const draft = local.runDraft;
+    if (draft === null) {
+      return '';
+    }
+    return `生成する作業項目（${draft.generatable.length - draft.excluded.size} / ${draft.generatable.length}件）`;
+  }
+
+  /**
    * 実施回追加フォーム（仕様書8.2.4、8.3.1、8.3.2）。
    */
   function renderRunForm(group, runs) {
@@ -440,11 +488,13 @@ export function createProjectView({ container, store, actions, handlers, now }) 
     }
 
     const draft = local.runDraft;
-    const parsedQuantity = Number.parseInt(draft.runQuantity, 10);
-    const preview = Number.isInteger(parsedQuantity)
-      ? previewQuantity(group, runs, { runQuantity: parsedQuantity })
-      : null;
-    const selectedCount = draft.generatable.length - draft.excluded.size;
+
+    // 先読みと選択件数は、入力のたびにここだけを書き換える。要素は常に置いて
+    // おき、内容が空のときは `setNote` が `hidden` にする。作り直さないので
+    // 打ち込み中の入力欄が生き残る。
+    refs.quantityPreview = el('p', { dataset: { testid: 'quantity-preview' } });
+    setNote(refs.quantityPreview, quantityPreviewState(group, runs));
+    refs.taskSelectionLegend = el('legend', { text: taskSelectionLabel() });
 
     return el('section', { class: 'card', dataset: { testid: 'run-form' } }, [
       el('h3', { class: 'card__title', text: '実施回を追加' }),
@@ -478,21 +528,15 @@ export function createProjectView({ container, store, actions, handlers, now }) 
             on: {
               input: (event) => {
                 draft.runQuantity = event.target.value;
-                // 累計の見込みを出すため描き直す。
-                render();
+                // 累計の見込みは注記1つの書き換えで足りる。ここで `render()` を
+                // 呼ぶと打ち込み中の入力欄ごと消え、1文字目でフォーカスが外れる。
+                setNote(refs.quantityPreview, quantityPreviewState(group, runs));
               },
             },
           }),
         }),
       ]),
-      preview !== null &&
-        el('p', {
-          class: preview.exceeded ? 'note note--warn' : 'note',
-          dataset: { testid: 'quantity-preview' },
-          text: preview.exceeded
-            ? `追加後の累計 ${preview.accumulated} は総予定数を ${preview.overBy} 超えます。`
-            : `追加後の累計 ${preview.accumulated} ／ 残数 ${preview.remaining}`,
-        }),
+      refs.quantityPreview,
       draft.generatable.length === 0
         ? el('p', {
             class: 'note note--warn',
@@ -502,9 +546,7 @@ export function createProjectView({ container, store, actions, handlers, now }) 
               'テンプレート画面で登録してください。',
           })
         : el('fieldset', { class: 'fieldset', dataset: { testid: 'task-selection' } }, [
-            el('legend', {
-              text: `生成する作業項目（${selectedCount} / ${draft.generatable.length}件）`,
-            }),
+            refs.taskSelectionLegend,
             el('p', {
               class: 'note',
               text: '無効化された作業項目は候補に出ません。不要な項目はここで外せます。',
@@ -529,7 +571,9 @@ export function createProjectView({ container, store, actions, handlers, now }) 
                           } else {
                             draft.excluded.add(definition.taskDefinitionId);
                           }
-                          render();
+                          // 変わるのは件数の表示だけ。描き直すと操作した
+                          // チェックボックスからフォーカスが外れる。
+                          setText(refs.taskSelectionLegend, taskSelectionLabel());
                         },
                       },
                     }),
@@ -636,6 +680,11 @@ export function createProjectView({ container, store, actions, handlers, now }) 
   }
 
   function render() {
+    // 前回の描画で作ったノードは捨てられる。部分更新が外れたノードを掴んだまま
+    // 書き換え続けないよう、参照をここで切る。
+    refs.quantityPreview = null;
+    refs.taskSelectionLegend = null;
+
     const group = selectedGroup();
     if (group === null) {
       replaceChildren(container, [

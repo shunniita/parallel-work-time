@@ -14,6 +14,7 @@ import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const MIME_TYPES = new Map(
   Object.entries({
@@ -46,18 +47,35 @@ function parseArgs(argv) {
 }
 
 /**
- * URLのパスをルート配下の実ファイルへ解決する。
+ * 要求URLからパス部分を取り出してデコードする。
+ *
+ * `/%` のような不正シーケンスで `decodeURIComponent` は `URIError` を投げる。
+ * async ハンドラ内で素通しすると unhandled rejection になりプロセスごと落ちる
+ * （E2E 実行中なら残り全部が巻き添えになる）ため、ここで捕まえて 400 に落とす。
+ *
+ * @param {string} urlPath
+ * @returns {string|null} URLエンコードが不正な場合は null
+ */
+function decodeUrlPath(urlPath) {
+  try {
+    return decodeURIComponent(urlPath.split('?')[0].split('#')[0]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * デコード済みのパスをルート配下の実ファイルへ解決する。
  *
  * `..` を含む要求でルート外へ出られないよう、正規化後の絶対パスがルートで
  * 始まることを確認する。
  *
  * @param {string} root
- * @param {string} urlPath
+ * @param {string} decodedPath
  * @returns {string|null} ルート外を指す場合は null
  */
-function resolveWithinRoot(root, urlPath) {
-  const decoded = decodeURIComponent(urlPath.split('?')[0].split('#')[0]);
-  const relative = normalize(decoded).replace(/^([/\\])+/, '');
+function resolveWithinRoot(root, decodedPath) {
+  const relative = normalize(decodedPath).replace(/^([/\\])+/, '');
   const absolute = resolve(join(root, relative));
   const rootWithSep = root.endsWith(sep) ? root : root + sep;
   if (absolute !== root && !absolute.startsWith(rootWithSep)) {
@@ -83,7 +101,13 @@ export function createStaticServer(root) {
       return;
     }
 
-    const target = resolveWithinRoot(root, request.url ?? '/');
+    const decodedPath = decodeUrlPath(request.url ?? '/');
+    if (decodedPath === null) {
+      send(response, 400, 'URLのエンコードが不正');
+      return;
+    }
+
+    const target = resolveWithinRoot(root, decodedPath);
     if (target === null) {
       send(response, 403, 'ルート外は配信しない');
       return;
@@ -117,8 +141,12 @@ export function createStaticServer(root) {
   });
 }
 
-const { port, root } = parseArgs(process.argv.slice(2));
-const server = createStaticServer(root);
-server.listen(port, '127.0.0.1', () => {
-  process.stdout.write(`静的配信を開始した: http://127.0.0.1:${port}/ （root: ${root}）\n`);
-});
+// 直接起動されたときだけ待ち受ける。読み込むだけでポートを掴むと、
+// `createStaticServer` を単体テストから使えない。
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const { port, root } = parseArgs(process.argv.slice(2));
+  const server = createStaticServer(root);
+  server.listen(port, '127.0.0.1', () => {
+    process.stdout.write(`静的配信を開始した: http://127.0.0.1:${port}/ （root: ${root}）\n`);
+  });
+}

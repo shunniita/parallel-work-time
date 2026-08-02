@@ -229,10 +229,10 @@ export function createTree({ container, store, handlers }) {
    * @param {{projectGroupId?: string, runId?: string}} target
    */
   function expand(target) {
-    if (target.projectGroupId !== undefined) {
+    if (target.projectGroupId !== undefined && target.projectGroupId !== null) {
       expanded.add(`group:${target.projectGroupId}`);
     }
-    if (target.runId !== undefined) {
+    if (target.runId !== undefined && target.runId !== null) {
       expanded.add(`run:${target.runId}`);
     }
   }
