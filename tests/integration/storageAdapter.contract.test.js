@@ -208,6 +208,41 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
       expect(active.map((template) => template.templateId)).toEqual(['template-v2']);
     });
 
+    it('実施回と変更履歴をまとめて保存できる（区間削除の形、仕様書11章）', async () => {
+      // 区間削除は「区間を除いた実施回」と「履歴1件」を同時に成立させる必要が
+      // ある。片方だけ書かれると、履歴の無い削除か、削除されていない履歴が残る。
+      const run = workRun({ withTaskDetail: true });
+
+      await adapter.saveEntities([
+        { type: ENTITY_TYPE.WORK_RUNS, entity: { ...run, tasks: [] } },
+        {
+          type: ENTITY_TYPE.CHANGE_HISTORY,
+          entity: historyEntry({ entityType: 'interval', operation: 'intervalDeleted' }),
+        },
+      ]);
+
+      const dataset = await adapter.loadAll();
+      expect(dataset.workRuns[0].tasks).toEqual([]);
+      expect(dataset.changeHistory).toHaveLength(1);
+    });
+
+    it('実施回と変更履歴のどちらかが不正なら両方とも反映しない', async () => {
+      const run = workRun({ withTaskDetail: true });
+      await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, run);
+      const { historyId, ...withoutKey } = historyEntry();
+
+      await expect(
+        adapter.saveEntities([
+          { type: ENTITY_TYPE.WORK_RUNS, entity: { ...run, tasks: [] } },
+          { type: ENTITY_TYPE.CHANGE_HISTORY, entity: withoutKey },
+        ]),
+      ).rejects.toMatchObject({ kind: STORAGE_ERROR_KIND.VALIDATION });
+
+      const dataset = await adapter.loadAll();
+      expect(dataset.workRuns[0].tasks).toHaveLength(1);
+      expect(dataset.changeHistory).toEqual([]);
+    });
+
     it('空配列は何もしない', async () => {
       await expect(adapter.saveEntities([])).resolves.toBeUndefined();
       expect((await adapter.loadAll()).taskTemplates).toEqual([]);
