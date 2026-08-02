@@ -12,14 +12,27 @@
  */
 
 /**
+ * 10進数の見た目をしているか。
+ *
+ * `Number()` は `0x10` を16、`0b11` を3、`Infinity` を無限大として受け付ける。
+ * 数量欄へこれらを打つ利用者はおらず、通しても混乱の元にしかならないため、
+ * 変換の前に形で弾く。指数表記（`1e3`）は `type="number"` の入力欄が受け付ける
+ * 表記なので許す。
+ */
+const DECIMAL_NUMBER_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+/**
  * 必須の整数入力を変換する。空欄も不正値として `NaN` を返す。
  *
  * @param {unknown} value 入力欄の `value`
  * @returns {number} 整数、または `NaN`
  */
 export function toIntegerInput(value) {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? value : Number.NaN;
+  }
   const text = String(value ?? '').trim();
-  if (text === '') {
+  if (!DECIMAL_NUMBER_PATTERN.test(text)) {
     return Number.NaN;
   }
   const parsed = Number(text);

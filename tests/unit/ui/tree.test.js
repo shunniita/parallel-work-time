@@ -1,0 +1,390 @@
+// @vitest-environment happy-dom
+
+/**
+ * 階層ツリーの単体テスト（仕様書12.1、12.2）。
+ *
+ * 並べ替え・展開・アーカイブ除外は、E2E で確かめると1件ごとに実ブラウザの起動が
+ * 要る割に、実体は組み立ての分岐でしかない。ここで固定して E2E は導線の確認に
+ * 絞る。
+ */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createTree } from '../../../src/ui/tree.js';
+
+/** 案件グループの雛形。 */
+function projectGroup(overrides = {}) {
+  return {
+    projectGroupId: 'group-1',
+    projectId: 'PJ-0001',
+    targetType: '対象種別A',
+    variant: '標準',
+    totalQuantity: 100,
+    createdAt: '2026-08-01T09:00:00+09:00',
+    ...overrides,
+  };
+}
+
+/** 実施回の雛形。 */
+function workRun(overrides = {}) {
+  return {
+    runId: 'run-1',
+    projectGroupId: 'group-1',
+    workDate: '2026-08-01',
+    runQuantity: 10,
+    status: 'working',
+    templateVersion: 1,
+    createdAt: '2026-08-01T09:00:00+09:00',
+    tasks: [],
+    ...overrides,
+  };
+}
+
+/** 作業項目実績の雛形。 */
+function taskRecord(overrides = {}) {
+  return {
+    taskRecordId: 'task-1',
+    taskDefinitionId: 'def-1',
+    name: '受入確認',
+    externalCode: 'X-100',
+    order: 1,
+    manuallyAdded: false,
+    intervals: [],
+    directEntries: [],
+    ...overrides,
+  };
+}
+
+/**
+ * ツリーを描いて、その container と handlers を返す。
+ *
+ * @param {{projectGroups?: object[], workRuns?: object[], selection?: object}} state
+ */
+function renderTree(state = {}) {
+  const container = document.createElement('div');
+  const store = {
+    getState: () => ({
+      dataset: {
+        projectGroups: state.projectGroups ?? [],
+        workRuns: state.workRuns ?? [],
+      },
+      selection: state.selection ?? {
+        projectGroupId: null,
+        runId: null,
+        taskRecordId: null,
+      },
+    }),
+  };
+  const handlers = {
+    onSelectProject: vi.fn(),
+    onSelectRun: vi.fn(),
+    onSelectTask: vi.fn(),
+    onCreateProject: vi.fn(),
+  };
+
+  const tree = createTree({ container, store, handlers });
+  tree.render();
+  return { container, tree, handlers };
+}
+
+/** `data-testid` で引く。 */
+function all(container, testid) {
+  return [...container.querySelectorAll(`[data-testid="${testid}"]`)];
+}
+
+function texts(container, testid) {
+  return all(container, testid).map((node) => node.textContent);
+}
+
+describe('createTree() の描画', () => {
+  it('案件が無ければ案内を出す', () => {
+    const { container } = renderTree();
+
+    expect(all(container, 'tree-empty')).toHaveLength(1);
+    expect(all(container, 'tree')).toHaveLength(0);
+  });
+
+  it('案件を案件IDの昇順で並べる', () => {
+    const { container } = renderTree({
+      projectGroups: [
+        projectGroup({ projectGroupId: 'g-c', projectId: 'PJ-0003' }),
+        projectGroup({ projectGroupId: 'g-a', projectId: 'PJ-0001' }),
+        projectGroup({ projectGroupId: 'g-b', projectId: 'PJ-0002' }),
+      ],
+    });
+
+    expect(texts(container, 'tree-project')).toEqual([
+      'PJ-0001残100',
+      'PJ-0002残100',
+      'PJ-0003残100',
+    ]);
+  });
+
+  it('残数を出し、超過していれば強調する', () => {
+    const { container } = renderTree({
+      projectGroups: [projectGroup({ totalQuantity: 100 })],
+      workRuns: [workRun({ runQuantity: 130 })],
+    });
+
+    const remaining = all(container, 'tree-remaining')[0];
+    expect(remaining.textContent).toBe('残-30');
+    expect(remaining.className).toContain('tree__meta--warn');
+  });
+});
+
+describe('実施回の並びと採番', () => {
+  const groups = [projectGroup()];
+
+  it('作業日、次に作成日時の順に並べる', () => {
+    const { container, tree } = renderTree({
+      projectGroups: groups,
+      workRuns: [
+        workRun({ runId: 'r3', workDate: '2026-08-02', createdAt: '2026-08-02T09:00:00+09:00' }),
+        workRun({ runId: 'r2', workDate: '2026-08-01', createdAt: '2026-08-01T15:00:00+09:00' }),
+        workRun({ runId: 'r1', workDate: '2026-08-01', createdAt: '2026-08-01T09:00:00+09:00' }),
+      ],
+    });
+    tree.expand({ projectGroupId: 'group-1' });
+    tree.render();
+
+    expect(texts(container, 'tree-run')).toEqual([
+      '第1回 2026-08-01作業中',
+      '第2回 2026-08-01作業中',
+      '第3回 2026-08-02作業中',
+    ]);
+    expect(all(container, 'tree-run').map((node) => node.dataset.runId)).toEqual([
+      'r1',
+      'r2',
+      'r3',
+    ]);
+  });
+
+  it('アーカイブ済みの実施回は出さない（実装計画2.2(1)）', () => {
+    const { container, tree } = renderTree({
+      projectGroups: groups,
+      workRuns: [
+        workRun({ runId: 'r1', workDate: '2026-08-01' }),
+        workRun({ runId: 'r2', workDate: '2026-08-02', status: 'archived' }),
+        workRun({ runId: 'r3', workDate: '2026-08-03' }),
+      ],
+    });
+    tree.expand({ projectGroupId: 'group-1' });
+    tree.render();
+
+    expect(all(container, 'tree-run').map((node) => node.dataset.runId)).toEqual(['r1', 'r3']);
+  });
+
+  it('アーカイブ済みも残数の計算には含める（仕様書8.2.5）', () => {
+    const { container } = renderTree({
+      projectGroups: [projectGroup({ totalQuantity: 100 })],
+      workRuns: [
+        workRun({ runId: 'r1', runQuantity: 30 }),
+        workRun({ runId: 'r2', runQuantity: 20, status: 'archived' }),
+      ],
+    });
+
+    // 非表示と集計対象は別物である。
+    expect(texts(container, 'tree-remaining')).toEqual(['残50']);
+  });
+
+  it('実施回がアーカイブ済みだけなら折りたたみボタンを出さない', () => {
+    const { container } = renderTree({
+      projectGroups: groups,
+      workRuns: [workRun({ status: 'archived' })],
+    });
+
+    expect(all(container, 'tree-toggle')).toHaveLength(0);
+  });
+
+  it('状態バッジを出す', () => {
+    const { container, tree } = renderTree({
+      projectGroups: groups,
+      workRuns: [workRun({ status: 'transferred' })],
+    });
+    tree.expand({ projectGroupId: 'group-1' });
+    tree.render();
+
+    expect(all(container, 'tree-run')[0].textContent).toContain('転記済み');
+  });
+});
+
+describe('展開と折りたたみ', () => {
+  const state = {
+    projectGroups: [projectGroup()],
+    workRuns: [workRun({ tasks: [taskRecord()] })],
+  };
+
+  it('既定ではすべて折りたたむ', () => {
+    const { container } = renderTree(state);
+
+    expect(all(container, 'tree-run')).toHaveLength(0);
+  });
+
+  it('折りたたみボタンで開閉できる', () => {
+    const { container } = renderTree(state);
+
+    all(container, 'tree-toggle')[0].click();
+    expect(all(container, 'tree-run')).toHaveLength(1);
+
+    all(container, 'tree-toggle')[0].click();
+    expect(all(container, 'tree-run')).toHaveLength(0);
+  });
+
+  it('expand() で案件と実施回をまとめて開ける', () => {
+    const { container, tree } = renderTree(state);
+
+    tree.expand({ projectGroupId: 'group-1', runId: 'run-1' });
+    tree.render();
+
+    expect(all(container, 'tree-run')).toHaveLength(1);
+    expect(all(container, 'tree-task')).toHaveLength(1);
+  });
+
+  it('expand() へ null を渡しても余計な展開キーを作らない', () => {
+    const { container, tree } = renderTree(state);
+
+    tree.expand({ projectGroupId: null, runId: null });
+    tree.render();
+
+    expect(all(container, 'tree-run')).toHaveLength(0);
+  });
+
+  it('aria-expanded が開閉に追随する', () => {
+    const { container } = renderTree(state);
+    const toggle = all(container, 'tree-toggle')[0];
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    toggle.click();
+
+    expect(all(container, 'tree-toggle')[0].getAttribute('aria-expanded')).toBe('true');
+  });
+});
+
+describe('選択の表示', () => {
+  const state = {
+    projectGroups: [projectGroup()],
+    workRuns: [workRun({ tasks: [taskRecord()] })],
+  };
+
+  it('選択中の案件を示す', () => {
+    const { container } = renderTree({
+      ...state,
+      selection: { projectGroupId: 'group-1', runId: null, taskRecordId: null },
+    });
+
+    const node = all(container, 'tree-project')[0];
+    expect(node.className).toContain('tree__label--selected');
+    expect(node.getAttribute('aria-current')).toBe('true');
+  });
+
+  it('選択中の作業項目を示す', () => {
+    const { container, tree } = renderTree({
+      ...state,
+      selection: { projectGroupId: 'group-1', runId: 'run-1', taskRecordId: 'task-1' },
+    });
+    tree.expand({ projectGroupId: 'group-1', runId: 'run-1' });
+    tree.render();
+
+    expect(all(container, 'tree-task')[0].getAttribute('aria-current')).toBe('true');
+  });
+
+  it('選択していないノードは aria-current を false にする', () => {
+    const { container } = renderTree(state);
+
+    expect(all(container, 'tree-project')[0].getAttribute('aria-current')).toBe('false');
+  });
+});
+
+describe('作業項目の状態表示（仕様書7.2）', () => {
+  /** 区間を1件持つ作業項目を作る。 */
+  function withInterval(interval) {
+    return taskRecord({ intervals: [interval] });
+  }
+
+  const cases = [
+    ['未着手', taskRecord(), 'notStarted', '○'],
+    [
+      '作業中',
+      withInterval({
+        intervalId: 'i1',
+        type: 'work',
+        startAt: '2026-08-01T09:00:00+09:00',
+        endAt: null,
+        participants: ['甲'],
+      }),
+      'working',
+      '●',
+    ],
+    [
+      '休憩中',
+      withInterval({
+        intervalId: 'i1',
+        type: 'break',
+        startAt: '2026-08-01T09:00:00+09:00',
+        endAt: null,
+        participants: ['甲'],
+      }),
+      'onBreak',
+      '◐',
+    ],
+    [
+      '完了',
+      withInterval({
+        intervalId: 'i1',
+        type: 'work',
+        startAt: '2026-08-01T09:00:00+09:00',
+        endAt: '2026-08-01T10:00:00+09:00',
+        participants: ['甲'],
+      }),
+      'done',
+      '✓',
+    ],
+  ];
+
+  it.each(cases)('%s を記号と data-state で示す', (_label, task, state, mark) => {
+    const { container, tree } = renderTree({
+      projectGroups: [projectGroup()],
+      workRuns: [workRun({ tasks: [task] })],
+    });
+    tree.expand({ projectGroupId: 'group-1', runId: 'run-1' });
+    tree.render();
+
+    const node = all(container, 'tree-task')[0];
+    expect(node.dataset.state).toBe(state);
+    expect(node.textContent).toContain(mark);
+  });
+});
+
+describe('操作の通知', () => {
+  let handlers;
+  let container;
+
+  beforeEach(() => {
+    ({ container, handlers } = renderTree({
+      projectGroups: [projectGroup()],
+      workRuns: [workRun({ tasks: [taskRecord()] })],
+    }));
+  });
+
+  it('新規案件を押すと通知する', () => {
+    all(container, 'new-project')[0].click();
+
+    expect(handlers.onCreateProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('案件を押すと識別子を渡す', () => {
+    all(container, 'tree-project')[0].click();
+
+    expect(handlers.onSelectProject).toHaveBeenCalledWith('group-1');
+  });
+
+  it('実施回と作業項目を押すと識別子を渡す', () => {
+    all(container, 'tree-toggle')[0].click();
+    all(container, 'tree-run')[0].click();
+    expect(handlers.onSelectRun).toHaveBeenCalledWith('run-1');
+
+    all(container, 'tree-toggle')[1].click();
+    all(container, 'tree-task')[0].click();
+    expect(handlers.onSelectTask).toHaveBeenCalledWith('run-1', 'task-1');
+  });
+});
