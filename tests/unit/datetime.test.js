@@ -243,11 +243,68 @@ describe('toDateTimeLocal / fromDateTimeLocal', () => {
     expect(() => fromDateTimeLocal(null, 540)).toThrow(TypeError);
   });
 
-  it('入力欄の値として妥当かを判定できる', () => {
-    expect(isValidDateTimeLocal('2026-07-30T09:00')).toBe(true);
-    expect(isValidDateTimeLocal('2026-07-30T09:00:00')).toBe(true);
-    expect(isValidDateTimeLocal('2026-07-30')).toBe(false);
-    expect(isValidDateTimeLocal(undefined)).toBe(false);
+  describe('オフセットを省略した場合（レビュー指摘 SOL-1）', () => {
+    it('入力された壁時計日時に対応するローカルオフセットを使う', () => {
+      // 現在日時のオフセットではなく、入力日そのもののオフセットで保存する。
+      // 夏時間のある環境で、入力日と現在日の適用状態が違っても瞬間がずれない。
+      expect(fromDateTimeLocal('2026-01-15T09:00:00')).toBe(
+        toIsoSecond(new Date(2026, 0, 15, 9, 0, 0)),
+      );
+      expect(fromDateTimeLocal('2026-08-15T09:00:00')).toBe(
+        toIsoSecond(new Date(2026, 7, 15, 9, 0, 0)),
+      );
+    });
+
+    it('壁時計の値は入力どおりに保たれる', () => {
+      expect(fromDateTimeLocal('2026-01-15T09:00:00').slice(0, 19)).toBe(
+        '2026-01-15T09:00:00',
+      );
+    });
+
+    it('解析し直すと入力した壁時計の瞬間へ戻る', () => {
+      const iso = fromDateTimeLocal('2026-01-15T09:00:00');
+
+      expect(parseIso(iso)).toBe(new Date(2026, 0, 15, 9, 0, 0).getTime());
+    });
+  });
+
+  describe('妥当性判定と変換の一致（レビュー指摘 SOL-3）', () => {
+    const values = [
+      '2026-07-30T09:00',
+      '2026-07-30T09:00:00',
+      '2026-02-30T09:00',
+      '2026-13-01T09:00',
+      '2026-07-30T25:00',
+      '2026-07-30',
+      '2026/07/30 09:00',
+      '',
+      null,
+      undefined,
+    ];
+
+    it.each(values)('%o の判定と変換可否が一致する', (value) => {
+      let converted = true;
+      try {
+        fromDateTimeLocal(value, 540);
+      } catch {
+        converted = false;
+      }
+
+      expect(isValidDateTimeLocal(value)).toBe(converted);
+    });
+
+    it('実在しない日付を妥当としない', () => {
+      expect(isValidDateTimeLocal('2026-02-30T09:00')).toBe(false);
+      expect(isValidDateTimeLocal('2026-02-29T09:00')).toBe(false);
+      expect(isValidDateTimeLocal('2028-02-29T09:00')).toBe(true);
+    });
+
+    it('形式が妥当な値を受け付ける', () => {
+      expect(isValidDateTimeLocal('2026-07-30T09:00')).toBe(true);
+      expect(isValidDateTimeLocal('2026-07-30T09:00:00')).toBe(true);
+      expect(isValidDateTimeLocal('2026-07-30')).toBe(false);
+      expect(isValidDateTimeLocal(undefined)).toBe(false);
+    });
   });
 });
 
