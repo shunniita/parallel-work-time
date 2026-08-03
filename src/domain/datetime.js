@@ -14,6 +14,19 @@
  * その値を扱うのは {@link localOffsetMinutes} の内部だけに閉じ込める。同一
  * モジュール内で2つの規約が混ざると、オフセット計算を触るたびに符号の取り違えが
  * 起きる（レビュー指摘 F-25）。
+ *
+ * ## 夏時間を想定しない
+ *
+ * 本ツールは夏時間のない地域（日本）での利用を前提とする。夏時間の切替に伴う
+ * 「存在しない時刻」と「2回存在する時刻」に専用の扱いは設けない（レビュー指摘
+ * SOL-1 の決定）。
+ *
+ * ただし、オフセットは**入力された壁時計日時に対応するもの**を求める。現在日時や
+ * 別の日のオフセットを流用すると、夏時間のある環境で保存される瞬間が1時間ずれる
+ * ためである。この求め方であれば、夏時間の有無にかかわらず入力どおりの瞬間が
+ * 保存される。副次的に、存在しない時刻は {@link isValidDateTimeLocal} と
+ * {@link fromDateTimeLocal} が拒否し、2回存在する時刻は処理系が選ぶ側として
+ * 保存される。日本ではどちらも起こらない。
  */
 
 /** オフセット付きISO 8601（秒精度）。ミリ秒や日付のみの形式は受け付けない。 */
@@ -230,30 +243,75 @@ export function toDateTimeLocal(iso) {
 }
 
 /**
- * `<input type="datetime-local">` の値をオフセット付きISO 8601 へ変換する。
+ * `<input type="datetime-local">` の値を解析する。
+ *
+ * 形式と、その壁時計日時が実在することの両方を見る。判定を1か所へ置き、
+ * {@link isValidDateTimeLocal} と {@link fromDateTimeLocal} で結果が食い違わない
+ * ようにする（レビュー指摘 SOL-3）。「妥当と判定したのに変換で例外」という境界を
+ * 画面に作らないためである。
  *
  * 秒が省略された値（`2026-07-30T09:00`）は0秒として補う。ブラウザは `step` の
  * 指定によって秒を返したり返さなかったりする。
  *
- * オフセットは呼び出し側が渡す。入力欄の値だけでは決まらないためである。既存の
- * 区間を編集する場合はその区間のオフセット（{@link offsetMinutesOf}）を、新規
- * 入力なら現在のローカルオフセット（{@link localOffsetMinutes}）を渡す。
+ * `Date` は 2026-02-30 のような値を3月2日へ繰り上げて受け入れるため、壁時計の
+ * 各項目が保たれているかで実在を判定する。
+ *
+ * @param {unknown} value
+ * @returns {{date: Date, wallClock: string}|null} 妥当でなければ null
+ */
+function parseDateTimeLocal(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const matched = DATE_TIME_LOCAL_PATTERN.exec(value);
+  if (matched === null) {
+    return null;
+  }
+  const [, year, month, day, hours, minutes, seconds = '00'] = matched;
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hours),
+    Number(minutes),
+    Number(seconds),
+  );
+  const preserved =
+    date.getFullYear() === Number(year) &&
+    date.getMonth() + 1 === Number(month) &&
+    date.getDate() === Number(day) &&
+    date.getHours() === Number(hours) &&
+    date.getMinutes() === Number(minutes) &&
+    date.getSeconds() === Number(seconds);
+  if (!preserved) {
+    return null;
+  }
+  return { date, wallClock: `${year}-${month}-${day}T${hours}:${minutes}:${seconds}` };
+}
+
+/**
+ * `<input type="datetime-local">` の値をオフセット付きISO 8601 へ変換する。
+ *
+ * オフセットを省略すると、**入力された壁時計日時に対応するローカルオフセット**を
+ * 使う。現在日時のオフセットを流用しないのは、夏時間のある環境で入力日と現在日の
+ * 適用状態が違うと、保存される瞬間がずれるためである（レビュー指摘 SOL-1）。
+ *
+ * `offsetMinutes` を明示できるのは、保存済みの区間が持つオフセット
+ * （{@link offsetMinutesOf}）で書き戻したい場合と、試験を実行環境の
+ * タイムゾーンから切り離したい場合のためである。
  *
  * @param {string} value
- * @param {number} offsetMinutes UTCより東が正
+ * @param {number} [offsetMinutes] UTCより東が正。省略時は入力日時のローカル値
  * @returns {string}
  */
 export function fromDateTimeLocal(value, offsetMinutes) {
-  if (typeof value !== 'string' || !DATE_TIME_LOCAL_PATTERN.test(value)) {
+  const parsed = parseDateTimeLocal(value);
+  if (parsed === null) {
     throw new TypeError(`datetime-local の値が必要: ${value}`);
   }
-  const [, year, month, day, hours, minutes, seconds] =
-    DATE_TIME_LOCAL_PATTERN.exec(value);
-  const iso =
-    `${year}-${month}-${day}T${hours}:${minutes}:${seconds ?? '00'}` +
-    formatOffset(offsetMinutes);
-  // 2026-02-30 のような実在しない日付は入力欄でも作れる。保存形式として
-  // 妥当かどうかは1か所で確かめる。
+  const offset = offsetMinutes ?? localOffsetMinutes(parsed.date);
+  const iso = `${parsed.wallClock}${formatOffset(offset)}`;
+  // 保存形式として妥当かどうかは最後にもう一度確かめる。
   assertIso(iso);
   return iso;
 }
@@ -261,13 +319,14 @@ export function fromDateTimeLocal(value, offsetMinutes) {
 /**
  * `<input type="datetime-local">` の値として妥当かどうかを判定する。
  *
- * 画面が保存前に入力欄の状態を見るために使う。
+ * 画面が保存前に入力欄の状態を見るために使う。{@link fromDateTimeLocal} が
+ * 受け付ける値と一致する。
  *
  * @param {unknown} value
  * @returns {boolean}
  */
 export function isValidDateTimeLocal(value) {
-  return typeof value === 'string' && DATE_TIME_LOCAL_PATTERN.test(value);
+  return parseDateTimeLocal(value) !== null;
 }
 
 /**
