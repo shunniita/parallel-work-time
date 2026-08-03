@@ -6,6 +6,14 @@
  *
  * このモジュールは現在時刻を自分で取得しない。現在日時が必要な処理は
  * 呼び出し側から Date を受け取る。
+ *
+ * ## オフセットの符号規約
+ *
+ * 公開APIの `offsetMinutes` はすべて ISO 8601 と同じ符号で扱う（UTCより東が正、
+ * JST は `+540`）。`Date#getTimezoneOffset()` は逆符号（西が正）を返すため、
+ * その値を扱うのは {@link localOffsetMinutes} の内部だけに閉じ込める。同一
+ * モジュール内で2つの規約が混ざると、オフセット計算を触るたびに符号の取り違えが
+ * 起きる（レビュー指摘 F-25）。
  */
 
 /** オフセット付きISO 8601（秒精度）。ミリ秒や日付のみの形式は受け付けない。 */
@@ -15,6 +23,9 @@ const ISO_SECOND_PATTERN =
 /** 日付のみの形式（実施回の作業日、仕様書6.5）。 */
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/** `<input type="datetime-local">` の値。秒は省略されうる（仕様書8.4.3、8.4.4）。 */
+const DATE_TIME_LOCAL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
 function pad2(value) {
   return String(value).padStart(2, '0');
 }
@@ -22,8 +33,9 @@ function pad2(value) {
 /**
  * UTCからの分差をISO 8601のオフセット表記へ変換する。
  *
- * 引数は `Date#getTimezoneOffset()` と同じ符号（UTCより西が正）で受け取るため、
- * 出力の符号は反転する。JST（-540）は `+09:00` になる。
+ * 引数は ISO 8601 と同じ符号（UTCより東が正）で受け取る。JST（540）は
+ * `+09:00` になる。`Date#getTimezoneOffset()` の値をそのまま渡してはならない。
+ * 符号が逆であり、{@link localOffsetMinutes} を経由する。
  *
  * @param {number} offsetMinutes
  * @returns {string}
@@ -32,9 +44,25 @@ export function formatOffset(offsetMinutes) {
   if (!Number.isInteger(offsetMinutes)) {
     throw new TypeError(`オフセットは整数の分で指定する: ${offsetMinutes}`);
   }
-  const sign = offsetMinutes > 0 ? '-' : '+';
+  const sign = offsetMinutes < 0 ? '-' : '+';
   const absolute = Math.abs(offsetMinutes);
   return `${sign}${pad2(Math.floor(absolute / 60))}:${pad2(absolute % 60)}`;
+}
+
+/**
+ * Date のローカルタイムゾーンのオフセットを ISO 規約の分で返す。
+ *
+ * `Date#getTimezoneOffset()` を呼ぶのはここだけである。呼び出し側は符号の
+ * 反転を気にしなくてよい。
+ *
+ * @param {Date} date
+ * @returns {number} UTCより東が正。JST なら 540
+ */
+export function localOffsetMinutes(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    throw new TypeError(`有効な Date が必要: ${date}`);
+  }
+  return -date.getTimezoneOffset();
 }
 
 /**
@@ -51,7 +79,7 @@ export function toIsoSecond(date) {
   }
   const datePart = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
   const timePart = `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
-  return `${datePart}T${timePart}${formatOffset(date.getTimezoneOffset())}`;
+  return `${datePart}T${timePart}${formatOffset(localOffsetMinutes(date))}`;
 }
 
 /**
@@ -94,15 +122,30 @@ function parseOffsetMinutes(offsetPart) {
 }
 
 /**
+ * ISO 8601 が持つオフセットを分で返す。
+ *
+ * @param {string} iso
+ * @returns {number} UTCより東が正
+ */
+export function offsetMinutesOf(iso) {
+  assertIso(iso);
+  return parseOffsetMinutes(iso.slice(19));
+}
+
+function assertIso(value) {
+  if (!isValidIsoSecond(value)) {
+    throw new TypeError(`オフセット付きISO 8601（秒精度）が必要: ${value}`);
+  }
+}
+
+/**
  * ISO 8601 をエポックミリ秒へ変換する。
  *
  * @param {string} value
  * @returns {number}
  */
 export function parseIso(value) {
-  if (!isValidIsoSecond(value)) {
-    throw new TypeError(`オフセット付きISO 8601（秒精度）が必要: ${value}`);
-  }
+  assertIso(value);
   return Date.parse(value);
 }
 
@@ -129,6 +172,105 @@ export function diffSeconds(startIso, endIso) {
 }
 
 /**
+ * 2つの日時の前後を比較する。
+ *
+ * 大小の判定を各所で `parseIso` の数値比較として書くと、比較のたびに解析の
+ * 失敗をどう扱うかが散らばる。ここへ集約する（レビュー指摘 F-25）。
+ * オフセットが異なっていても実時刻で比較する。
+ *
+ * @param {string} left
+ * @param {string} right
+ * @returns {number} `left` が前なら負、同時刻なら0、後なら正
+ */
+export function compareIso(left, right) {
+  const difference = parseIso(left) - parseIso(right);
+  if (difference === 0) {
+    return 0;
+  }
+  return difference < 0 ? -1 : 1;
+}
+
+/**
+ * 日時へ秒を加減算する。
+ *
+ * 元の値が持つオフセットを保つ。壁時計の値だけが動くため、日をまたいでも
+ * 表示上の日付が正しく繰り上がる（仕様書8.4.8）。
+ *
+ * @param {string} iso
+ * @param {number} seconds 負数で過去へ戻す
+ * @returns {string}
+ */
+export function addSeconds(iso, seconds) {
+  if (!Number.isInteger(seconds)) {
+    throw new TypeError(`秒は整数で指定する: ${seconds}`);
+  }
+  const offsetMinutes = offsetMinutesOf(iso);
+  const shifted = new Date(parseIso(iso) + seconds * 1000 + offsetMinutes * 60 * 1000);
+  const datePart =
+    `${shifted.getUTCFullYear()}-${pad2(shifted.getUTCMonth() + 1)}-` +
+    `${pad2(shifted.getUTCDate())}`;
+  const timePart =
+    `${pad2(shifted.getUTCHours())}:${pad2(shifted.getUTCMinutes())}:` +
+    `${pad2(shifted.getUTCSeconds())}`;
+  return `${datePart}T${timePart}${formatOffset(offsetMinutes)}`;
+}
+
+/**
+ * ISO 8601 を `<input type="datetime-local">` の値へ変換する（仕様書8.4.4）。
+ *
+ * オフセットは落とす。入力欄は壁時計の値しか扱えないため、書き戻すときの
+ * オフセットは {@link fromDateTimeLocal} の引数で明示する。
+ *
+ * @param {string} iso
+ * @returns {string} 例: `2026-07-30T09:00:00`
+ */
+export function toDateTimeLocal(iso) {
+  assertIso(iso);
+  return iso.slice(0, 19);
+}
+
+/**
+ * `<input type="datetime-local">` の値をオフセット付きISO 8601 へ変換する。
+ *
+ * 秒が省略された値（`2026-07-30T09:00`）は0秒として補う。ブラウザは `step` の
+ * 指定によって秒を返したり返さなかったりする。
+ *
+ * オフセットは呼び出し側が渡す。入力欄の値だけでは決まらないためである。既存の
+ * 区間を編集する場合はその区間のオフセット（{@link offsetMinutesOf}）を、新規
+ * 入力なら現在のローカルオフセット（{@link localOffsetMinutes}）を渡す。
+ *
+ * @param {string} value
+ * @param {number} offsetMinutes UTCより東が正
+ * @returns {string}
+ */
+export function fromDateTimeLocal(value, offsetMinutes) {
+  if (typeof value !== 'string' || !DATE_TIME_LOCAL_PATTERN.test(value)) {
+    throw new TypeError(`datetime-local の値が必要: ${value}`);
+  }
+  const [, year, month, day, hours, minutes, seconds] =
+    DATE_TIME_LOCAL_PATTERN.exec(value);
+  const iso =
+    `${year}-${month}-${day}T${hours}:${minutes}:${seconds ?? '00'}` +
+    formatOffset(offsetMinutes);
+  // 2026-02-30 のような実在しない日付は入力欄でも作れる。保存形式として
+  // 妥当かどうかは1か所で確かめる。
+  assertIso(iso);
+  return iso;
+}
+
+/**
+ * `<input type="datetime-local">` の値として妥当かどうかを判定する。
+ *
+ * 画面が保存前に入力欄の状態を見るために使う。
+ *
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isValidDateTimeLocal(value) {
+  return typeof value === 'string' && DATE_TIME_LOCAL_PATTERN.test(value);
+}
+
+/**
  * Date をローカル日付の `YYYY-MM-DD` へ変換する。
  *
  * @param {Date} date
@@ -145,9 +287,7 @@ export function toDateKey(date) {
  * @returns {string}
  */
 export function dateKeyOf(iso) {
-  if (!isValidIsoSecond(iso)) {
-    throw new TypeError(`オフセット付きISO 8601（秒精度）が必要: ${iso}`);
-  }
+  assertIso(iso);
   return iso.slice(0, 10);
 }
 

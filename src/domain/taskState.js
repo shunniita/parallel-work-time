@@ -20,6 +20,20 @@ export const TASK_STATE = {
   DONE: 'done',
 };
 
+/**
+ * 作業項目の状態の表示名（仕様書7.2、12.3）。
+ *
+ * 状態の定義と同じ場所へ置く。画面のほか、状態が合わない操作を拒否したときの
+ * 文言（`intervalOps.js`）でも使う。UI 側に同じ対応表が散っている件は
+ * レビュー指摘 D-16 の対象であり、Step 8 でここへ寄せる。
+ */
+export const TASK_STATE_LABEL = {
+  [TASK_STATE.NOT_STARTED]: '未着手',
+  [TASK_STATE.WORKING]: '作業中',
+  [TASK_STATE.ON_BREAK]: '休憩中',
+  [TASK_STATE.DONE]: '完了',
+};
+
 /** 作業項目に対する操作（仕様書12.4）。 */
 export const TASK_OPERATION = {
   START: 'start',
