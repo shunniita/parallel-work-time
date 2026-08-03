@@ -1,22 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  addSeconds,
+  compareIso,
   dateKeyOf,
   diffMs,
   diffSeconds,
   formatOffset,
+  fromDateTimeLocal,
   isValidDateKey,
+  isValidDateTimeLocal,
   isValidIsoSecond,
+  localOffsetMinutes,
+  offsetMinutesOf,
   parseIso,
   toDateKey,
+  toDateTimeLocal,
   toIsoSecond,
 } from '../../src/domain/datetime.js';
 
 describe('formatOffset', () => {
-  it('Date#getTimezoneOffset の符号を反転して表記する', () => {
-    // JST は getTimezoneOffset() が -540 を返す。
-    expect(formatOffset(-540)).toBe('+09:00');
-    expect(formatOffset(540)).toBe('-09:00');
+  it('ISO 8601 と同じ符号（東が正）で表記する（レビュー指摘 F-25）', () => {
+    expect(formatOffset(540)).toBe('+09:00');
+    expect(formatOffset(-540)).toBe('-09:00');
   });
 
   it('UTC を +00:00 と表記する', () => {
@@ -24,12 +30,40 @@ describe('formatOffset', () => {
   });
 
   it('30分単位のオフセットを扱える', () => {
-    expect(formatOffset(-330)).toBe('+05:30');
-    expect(formatOffset(345)).toBe('-05:45');
+    expect(formatOffset(330)).toBe('+05:30');
+    expect(formatOffset(-345)).toBe('-05:45');
   });
 
   it('分が整数でない場合は拒否する', () => {
     expect(() => formatOffset(1.5)).toThrow(TypeError);
+  });
+});
+
+describe('localOffsetMinutes', () => {
+  it('getTimezoneOffset の符号を反転して返す', () => {
+    const date = new Date(2026, 6, 30, 9, 0, 0);
+    expect(localOffsetMinutes(date)).toBe(-date.getTimezoneOffset());
+  });
+
+  it('toIsoSecond の出力と符号が一致する', () => {
+    const date = new Date(2026, 6, 30, 9, 0, 0);
+    expect(toIsoSecond(date).slice(19)).toBe(formatOffset(localOffsetMinutes(date)));
+  });
+
+  it('無効な Date を拒否する', () => {
+    expect(() => localOffsetMinutes(new Date('無効'))).toThrow(TypeError);
+  });
+});
+
+describe('offsetMinutesOf', () => {
+  it('ISO のオフセットを東が正の分で返す', () => {
+    expect(offsetMinutesOf('2026-07-30T09:00:00+09:00')).toBe(540);
+    expect(offsetMinutesOf('2026-07-30T09:00:00-05:30')).toBe(-330);
+    expect(offsetMinutesOf('2026-07-30T09:00:00Z')).toBe(0);
+  });
+
+  it('無効な値を拒否する', () => {
+    expect(() => offsetMinutesOf('2026-07-30T09:00:00')).toThrow(TypeError);
   });
 });
 
@@ -122,6 +156,98 @@ describe('diffMs / diffSeconds', () => {
 
   it('終了が開始より前なら負の値を返す', () => {
     expect(diffSeconds('2026-07-30T09:20:00+09:00', '2026-07-30T09:00:00+09:00')).toBe(-1200);
+  });
+});
+
+describe('compareIso', () => {
+  it('前後を符号で返す', () => {
+    expect(compareIso('2026-07-30T09:00:00+09:00', '2026-07-30T09:20:00+09:00')).toBe(-1);
+    expect(compareIso('2026-07-30T09:20:00+09:00', '2026-07-30T09:00:00+09:00')).toBe(1);
+  });
+
+  it('同一日時は0（仕様書8.9.3）', () => {
+    expect(compareIso('2026-07-30T09:00:00+09:00', '2026-07-30T09:00:00+09:00')).toBe(0);
+  });
+
+  it('オフセットが違っても実時刻で比べる', () => {
+    // 09:00+09:00 と 01:00+01:00 は同じ瞬間。
+    expect(compareIso('2026-07-30T09:00:00+09:00', '2026-07-30T01:00:00+01:00')).toBe(0);
+    // 09:00+09:00 は 00:00Z。01:00Z より1時間前になる。
+    expect(compareIso('2026-07-30T09:00:00+09:00', '2026-07-30T01:00:00Z')).toBe(-1);
+  });
+
+  it('無効な値を拒否する', () => {
+    expect(() => compareIso('2026-07-30', '2026-07-30T09:00:00+09:00')).toThrow(TypeError);
+  });
+});
+
+describe('addSeconds', () => {
+  it('秒を足しても元のオフセットを保つ', () => {
+    expect(addSeconds('2026-07-30T09:00:00+09:00', 90)).toBe('2026-07-30T09:01:30+09:00');
+  });
+
+  it('負数で過去へ戻せる', () => {
+    expect(addSeconds('2026-07-30T09:00:00+09:00', -3600)).toBe(
+      '2026-07-30T08:00:00+09:00',
+    );
+  });
+
+  it('日をまたぐと日付が繰り上がる（仕様書8.4.8）', () => {
+    expect(addSeconds('2026-07-30T23:30:00+09:00', 105 * 60)).toBe(
+      '2026-07-31T01:15:00+09:00',
+    );
+  });
+
+  it('月末・年末をまたげる', () => {
+    expect(addSeconds('2026-12-31T23:59:59+09:00', 1)).toBe('2027-01-01T00:00:00+09:00');
+  });
+
+  it('Z 表記は +00:00 になるが同じ瞬間を指す', () => {
+    const result = addSeconds('2026-07-30T00:00:00Z', 60);
+    expect(result).toBe('2026-07-30T00:01:00+00:00');
+    expect(parseIso(result)).toBe(parseIso('2026-07-30T09:01:00+09:00'));
+  });
+
+  it('整数以外の秒を拒否する', () => {
+    expect(() => addSeconds('2026-07-30T09:00:00+09:00', 1.5)).toThrow(TypeError);
+  });
+});
+
+describe('toDateTimeLocal / fromDateTimeLocal', () => {
+  it('入力欄の値へオフセットを落として渡す（仕様書8.4.4）', () => {
+    expect(toDateTimeLocal('2026-07-30T09:00:00+09:00')).toBe('2026-07-30T09:00:00');
+  });
+
+  it('入力欄の値とオフセットから保存形式へ戻す', () => {
+    expect(fromDateTimeLocal('2026-07-30T09:00:00', 540)).toBe(
+      '2026-07-30T09:00:00+09:00',
+    );
+  });
+
+  it('秒が省略された値は0秒として補う', () => {
+    expect(fromDateTimeLocal('2026-07-30T09:00', 540)).toBe('2026-07-30T09:00:00+09:00');
+  });
+
+  it('往復しても値が変わらない', () => {
+    const iso = '2026-07-31T01:15:30-05:00';
+    expect(fromDateTimeLocal(toDateTimeLocal(iso), offsetMinutesOf(iso))).toBe(iso);
+  });
+
+  it('実在しない日付を拒否する', () => {
+    expect(() => fromDateTimeLocal('2026-02-30T09:00:00', 540)).toThrow(TypeError);
+  });
+
+  it('形式が違う値を拒否する', () => {
+    expect(() => fromDateTimeLocal('2026/07/30 09:00', 540)).toThrow(TypeError);
+    expect(() => fromDateTimeLocal('2026-07-30T09:00:00+09:00', 540)).toThrow(TypeError);
+    expect(() => fromDateTimeLocal(null, 540)).toThrow(TypeError);
+  });
+
+  it('入力欄の値として妥当かを判定できる', () => {
+    expect(isValidDateTimeLocal('2026-07-30T09:00')).toBe(true);
+    expect(isValidDateTimeLocal('2026-07-30T09:00:00')).toBe(true);
+    expect(isValidDateTimeLocal('2026-07-30')).toBe(false);
+    expect(isValidDateTimeLocal(undefined)).toBe(false);
   });
 });
 

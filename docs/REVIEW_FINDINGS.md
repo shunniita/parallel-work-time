@@ -3,9 +3,9 @@
 | 項目     | 内容                                                                    |
 | -------- | ----------------------------------------------------------------------- |
 | 文書番号 | PWT-REVIEW-001                                                          |
-| 版数     | 1.2                                                                     |
+| 版数     | 1.4                                                                     |
 | 作成日   | 2026-08-01                                                              |
-| 対象     | Step 5（案件・実施回管理）完了時点のコード（`main` 相当）               |
+| 対象     | Step 5 完了時点の全体、および Step 6 PR-A 完了時点の追加レビュー        |
 | 参照文書 | PWT-PLAN-001 版数1.1（`docs/IMPLEMENTATION_PLAN.md`）                   |
 | 取扱     | 公開可能。組織固有情報および実運用データを含めないこと                  |
 
@@ -17,6 +17,7 @@
 | 1.1  | 2026-08-01 | 並行レビューの結果を統合。逐次入力、数値変換、ツリー再描画、インポート整合性、アーカイブ表示の補足を追記 |
 | 1.2  | 2026-08-02 | Step 6 着手前の対応分（A-1、A-2、B-3、B-4、B-5、C-7、C-11、C-12、D-17、E-20、E-22、E-24、F-27）を対応済みとして記録。残りの対応時期は据え置き |
 | 1.3  | 2026-08-03 | E-23（UI層の単体テストとカバレッジ計測）を対応済みとして記録 |
+| 1.4  | 2026-08-03 | Step 6 PR-A 完了時点の Sol 再レビュー結果を追記。日時の夏時間境界、変更履歴の対象・操作整合、`datetime-local` 検証契約を記録 |
 
 ## 0. 本書の位置づけ
 
@@ -26,7 +27,7 @@
 
 各指摘の形式: **対象** / **内容** / **推奨対応時期** / **状況**。
 
-## 0.1 対応状況（版数1.3 時点）
+## 0.1 対応状況（版数1.4 時点）
 
 Step 6 着手前の分として次の14件へ対応した。残る15件は各 Step の実装時に扱う。
 
@@ -37,7 +38,7 @@ Step 6 着手前の分として次の14件へ対応した。残る15件は各 St
 | C（データ整合） | C-7、C-11、C-12 | C-8、C-9、C-10、C-13 |
 | D（UI・表示） | D-17 | D-14、D-15、D-16、D-18、D-19 |
 | E（テスト・開発体験） | E-20、E-22、E-23、E-24 | E-21 |
-| F（軽微・設計の芽） | F-27 | F-25（Step 6 の実装と同時）、F-26、F-28、F-29 |
+| F（軽微・設計の芽） | F-27、F-25 | F-26、F-28、F-29 |
 
 対応で新設・変更した規約は次の3つである。個別の指摘ではなく、以後の実装が従う土台として扱う。
 
@@ -164,12 +165,14 @@ Step 6 着手前の分として次の14件へ対応した。残る15件は各 St
 - 対象: `src/domain/validation.js:244-283`、`src/app/actions/projectActions.js:169-171,215-217,263-265`
 - 内容: アクション側が `warnings.length > 0` を無条件に `QuantityOverflowError`（累計超過の確認）へ変換する。Step 7 の直接入力重複候補警告（8.9.8）など別種の警告を足した瞬間に誤爆する。警告へ種別コード（`{code, path, message}`）を持たせる。
 - 推奨対応時期: Step 7 前
+- 状況: 一部先行（2026-08-03、Step 6 PR-A）。Step 6 で新設した `intervalOps.js` の警告は最初から `{code, path, message}` 形式であり（`INTERVAL_WARNING.overlap`）、区間の重複は例外へ変換せず返り値の `warnings` で返す。`validateRunDraft` 側の文字列警告と 2 形式が併存しているが、呼び出し経路が分かれているため衝突しない。既存側を揃えるのは予定どおり Step 7 前に行う。
 
 ### D-16 状態ラベル定数の重複
 
 - 対象: `RUN_STATUS_LABEL` が `src/ui/tree.js:29-34` / `src/ui/views/projectView.js:25-30` / `src/ui/views/runView.js:26-31` に3重複。`TASK_STATE_LABEL` が `tree.js:21-26` / `runView.js:18-23` に2重複
 - 内容: Step 8 の集計画面でさらに増える前に `src/ui/labels.js` 等へ一本化する。`runView.js:45-52` の `toMinutesLabel` も集計画面で共有になる。
 - 推奨対応時期: Step 8 前
+- 状況: 寄せ先を用意した（2026-08-03、Step 6 PR-A）。`TASK_STATE_LABEL` を `src/domain/taskState.js`、`INTERVAL_TYPE_LABEL` を `src/domain/effort.js` へ、それぞれ状態・種別の定義と同じ場所に置いた。状態が合わない操作の拒否文（`intervalOps.js`）と変更履歴の要約（`history.js`）が語を必要とするためである。UI 側の重複をここへ向け直すのは予定どおり Step 8 前に行う。
 
 ### D-17 `label` の `for` が実際の入力欄と紐づいていない
 
@@ -240,7 +243,7 @@ Step 6 着手前の分として次の14件へ対応した。残る15件は各 St
 - 対象: `src/domain/datetime.js:31-38` vs `:86-94`
 - 内容: 同一モジュール内で `offsetMinutes` が `getTimezoneOffset` 規約（西が正）と ISO 規約（東が正）の逆符号で使われている。現時点で実害はないが Step 6 でオフセット計算を触るときの事故要因。また Step 6 に必要な (a) `datetime-local` 値 → オフセット付き ISO 変換、(b) ISO 同士の大小比較、(c) 秒の加減算が未整備で、各所へ `parseIso` 数値比較が散らばる前にここへ集約する。
 - 推奨対応時期: Step 6 着手時
-- 状況: 未対応。Step 6 の実装と同時に行う。必要な API の形は、実際にオフセット計算を使うコードを書きながらでないと決まらないため。
+- 状況: **対応済み（2026-08-03、Step 6 PR-A）**。公開 API の `offsetMinutes` を ISO 規約（東が正）へ統一し、`Date#getTimezoneOffset()` を呼ぶ箇所を `localOffsetMinutes()` の1か所へ閉じた。`formatOffset()` の引数の意味が変わるため単体テストも直してある。Step 6 向けに `fromDateTimeLocal` / `toDateTimeLocal` / `compareIso` / `addSeconds` と、実装しながら必要になった `localOffsetMinutes` / `offsetMinutesOf` / `isValidDateTimeLocal` を足した。区間の前後判定は `intervalOps.js` から `compareIso` を呼ぶ形にし、`parseIso` の数値比較は散らばっていない。
 
 ### F-26 定数・関数の配置の不自然さ
 
@@ -284,3 +287,44 @@ Step 6 着手前の分として次の14件へ対応した。残る15件は各 St
 2. **`innerHTML` 不使用の規律が完全に守られている。** リポジトリ全体で `innerHTML` / `insertAdjacentHTML` / `document.write` の使用はゼロで、生成経路が `dom.js` へ集約されている。`domain/` に DOM・IndexedDB・`Date.now()` の直接参照もない（計画書§4.2 の規律を遵守）。
 3. **IndexedDB のトランザクション作法が正しい。** 1トランザクション内でリクエストを同期発行し完了だけ待つ形が全メソッドで徹底され、boolean を索引に含めない判断がコード・アダプタ・計画書の3箇所で一貫して説明されている。`QuotaExceededError` 対応も入口から表示文言まで通電済み。
 4. **契約テストが両アダプタへ同一スイートで通り、E2E に固定待ち時間がない。** `describe.each` で `MemoryAdapter` / `IndexedDbAdapter` へ同じ操作を流し、往復一致・全置換・`schemaVersion` 不一致拒否・部分不正データの全件非反映まで検証している。E2E は web-first assertion のみで `waitForTimeout` ゼロ。
+
+---
+
+## H. Step 6 PR-A 完了時点の Sol 再レビュー（2026-08-03）
+
+`feat/step6-pr-a`（`375ee0b`）を対象に、仕様からドメインモデル、公開操作、保存境界、テストまでを再レビューした。既存の C-10 に記録済みのインポート整合性（区間の前後関係、ID重複・参照整合、状態と日時の整合）は、新規指摘として重複登録しない。
+
+実行結果は、単体・結合テスト743件成功、E2E 91件成功、`git diff --check main...HEAD`成功。カバレッジは全体 statements 74.07%、domain statements 94.27%。IndexedDB API の storage 外への漏出、外部URL、`innerHTML`等の危険なHTML挿入について追加問題はなかった。
+
+### SOL-1 夏時間をまたぐ日時入力で保存時刻がずれる
+
+- 重要度: **Major**
+- 対象: `src/domain/datetime.js:238-257`、`docs/STEP6_DESIGN.md:143-157`
+- 内容: `fromDateTimeLocal(value, offsetMinutes)` は、新規入力には現在日時のローカルオフセット、編集には元区間のオフセットを渡す利用契約になっている。しかし、入力対象日と現在日時または元区間の日付で夏時間の適用状態が異なる地域では、入力した壁時計日時に対応しないオフセットを保存する。`TZ=America/New_York`で、8月時点のオフセット`-04:00`を使って1月15日09:00を変換すると、本来`2026-01-15T09:00:00-05:00`となるべき値が`2026-01-15T09:00:00-04:00`となり、指す瞬間が1時間早くなることを確認した。工数計算は瞬間の差を使うため、区間の端点ごとに誤差が生じうる。
+- 契約上の必要事項: 入力された壁時計日時に適用されるローカルオフセットを導出する。夏時間切替時の「存在しない時刻」と「2回存在する時刻」を拒否するか、利用者に選択させるかは仕様にないため、実装前に方針を決める。
+- 推奨対応時期: **Step 6 PR-B の日時入力UIへ接続する前**
+- 状況: 未対応
+
+### SOL-2 変更履歴の対象種別と操作種別を矛盾させられる
+
+- 重要度: **Minor**（Step 10 で履歴生成経路が増える前に対応）
+- 対象: `src/domain/history.js:64-105`、`src/domain/schema.js:336-359`
+- 内容: `entityType`と`operation`をそれぞれ既知の列挙値か検証するだけで、組み合わせを検証しない。例えば`entityType: "projectGroup"`と`operation: "intervalDeleted"`の履歴を`buildHistoryEntry()`とインポート検証の双方が受け入れる。現行の区間削除アクションは正しい組み合わせを固定しているため、現在のUI経路での実害はない。
+- Evidence状態: **inferred**。仕様11章は対象と操作を列挙しているが、対応表を明文では定義していない。少なくとも現行語義では、`statusReverted`/`workRunDeleted`→`workRun`、`intervalDeleted`→`interval`、`directEntryDeleted`→`directEntry`、`projectGroupDeleted`→`projectGroup`の対応が自然である。対応を契約として確定する場合は仕様または設計メモへ明記する。
+- 推奨対応時期: Step 10 の状態遷移・削除操作を追加する前
+- 状況: 未対応
+
+### SOL-3 `isValidDateTimeLocal`と変換処理の妥当性判定が一致しない
+
+- 重要度: **Minor**
+- 対象: `src/domain/datetime.js:246-270`
+- 内容: `isValidDateTimeLocal()`は正規表現だけを確認するため、`2026-02-30T09:00`を`true`と判定する。一方、`fromDateTimeLocal()`は同じ値を`assertIso()`で拒否する。PR-BのUIが前者で保存可否を判断すると、「検証済みだが変換時に例外」という境界になる。
+- 推奨対応: 両APIを同じ意味検証へ接続し、実在しない日付・範囲外時刻について同じ結果を返す。SOL-1の日時変換契約を決める際に合わせて扱う。
+- 推奨対応時期: Step 6 PR-B の日時入力UIへ接続する前
+- 状況: 未対応
+
+### Skill適用判断で保留した点
+
+- 夏時間境界は欠陥の再現までは確定したが、曖昧時刻・存在しない時刻の扱いは公開仕様にない。AI判断で業務契約を追加せず、選択事項として残した。
+- 履歴の対象・操作対応は語義上必要と判断したが、仕様に対応表がないため`confirmed`へ昇格せず`inferred`とした。
+- system-wideなtarget architecture、データ移行、source of truth変更は発生していないため、Architecture Quality Strategyの適用対象外とした。
