@@ -10,8 +10,15 @@
  * 外部通信は発生しない（仕様書5.1.4、13章）。
  *
  * 専用ルーティングは持たず、単一ページ内のビュー切替で画面を表現する（12.2）。
- * 実装計画 Step 5 の時点で動くのは、テンプレート・案件登録・案件詳細・
- * 実施回詳細（閲覧）である。集計・アーカイブ・設定は Step 8 以降。
+ * 実装計画 Step 6 PR-B1 の時点で動くのは、テンプレート・案件登録・案件詳細・
+ * 実施回詳細・作業項目詳細である。集計・アーカイブ・設定は Step 8 以降。
+ *
+ * ## ビューの登録表（レビュー指摘 B-6）
+ *
+ * 画面の対応は `if` 連鎖ではなく `VIEW → {render, reset}` の表で持つ。案件画面
+ * だけは選択の深さで内容が変わるため（案件 / 実施回 / 作業項目）、その中で
+ * もう一段だけ分岐する。未登録のビューは案件詳細へ落とさず、未実装として
+ * 明示する。
  *
  * 再描画はここが持つストア購読1本に集約する（規約は `src/app/store.js` 参照）。
  * `store.setState()` を呼んだ側は `render()` を書かない。書き忘れが「クリック
@@ -33,6 +40,12 @@ import {
   updateRunQuantity,
   updateTotalQuantity,
 } from './app/actions/projectActions.js';
+import {
+  recordBreak,
+  recordFinish,
+  recordResume,
+  recordStart,
+} from './app/actions/intervalActions.js';
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
 import { VIEW, renderShell } from './ui/shell.js';
 import { renderStatusBar } from './ui/statusBar.js';
@@ -41,6 +54,8 @@ import { createTemplateView } from './ui/views/templateView.js';
 import { createProjectFormView } from './ui/views/projectFormView.js';
 import { createProjectView } from './ui/views/projectView.js';
 import { createRunView } from './ui/views/runView.js';
+import { createTaskDetailView } from './ui/views/taskDetailView.js';
+import { createPlaceholderView } from './ui/views/placeholderView.js';
 import { el, replaceChildren } from './ui/dom.js';
 
 /** サンプルテンプレートの配置（仕様書8.1.6）。 */
@@ -134,6 +149,14 @@ async function main() {
     };
   }
 
+  /** 区間の記録（仕様書8.4）。作業項目詳細と実施回詳細の行から呼ぶ。 */
+  const intervalActions = {
+    recordStart: wrap(recordStart),
+    recordBreak: wrap(recordBreak),
+    recordResume: wrap(recordResume),
+    recordFinish: wrap(recordFinish),
+  };
+
   const tree = createTree({
     container: shell.treePane,
     store,
@@ -141,18 +164,10 @@ async function main() {
       onSelectProject: selectProject,
       onSelectRun: selectRun,
       onSelectTask: (runId, taskRecordId) => {
-        // 作業項目詳細は Step 6 で実装する。今は実施回詳細を開くところまで。
         const run = store
           .getState()
           .dataset.workRuns.find((candidate) => candidate.runId === runId);
-        store.setState({
-          view: VIEW.PROJECTS,
-          selection: {
-            projectGroupId: run?.projectGroupId ?? null,
-            runId,
-            taskRecordId,
-          },
-        });
+        selectTask(run?.projectGroupId ?? null, runId, taskRecordId);
       },
       onCreateProject: openProjectForm,
     },
@@ -207,15 +222,91 @@ async function main() {
   const runView = createRunView({
     container: shell.detailPane,
     store,
+    actions: intervalActions,
     handlers: {
-      onSelectTask: (taskRecordId) => {
+      onOpenTask: (taskRecordId) => {
         const { selection } = store.getState();
-        // 選んだ作業項目が左ツリー側でも見えるように実施回を開いておく。
-        tree.expand({ projectGroupId: selection.projectGroupId, runId: selection.runId });
-        store.setState({ selection: { ...selection, taskRecordId } });
+        selectTask(selection.projectGroupId, selection.runId, taskRecordId);
       },
       onSelectProject: selectProject,
     },
+  });
+
+  const taskDetailView = createTaskDetailView({
+    container: shell.detailPane,
+    store,
+    actions: intervalActions,
+    handlers: { onBackToRun: selectRun },
+  });
+
+  /**
+   * 案件画面の中身を描く。
+   *
+   * 選択の深さで内容が変わる。作業項目まで選んでいれば作業項目詳細、実施回まで
+   * なら実施回詳細、案件だけなら案件詳細である。
+   */
+  function renderProjectsView() {
+    const { selection } = store.getState();
+    if (selection.taskRecordId !== null) {
+      taskDetailView.render();
+      return;
+    }
+    if (selection.runId !== null) {
+      runView.render();
+      return;
+    }
+    projectView.render();
+  }
+
+  /** 案件画面へ入り直すときの後始末。下書きと開きかけの入力を残さない。 */
+  function resetProjectsView() {
+    projectFormView.reset();
+    projectView.reset();
+    runView.reset();
+    taskDetailView.reset();
+  }
+
+  /**
+   * ビューの登録表（レビュー指摘 B-6）。
+   *
+   * `reset` は画面へ入り直すときに呼ぶ。持たないビューは省略できる。
+   */
+  const views = new Map([
+    [VIEW.TEMPLATES, { render: () => templateView.render() }],
+    [VIEW.PROJECT_FORM, projectFormView],
+    [VIEW.PROJECTS, { render: renderProjectsView, reset: resetProjectsView }],
+    [
+      VIEW.SUMMARY,
+      createPlaceholderView({
+        container: shell.detailPane,
+        title: '集計・転記',
+        note: '実施回ごとの転記値一覧は実装計画 Step 8 で作ります。',
+      }),
+    ],
+    [
+      VIEW.ARCHIVE,
+      createPlaceholderView({
+        container: shell.detailPane,
+        title: 'アーカイブ',
+        note: '転記済み・削除候補の一覧は実装計画 Step 10 で作ります。',
+      }),
+    ],
+    [
+      VIEW.SETTINGS,
+      createPlaceholderView({
+        container: shell.detailPane,
+        title: '設定・バックアップ',
+        note: '保持期間・しきい値・JSON入出力は実装計画 Step 9 で作ります。',
+      }),
+    ],
+  ]);
+
+  /** 登録の無いビュー名が来た場合の受け皿。案件詳細へは落とさない。 */
+  const unknownView = createPlaceholderView({
+    container: shell.detailPane,
+    title: '画面が見つかりません',
+    note: '指定された画面は存在しません。ヘッダーから選び直してください。',
+    testid: 'unknown-view',
   });
 
   /**
@@ -224,10 +315,7 @@ async function main() {
    * @param {string} view
    */
   function navigate(view) {
-    if (view === VIEW.PROJECTS) {
-      projectFormView.reset();
-      projectView.reset();
-    }
+    views.get(view)?.reset?.();
     store.setState({ view });
   }
 
@@ -238,6 +326,8 @@ async function main() {
 
   function selectProject(projectGroupId) {
     projectView.reset();
+    runView.reset();
+    taskDetailView.reset();
     store.setState({
       view: VIEW.PROJECTS,
       selection: { projectGroupId, runId: null, taskRecordId: null },
@@ -247,6 +337,8 @@ async function main() {
   function selectRun(runId) {
     const run = store.getState().dataset.workRuns.find((candidate) => candidate.runId === runId);
     projectView.reset();
+    runView.reset();
+    taskDetailView.reset();
     tree.expand({ projectGroupId: run?.projectGroupId, runId });
     store.setState({
       view: VIEW.PROJECTS,
@@ -259,26 +351,34 @@ async function main() {
   }
 
   /**
+   * 作業項目詳細を開く（仕様書12.2）。
+   *
+   * 開きかけの操作フォームは持ち越さない。別の作業項目に対する入力が、選び直した
+   * 先でそのまま開いていると誤記録につながる。
+   *
+   * @param {string|null} projectGroupId
+   * @param {string} runId
+   * @param {string} taskRecordId
+   */
+  function selectTask(projectGroupId, runId, taskRecordId) {
+    runView.reset();
+    taskDetailView.reset();
+    // 選んだ作業項目が左ツリー側でも見えるように実施回を開いておく。
+    tree.expand({ projectGroupId, runId });
+    store.setState({
+      view: VIEW.PROJECTS,
+      selection: { projectGroupId, runId, taskRecordId },
+    });
+  }
+
+  /**
    * 詳細ペインを描く。
    *
-   * 案件画面では選択の深さで内容が変わる。実施回を選んでいれば実施回詳細、
-   * 案件だけなら案件詳細、どちらも無ければ案内を出す。
+   * 登録表から選ぶ。案件画面の中の分岐は `renderProjectsView` が持つ。
    */
   function renderDetail() {
-    const { view, selection } = store.getState();
-    if (view === VIEW.TEMPLATES) {
-      templateView.render();
-      return;
-    }
-    if (view === VIEW.PROJECT_FORM) {
-      projectFormView.render();
-      return;
-    }
-    if (selection.runId !== null) {
-      runView.render();
-      return;
-    }
-    projectView.render();
+    const { view } = store.getState();
+    (views.get(view) ?? unknownView).render();
   }
 
   function render() {
