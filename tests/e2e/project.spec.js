@@ -500,16 +500,18 @@ test.describe('入力中のフォーカス保持', () => {
   });
 });
 
-test.describe('作業項目の選択（仕様書12.3）', () => {
-  test('実施回詳細で作業項目をクリックすると選択状態になる', async ({ page }) => {
+test.describe('作業項目の選択（仕様書12.2、12.3）', () => {
+  test('実施回詳細で作業項目をクリックすると作業項目詳細が開く', async ({ page }) => {
     await createProject(page, { projectId: 'PJ-0001', totalQuantity: 100 });
     await createRun(page, { workDate: '2026-08-01', runQuantity: 40 });
 
     const firstRow = page.getByTestId('task-list').getByTestId('task-row').first();
+    const name = await firstRow.getByTestId('task-name').textContent();
     await firstRow.getByTestId('task-name').click();
 
-    // 表でも左ツリーでも同じ作業項目が選択として示される。
-    await expect(firstRow).toHaveAttribute('aria-current', 'true');
+    // Step 6 で作業項目詳細を足すまでは行の選択表示だけだった。いまは詳細へ移る。
+    await expect(page.getByTestId('task-detail-title')).toHaveText(name);
+    // 左ツリーでも同じ作業項目が選択として示される。
     await expect(page.getByTestId('tree-task').and(page.locator('[aria-current="true"]'))).toHaveCount(
       1,
     );
