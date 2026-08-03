@@ -1,34 +1,41 @@
 /**
- * 実施回詳細（仕様書12.3）。
+ * 実施回詳細（仕様書12.3、12.4）。
  *
  * 各作業項目について、名称・外部項目コード・現在状態・時刻入力分・直接入力分・
- * 転記値を一行で確認できるようにする。
+ * 転記値を一行で確認でき（12.3）、その行から状態に応じた操作を行える（12.4）。
  *
- * 実装計画 Step 5 の時点では閲覧のみである。区間の記録（開始・休憩・再開・終了、
- * 参加者変更）は Step 6、直接入力は Step 7 で追加する。工数の列は
- * `src/domain/effort.js` を通して計算しており、区間が入り次第そのまま数字が出る。
+ * ## 一覧から操作できるようにする理由
+ *
+ * 複数の作業項目を同時に作業中にできる（仕様書8.4.9、A-16）ことが本ツールの
+ * 中心的な用途である。項目を切り替えるたびに画面を移ると、同時進行の記録が
+ * そのぶん遅れる。作業項目詳細（`taskDetailView.js`）にも同じ操作を置くが、
+ * あちらは区間履歴を1件ずつ確かめる場である。
+ *
+ * ボタンを押した時点では記録しない。日時（操作によっては参加者）を確かめてから
+ * 確定させる（仕様書12.4「いずれも日時の初期値は現在日時とし、確定前に修正
+ * できる」）。入力は `components/intervalOperationForm.js` が持ち、詳細画面と
+ * 共通である。
+ *
+ * 実装計画 Step 6 PR-B1 の時点で行に出るのは開始・休憩・再開・終了である。
+ * 参加者変更・区間追加・履歴編集は PR-B2、直接入力は Step 7 で足す。行を短く
+ * 保つため、行には有効な操作だけを出す。まだ無い操作は作業項目詳細側で無効な
+ * ボタンとして見える。
  */
 
 import { summarizeRun, summarizeTask } from '../../domain/effort.js';
 import { compareExternalCode } from '../../domain/naturalSort.js';
-import { TASK_STATE, taskState } from '../../domain/taskState.js';
+import { collectParticipants } from '../../domain/participants.js';
+import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
+import {
+  TASK_OPERATION,
+  TASK_OPERATION_LABEL,
+  TASK_STATE_LABEL,
+  availableOperations,
+  taskState,
+} from '../../domain/taskState.js';
+import { createIntervalOperationForm } from '../components/intervalOperationForm.js';
 import { el, replaceChildren } from '../dom.js';
-
-/** 作業項目の状態表示（仕様書7.2）。 */
-const TASK_STATE_LABEL = {
-  [TASK_STATE.NOT_STARTED]: '未着手',
-  [TASK_STATE.WORKING]: '作業中',
-  [TASK_STATE.ON_BREAK]: '休憩中',
-  [TASK_STATE.DONE]: '完了',
-};
-
-/** 実施回の状態表示（仕様書7章）。 */
-const RUN_STATUS_LABEL = {
-  working: '作業中',
-  aggregated: '集計済み',
-  transferred: '転記済み',
-  archived: 'アーカイブ',
-};
+import { RUN_STATUS_LABEL, toMinutesLabel } from '../labels.js';
 
 /** 並び順の選択（仕様書8.7.3）。 */
 const SORT = {
@@ -36,30 +43,39 @@ const SORT = {
   EXTERNAL_CODE: 'externalCode',
 };
 
-/**
- * 秒を「n分」表記へ直す。表示用であり、転記値の計算とは別である。
- *
- * @param {number} seconds
- * @returns {string}
- */
-function toMinutesLabel(seconds) {
-  if (seconds === 0) {
-    return '0分';
-  }
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return rest === 0 ? `${minutes}分` : `${minutes}分${rest}秒`;
-}
+/** 作業項目行に出す操作。PR-B1 で結線済みのもの。 */
+const ROW_OPERATIONS = [
+  TASK_OPERATION.START,
+  TASK_OPERATION.BREAK,
+  TASK_OPERATION.RESUME,
+  TASK_OPERATION.FINISH,
+];
+
+/** 表の列数。操作フォーム行の `colspan` に使う。 */
+const COLUMN_COUNT = 7;
 
 /**
  * 実施回詳細を作る。
  *
  * @param {{container: HTMLElement, store: object,
- *          handlers: {onSelectTask: Function, onSelectProject: Function}}} options
- * @returns {{render: () => void}}
+ *          actions: {recordStart: Function, recordBreak: Function,
+ *                    recordResume: Function, recordFinish: Function},
+ *          handlers: {onOpenTask: Function, onSelectProject: Function},
+ *          now?: () => Date}} options
+ * @returns {{render: () => void, reset: () => void}}
  */
-export function createRunView({ container, store, handlers }) {
-  const local = { sort: SORT.ORDER };
+export function createRunView({ container, store, actions, handlers, now }) {
+  /**
+   * ビュー内部の状態（`src/app/store.js` の規約2）。
+   *
+   * `operation` は開いている操作フォームの対象（作業項目と操作の組）である。
+   */
+  const local = { sort: SORT.ORDER, operation: null, warnings: [] };
+
+  function reset() {
+    local.operation = null;
+    local.warnings = [];
+  }
 
   function selectedRun() {
     const { dataset, selection = {} } = store.getState();
@@ -94,7 +110,73 @@ export function createRunView({ container, store, handlers }) {
     return sorted;
   }
 
-  function renderTaskRow(task) {
+  /**
+   * @param {string} operation
+   * @returns {Function}
+   */
+  function actionFor(operation) {
+    switch (operation) {
+      case TASK_OPERATION.START:
+        return actions.recordStart;
+      case TASK_OPERATION.BREAK:
+        return actions.recordBreak;
+      case TASK_OPERATION.RESUME:
+        return actions.recordResume;
+      default:
+        return actions.recordFinish;
+    }
+  }
+
+  /**
+   * 操作を実行する。
+   *
+   * 区間の重複は拒否ではなく警告なので（仕様書8.9.5）、保存したうえで画面へ
+   * 出す。保存を拒否した場合はフォームがエラーを出すため、投げ直すだけにする。
+   *
+   * @param {string} taskRecordId
+   * @param {string} operation
+   * @param {object} input
+   */
+  async function runOperation(taskRecordId, operation, input) {
+    const run = selectedRun();
+    const result = await actionFor(operation)({ runId: run.runId, taskRecordId }, input);
+    local.operation = null;
+    local.warnings = result.warnings.map((warning) => warning.message);
+    // 保存が成功するとストア購読の再描画が走るが、それはこの行より前、まだ
+    // `local.operation` が残っている時点で起きる。閉じた状態を映すために、
+    // ここで必ず描き直す（`src/app/store.js` の規約2）。
+    render();
+  }
+
+  /** 直近に描いた操作フォーム。フォーカス移動のために持つ。 */
+  let form = null;
+
+  /**
+   * 作業項目行に置く操作ボタン。
+   *
+   * @param {object} task
+   * @param {string[]} allowed
+   */
+  function operationButtons(task, allowed) {
+    return ROW_OPERATIONS.filter((operation) => allowed.includes(operation)).map((operation) =>
+      el('button', {
+        type: 'button',
+        class: 'button button--compact',
+        text: TASK_OPERATION_LABEL[operation],
+        dataset: { testid: `row-op-${operation}` },
+        on: {
+          click: () => {
+            local.warnings = [];
+            local.operation = { taskRecordId: task.taskRecordId, operation };
+            render();
+            form?.focus();
+          },
+        },
+      }),
+    );
+  }
+
+  function renderTaskRow(task, allowed) {
     const state = taskState(task);
     const summary = summarizeTask(task);
     const { selection = {} } = store.getState();
@@ -113,7 +195,7 @@ export function createRunView({ container, store, handlers }) {
           class: 'link',
           text: task.name,
           dataset: { testid: 'task-name' },
-          on: { click: () => handlers.onSelectTask(task.taskRecordId) },
+          on: { click: () => handlers.onOpenTask(task.taskRecordId) },
         }),
       ]),
       el('td', {
@@ -144,10 +226,85 @@ export function createRunView({ container, store, handlers }) {
         // 未終了区間があるうちは転記値が未確定になる（仕様書8.6.5）。
         text: summary.confirmed ? `${summary.transferMinutes}分` : '未確定',
       }),
+      el('td', {}, [
+        el('div', { class: 'actions actions--inline' }, [
+          ...operationButtons(task, allowed),
+          el('button', {
+            type: 'button',
+            class: 'button button--compact',
+            text: '詳細',
+            dataset: { testid: 'open-task' },
+            on: { click: () => handlers.onOpenTask(task.taskRecordId) },
+          }),
+        ]),
+      ]),
     ]);
   }
 
+  /**
+   * 操作フォームの行。対象の作業項目行の直下へ置く。
+   *
+   * 別の場所に出すと、どの作業項目に対する操作なのかが分からなくなる。同時に
+   * 複数項目を扱う画面なので、対象との近さが要る。
+   *
+   * @param {object} task
+   * @param {object} run
+   */
+  function renderFormRow(task, run) {
+    const { dataset } = store.getState();
+    form = createIntervalOperationForm({
+      operation: local.operation.operation,
+      taskRecord: task,
+      candidates: collectParticipants(dataset.workRuns, { runId: run.runId }),
+      now,
+      idPrefix: 'run-op',
+      onSubmit: (input) =>
+        runOperation(task.taskRecordId, local.operation.operation, input),
+      onCancel: () => {
+        local.operation = null;
+        render();
+      },
+    });
+    return el('tr', { class: 'table__row--form', dataset: { testid: 'task-form-row' } }, [
+      el('td', { colspan: String(COLUMN_COUNT) }, [form.element]),
+    ]);
+  }
+
+  /**
+   * 直前の保存で出た警告（仕様書8.9.5）。保存自体は済んでいる。
+   */
+  function renderWarnings() {
+    if (local.warnings.length === 0) {
+      return null;
+    }
+    return el(
+      'div',
+      { class: 'card card--warn', role: 'status', dataset: { testid: 'run-warnings' } },
+      [
+        el('p', { class: 'errors__title', text: '記録しました（確認してください）' }),
+        el(
+          'ul',
+          {},
+          local.warnings.map((message) => el('li', { text: message })),
+        ),
+      ],
+    );
+  }
+
+  function renderTaskBody(run, editable) {
+    const rows = [];
+    for (const task of sortTasks(run.tasks)) {
+      const allowed = availableOperations(task, { runEditable: editable });
+      rows.push(renderTaskRow(task, allowed));
+      if (local.operation !== null && local.operation.taskRecordId === task.taskRecordId) {
+        rows.push(renderFormRow(task, run));
+      }
+    }
+    return rows;
+  }
+
   function render() {
+    form = null;
     const run = selectedRun();
     if (run === null) {
       replaceChildren(container, [
@@ -162,6 +319,14 @@ export function createRunView({ container, store, handlers }) {
 
     const group = projectOf(run);
     const summary = summarizeRun(run);
+    const editable = isRunEditable(run);
+    // 開いていたフォームの対象が消えた場合（別の実施回へ移った場合など）は閉じる。
+    if (
+      local.operation !== null &&
+      !run.tasks.some((task) => task.taskRecordId === local.operation.taskRecordId)
+    ) {
+      local.operation = null;
+    }
 
     replaceChildren(container, [
       el('div', { class: 'view__head' }, [
@@ -201,6 +366,13 @@ export function createRunView({ container, store, handlers }) {
         text:
           'テンプレート改訂の影響を受けません。作業項目は実施回作成時の内容で固定されています。',
       }),
+      !editable &&
+        el('p', {
+          class: 'note note--warn',
+          dataset: { testid: 'run-not-editable' },
+          text: describeNotEditable(run),
+        }),
+      renderWarnings(),
       el('div', { class: 'field-row field-row--baseline' }, [
         el('label', { class: 'field__label', for: 'run-sort', text: '並び順' }),
         el(
@@ -245,9 +417,10 @@ export function createRunView({ container, store, handlers }) {
                 el('th', { scope: 'col', class: 'table__num', text: '時刻入力分' }),
                 el('th', { scope: 'col', class: 'table__num', text: '直接入力分' }),
                 el('th', { scope: 'col', class: 'table__num', text: '転記値' }),
+                el('th', { scope: 'col', text: '操作' }),
               ]),
             ]),
-            el('tbody', {}, sortTasks(run.tasks).map(renderTaskRow)),
+            el('tbody', {}, renderTaskBody(run, editable)),
           ]),
       el('p', {
         class: 'note',
@@ -258,10 +431,10 @@ export function createRunView({ container, store, handlers }) {
       }),
       el('p', {
         class: 'note',
-        text: '時刻の記録と直接入力は次の段階で実装します。',
+        text: '直接入力は次の段階で実装します。',
       }),
     ]);
   }
 
-  return { render };
+  return { render, reset };
 }
