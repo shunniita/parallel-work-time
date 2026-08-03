@@ -46,6 +46,23 @@ export const TASK_OPERATION = {
   ADD_INTERVAL: 'addInterval',
 };
 
+/**
+ * 操作の表示名（仕様書12.4）。
+ *
+ * 操作の定義と同じ場所へ置く。画面のボタン名と、状態が合わない操作を拒否した
+ * ときの文言（`intervalOps.js`）で同じ語を使うためである。
+ */
+export const TASK_OPERATION_LABEL = {
+  [TASK_OPERATION.START]: '開始',
+  [TASK_OPERATION.BREAK]: '休憩',
+  [TASK_OPERATION.RESUME]: '再開',
+  [TASK_OPERATION.FINISH]: '終了',
+  [TASK_OPERATION.CHANGE_PARTICIPANTS]: '参加者変更',
+  [TASK_OPERATION.DIRECT_ENTRY]: '直接入力',
+  [TASK_OPERATION.EDIT_HISTORY]: '履歴編集',
+  [TASK_OPERATION.ADD_INTERVAL]: '区間追加',
+};
+
 /** 状態ごとに有効な操作（仕様書12.4の対応表）。 */
 const OPERATIONS_BY_STATE = {
   [TASK_STATE.NOT_STARTED]: [
