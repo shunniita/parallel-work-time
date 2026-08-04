@@ -507,7 +507,7 @@ export function createRunView({ container, store, actions, handlers, now }) {
       }),
       el('p', {
         class: 'note',
-        text: '直接入力は次の段階で実装します。',
+        text: '直接入力の追加・編集・削除は、作業項目名を押して詳細から行います。',
       }),
     ]);
   }
