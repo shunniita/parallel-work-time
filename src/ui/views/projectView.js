@@ -55,7 +55,7 @@ export function createProjectView({ container, store, actions, handlers, now }) 
     runQuantityDraft: null,
     /** @type {string[]} */
     errors: [],
-    /** @type {{warnings: string[], retry: () => Promise<void>}|null} */
+    /** @type {{warnings: object[], retry: () => Promise<void>}|null} */
     overflow: null,
     busy: false,
   };
@@ -633,7 +633,7 @@ export function createProjectView({ container, store, actions, handlers, now }) 
         el(
           'ul',
           {},
-          local.overflow.warnings.map((message) => el('li', { text: message })),
+          local.overflow.warnings.map((warning) => el('li', { text: warning.message })),
         ),
         el('div', { class: 'actions' }, [
           el('button', {

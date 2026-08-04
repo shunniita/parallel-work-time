@@ -293,6 +293,33 @@ describe('createRunView', () => {
       expect(view.query('task-form-row')).toBeNull();
     });
 
+    it('保存中は別の行の操作ボタンを押せない（レビュー指摘 FB-10）', async () => {
+      const view = mount({ tasks: [working('受入確認', 1), working('外観確認', 2)] });
+      let resolveAction;
+      view.actions.recordFinish.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveAction = resolve;
+          }),
+      );
+      view.rowOf('受入確認').querySelector('[data-testid="row-op-finish"]').click();
+      view.query('op-submit').click();
+      await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+      // 別の行のフォームを開けてしまうと、先の保存の完了処理が `local.operation`
+      // を畳み、開いたばかりの入力ごと消える。
+      expect(
+        view.rowOf('外観確認').querySelector('[data-testid="row-op-break"]').disabled,
+      ).toBe(true);
+
+      resolveAction({ dataset: null, warnings: [] });
+      await vi.waitFor(() => expect(view.query('task-form-row')).toBeNull());
+
+      expect(
+        view.rowOf('外観確認').querySelector('[data-testid="row-op-break"]').disabled,
+      ).toBe(false);
+    });
+
     it('reset で閉じる（別の実施回へ移るとき）', () => {
       const view = mount({ tasks: [working('受入確認', 1)] });
       view.rowOf('受入確認').querySelector('[data-testid="row-op-break"]').click();

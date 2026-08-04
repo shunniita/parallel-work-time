@@ -394,6 +394,84 @@ describe('createTaskDetailView', () => {
       expect(view.query('op-form')).toBeNull();
     });
 
+    describe('保存中の多重操作（レビュー指摘 FB-10）', () => {
+      /**
+       * 保存を止めたまま送信した状態を作る。
+       *
+       * @returns {{view: object, finish: (result?: object) => void}}
+       */
+      function submitAndHold() {
+        const view = mount({ task: TASKS.working() });
+        let settle;
+        view.actions.recordFinish.mockImplementation(
+          () =>
+            new Promise((resolve, reject) => {
+              settle = { resolve, reject };
+            }),
+        );
+        view.query('op-finish').click();
+        view.query('op-submit').click();
+        return { view, settle: () => settle };
+      }
+
+      it('保存中は上部の操作ボタンを押せない', async () => {
+        const { view } = submitAndHold();
+        await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+        // ここで別のフォームを開けてしまうと、先の保存の完了処理が
+        // `activeForm` を畳み、開いたばかりの入力ごと消える。
+        expect(view.query('op-break').disabled).toBe(true);
+        expect(view.query('op-addInterval').disabled).toBe(true);
+        expect(view.query('op-editHistory').disabled).toBe(true);
+      });
+
+      it('保存中は区間履歴の編集・削除ボタンも押せない', async () => {
+        const view = mount({ task: taskRecord({
+          name: '受入確認',
+          intervals: [workInterval('2026-08-01T09:00:00+09:00', null, ['甲'])],
+        }) });
+        let resolveAction;
+        view.actions.recordFinish.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveAction = resolve;
+            }),
+        );
+        view.query('op-editHistory').click();
+        view.query('op-finish').click();
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+        expect(view.query('interval-edit').disabled).toBe(true);
+        expect(view.query('interval-delete').disabled).toBe(true);
+
+        resolveAction({ dataset: null, warnings: [] });
+      });
+
+      it('保存が終われば操作ボタンが戻る', async () => {
+        const { view, settle } = submitAndHold();
+        await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+        settle().resolve({ dataset: null, warnings: [] });
+        await vi.waitFor(() => expect(view.query('op-form')).toBeNull());
+
+        // 状態が許す操作だけが戻る。「作業中」なので休憩は押せて開始は押せない。
+        expect(view.query('op-break').disabled).toBe(false);
+        expect(view.query('op-start').disabled).toBe(true);
+      });
+
+      it('保存が失敗したらフォームは開いたまま、操作ボタンだけ戻る', async () => {
+        const { view, settle } = submitAndHold();
+        await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+        settle().reject(new Error('保存できない'));
+        await vi.waitFor(() => expect(view.query('op-break').disabled).toBe(false));
+
+        // 入力を直して押し直せるよう、フォームは閉じない。
+        expect(view.query('op-form')).not.toBeNull();
+      });
+    });
+
     it('保存で出た警告を記録後に示す（仕様書8.9.5）', async () => {
       const view = mount({ task: TASKS.working() });
       view.actions.recordFinish.mockResolvedValue({
@@ -597,6 +675,28 @@ describe('createTaskDetailView', () => {
 
         expect(view.query('delete-confirm-panel')).toBeNull();
         expect(view.query('interval-delete')).not.toBeNull();
+      });
+    });
+
+    describe('フォーカス（レビュー指摘 FB-11）', () => {
+      it('編集を押すと編集フォームの先頭入力欄へフォーカスが移る', () => {
+        const view = mount({ task: taskWithInterval() });
+        view.query('op-editHistory').click();
+
+        view.query('interval-edit').click();
+
+        // 押したボタンは再描画で捨てられる。移す先が無いとフォーカスは画面
+        // 先頭側へ戻り、キーボードだけでは入力欄へたどり着けない（仕様書13章）。
+        expect(document.activeElement).toBe(view.query('entry-start'));
+      });
+
+      it('削除を押すと削除理由の入力欄へフォーカスが移る', () => {
+        const view = mount({ task: taskWithInterval() });
+        view.query('op-editHistory').click();
+
+        view.query('interval-delete').click();
+
+        expect(document.activeElement).toBe(view.query('delete-reason'));
       });
     });
 

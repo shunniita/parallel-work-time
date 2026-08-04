@@ -6,7 +6,9 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { warningMessages } from '../../src/domain/problems.js';
 import {
+  VALIDATION_WARNING,
   validateProjectGroupDraft,
   validateProjectIdAvailable,
   validateRunDraft,
@@ -19,6 +21,11 @@ import { projectGroup, resetIds, taskTemplate, workRun } from '../fixtures/build
 beforeEach(() => {
   resetIds();
 });
+
+/** 警告の文言をまとめて1つの文字列にする。 */
+function warningText(result) {
+  return warningMessages(result.warnings).join('\n');
+}
 
 describe('validateTemplateDraft()', () => {
   /** 検証を通る最小の下書き。 */
@@ -389,15 +396,27 @@ describe('validateRunDraft()', () => {
     it('超過を警告する', () => {
       const result = validateRunDraft(draft({ runQuantity: 80 }), context());
 
-      expect(result.warnings.join('\n')).toContain('総予定数');
-      expect(result.warnings.join('\n')).toContain('続行できる');
+      expect(warningText(result)).toContain('総予定数');
+      expect(warningText(result)).toContain('続行できる');
+    });
+
+    it('警告に累計超過の種別コードを付ける（レビュー指摘 D-15）', () => {
+      const result = validateRunDraft(draft({ runQuantity: 80 }), context());
+
+      expect(result.warnings).toEqual([
+        {
+          code: VALIDATION_WARNING.QUANTITY_OVERFLOW,
+          path: '今回数量',
+          message: expect.stringContaining('総予定数'),
+        },
+      ]);
     });
 
     it('超過分の数を示す', () => {
       const result = validateRunDraft(draft({ runQuantity: 80 }), context());
 
       // 既存50 + 今回80 = 130。総予定数100を30超える。
-      expect(result.warnings.join('\n')).toContain('30');
+      expect(warningText(result)).toContain('30');
       expect(result.preview).toMatchObject({ accumulated: 130, overBy: 30, exceeded: true });
     });
 
@@ -479,7 +498,8 @@ describe('validateTotalQuantityChange()', () => {
     const result = validateTotalQuantityChange(runs(), 60);
 
     expect(result.ok).toBe(true);
-    expect(result.warnings.join('\n')).toContain('続行できる');
+    expect(warningText(result)).toContain('続行できる');
+    expect(result.warnings[0].code).toBe(VALIDATION_WARNING.QUANTITY_OVERFLOW);
     expect(result.preview).toMatchObject({ remaining: -20, overBy: 20, exceeded: true });
   });
 

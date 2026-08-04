@@ -30,13 +30,13 @@
  * `{ok, errors, warnings, intervals}` を返す。`errors` は保存を止める不備で
  * 「場所: 説明」の文字列、`warnings` は種別コードつきの
  * `{code, path, message}` である（設計メモ §3.1、レビュー指摘 D-15）。
- * `validation.js` の警告は文字列のままだが、こちらは新設なので最初から
- * 種別コードを持たせる。D-15 の対応時に既存側を揃える。
+ * 入れ物は `problems.js` を `validation.js` と共有する。
  */
 
 import { compareIso, isValidIsoSecond } from './datetime.js';
 import { INTERVAL_TYPE, isOpenInterval } from './effort.js';
 import { findOverlappingPairs } from './overlap.js';
+import { Problems } from './problems.js';
 import { TASK_STATE, TASK_STATE_LABEL, activeInterval, taskState } from './taskState.js';
 
 /** 区間の検証で出る警告の種別（設計メモ §3.1）。 */
@@ -44,39 +44,6 @@ export const INTERVAL_WARNING = {
   /** 同一作業項目内で時間帯が重なる（仕様書8.9.5）。保存は止めない。 */
   OVERLAP: 'intervalOverlap',
 };
-
-/**
- * 検証結果を集める入れ物。
- *
- * `validation.js` の同名クラスと形が違う。警告が種別コードを持つためである。
- */
-class Problems {
-  constructor() {
-    this.errors = [];
-    this.warnings = [];
-  }
-
-  /**
-   * @param {string} path 例: `終了日時`
-   * @param {string} message
-   */
-  add(path, message) {
-    this.errors.push(`${path}: ${message}`);
-  }
-
-  /**
-   * @param {string} code {@link INTERVAL_WARNING} のいずれか
-   * @param {string} path
-   * @param {string} message
-   */
-  warn(code, path, message) {
-    this.warnings.push({ code, path, message });
-  }
-
-  get ok() {
-    return this.errors.length === 0;
-  }
-}
 
 /**
  * 変換に失敗した結果を返す。

@@ -18,6 +18,17 @@
  * ままだと、確定したときにどれを保存したのか分かりにくくなるためである。
  * 削除確認（`local.deleteTarget`）も同様に単一である。
  *
+ * ## 保存中は外側の操作を止める
+ *
+ * フォーム自身は送信中に自分の確定・取消を無効にするが、それだけでは足りない。
+ * 保存を待つ間に上部のボタンや別の行から次のフォームを開けてしまうと、先の
+ * 保存の完了処理が `activeForm` を畳み、開いたばかりの入力を消す
+ * （レビュー指摘 FB-10）。`local.busy` の間は外側のボタンをすべて無効にし、
+ * 開いているフォームが常に1つだけという前提を保存中も崩さない。
+ *
+ * 無効化は `render()` ではなく {@link applyBusy} で行う。保存中に描き直すと、
+ * まさに送信中のフォームが作り直され、入力内容と「保存中」の表示が失われる。
+ *
  * 経過時間の1分ごとの再評価（仕様書8.8）は Step 11 である。ここでは未終了区間で
  * あることを表示するにとどめる（設計メモ §5）。
  */
@@ -89,16 +100,53 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
    *   （「履歴編集」の押下で切り替える）。
    * - `deleteTarget`: 削除確認を開いている区間のID。
    * - `warnings`: 直前の保存で出た警告（区間の重複、仕様書8.9.5）。
+   * - `busy`: 保存中かどうか。外側のボタンを止める（レビュー指摘 FB-10）。
    *
    * 保存を拒否したエラーは各フォーム自身が出す。
    */
-  const local = { activeForm: null, historyEditMode: false, deleteTarget: null, warnings: [] };
+  const local = {
+    activeForm: null,
+    historyEditMode: false,
+    deleteTarget: null,
+    warnings: [],
+    busy: false,
+  };
 
   function reset() {
     local.activeForm = null;
     local.historyEditMode = false;
     local.deleteTarget = null;
     local.warnings = [];
+    local.busy = false;
+  }
+
+  /**
+   * 保存中に押せてはいけない外側のボタン。描き直すたびに作り直す。
+   *
+   * `baseDisabled` は保存とは無関係な無効化（状態が許さない操作、未実装の操作）
+   * である。保存が終わったときにこの値へ戻す。
+   *
+   * @type {{button: HTMLButtonElement, baseDisabled: boolean}[]}
+   */
+  let outerControls = [];
+
+  /**
+   * 外側のボタンを保存中の無効化の対象に加える。
+   *
+   * @param {HTMLButtonElement} button
+   * @param {boolean} baseDisabled
+   * @returns {HTMLButtonElement}
+   */
+  function trackOuter(button, baseDisabled) {
+    outerControls.push({ button, baseDisabled });
+    return button;
+  }
+
+  /** 保存中かどうかを、いま画面にあるボタンへ反映する（レビュー指摘 FB-10）。 */
+  function applyBusy() {
+    for (const { button, baseDisabled } of outerControls) {
+      button.disabled = baseDisabled || local.busy;
+    }
   }
 
   /**
@@ -157,10 +205,28 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
   async function withCurrentTarget(perform) {
     const { selection } = store.getState();
     const target = { runId: selection.runId, taskRecordId: selection.taskRecordId };
-    const result = await perform(target);
-    // 保存の成否によらず、開いていた入力をここで畳む。あとで再びこの作業項目を
-    // 表示したときに古いフォームが残らないようにするためで、描画するかどうかとは
-    // 別に必ず行う。
+    // 保存中は外側のボタンを止める。押せたままだと、この await の間に次の
+    // フォームが開き、下の畳み込みがそれを消す（レビュー指摘 FB-10）。
+    local.busy = true;
+    applyBusy();
+
+    let result;
+    try {
+      result = await perform(target);
+    } catch (error) {
+      // 保存を拒否された。フォームは開いたままにする。送信元のフォームが自分で
+      // エラーを出し、利用者は入力を直して押し直せる（`intervalEntryForm` の
+      // `submit()`）。ここで描き直すとその表示ごと消えるため、戻すのは外側の
+      // ボタンだけにする。
+      local.busy = false;
+      applyBusy();
+      throw error;
+    }
+
+    // 保存できたので、開いていた入力を畳む。あとで再びこの作業項目を表示した
+    // ときに古いフォームが残らないようにするためで、描画するかどうかとは別に
+    // 必ず行う。
+    local.busy = false;
     local.activeForm = null;
     local.deleteTarget = null;
     local.warnings = (result.warnings ?? []).map((warning) => warning.message);
@@ -236,46 +302,57 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
     const enabled = allowed.includes(operation) && ready;
     const isHistoryToggle = operation === TASK_OPERATION.EDIT_HISTORY;
     const pressed = isHistoryToggle && local.historyEditMode;
-    return el('button', {
-      type: 'button',
-      class: pressed ? 'button button--active' : 'button',
-      text: TASK_OPERATION_LABEL[operation],
-      dataset: { testid: `op-${operation}` },
-      disabled: !enabled,
-      title: ready ? undefined : NOT_READY_REASON[operation],
-      'aria-pressed': isHistoryToggle ? String(local.historyEditMode) : undefined,
-      on: {
-        click: () => {
-          if (isHistoryToggle) {
-            local.historyEditMode = !local.historyEditMode;
-            if (!local.historyEditMode) {
-              // 一覧を畳むときは、行から開いていた編集・削除も一緒に畳む。
-              // ボタン自体が消えるため、開いたままだと閉じる手段が無くなる。
-              if (local.activeForm?.kind === 'editInterval') {
-                local.activeForm = null;
+    return trackOuter(
+      el('button', {
+        type: 'button',
+        class: pressed ? 'button button--active' : 'button',
+        text: TASK_OPERATION_LABEL[operation],
+        dataset: { testid: `op-${operation}` },
+        disabled: !enabled || local.busy,
+        title: ready ? undefined : NOT_READY_REASON[operation],
+        'aria-pressed': isHistoryToggle ? String(local.historyEditMode) : undefined,
+        on: {
+          click: () => {
+            if (isHistoryToggle) {
+              local.historyEditMode = !local.historyEditMode;
+              if (!local.historyEditMode) {
+                // 一覧を畳むときは、行から開いていた編集・削除も一緒に畳む。
+                // ボタン自体が消えるため、開いたままだと閉じる手段が無くなる。
+                if (local.activeForm?.kind === 'editInterval') {
+                  local.activeForm = null;
+                }
+                local.deleteTarget = null;
               }
-              local.deleteTarget = null;
+              render();
+              return;
             }
+            local.warnings = [];
+            local.deleteTarget = null;
+            local.activeForm =
+              operation === TASK_OPERATION.ADD_INTERVAL
+                ? { kind: 'addInterval' }
+                : { kind: 'operation', operation };
             render();
-            return;
-          }
-          local.warnings = [];
-          local.deleteTarget = null;
-          local.activeForm =
-            operation === TASK_OPERATION.ADD_INTERVAL
-              ? { kind: 'addInterval' }
-              : { kind: 'operation', operation };
-          render();
-          // 開いた入力欄へ移す。押したボタンは再描画で作り直されるため、
-          // フォーカスを戻す先が無くなる（レビュー指摘 D-18 の (a) と同じ形）。
-          form?.focus();
+            // 開いた入力欄へ移す。押したボタンは再描画で作り直されるため、
+            // フォーカスを戻す先が無くなる（レビュー指摘 D-18 の (a) と同じ形）。
+            form?.focus();
+          },
         },
-      },
-    });
+      }),
+      !enabled,
+    );
   }
 
   /** 直近に描いた上部フォーム。フォーカス移動のために持つ。 */
   let form = null;
+
+  /**
+   * 直近に描いた行内フォーム（区間の編集・削除確認）。
+   *
+   * 上部の `form` と同じくフォーカス移動のために持つ。行の中で作るため、
+   * 呼び出し側からは局所変数へ届かない（レビュー指摘 FB-11）。
+   */
+  let rowForm = null;
 
   /**
    * 上部の操作フォーム（開始・休憩・…・区間追加）。行の編集フォームは
@@ -372,32 +449,44 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
       cells.push(
         el('td', {}, [
           el('div', { class: 'actions actions--inline' }, [
-            el('button', {
-              type: 'button',
-              class: 'button button--compact',
-              text: '編集',
-              dataset: { testid: 'interval-edit' },
-              on: {
-                click: () => {
-                  local.deleteTarget = null;
-                  local.activeForm = { kind: 'editInterval', intervalId: interval.intervalId };
-                  render();
+            trackOuter(
+              el('button', {
+                type: 'button',
+                class: 'button button--compact',
+                text: '編集',
+                dataset: { testid: 'interval-edit' },
+                disabled: local.busy,
+                on: {
+                  click: () => {
+                    local.deleteTarget = null;
+                    local.activeForm = { kind: 'editInterval', intervalId: interval.intervalId };
+                    render();
+                    // 上部の操作ボタンと同じ規約で、開いた入力欄へ移す。押した
+                    // ボタンは再描画で作り直される（レビュー指摘 FB-11）。
+                    rowForm?.focus();
+                  },
                 },
-              },
-            }),
-            el('button', {
-              type: 'button',
-              class: 'button button--compact button--danger',
-              text: '削除',
-              dataset: { testid: 'interval-delete' },
-              on: {
-                click: () => {
-                  local.activeForm = null;
-                  local.deleteTarget = interval.intervalId;
-                  render();
+              }),
+              false,
+            ),
+            trackOuter(
+              el('button', {
+                type: 'button',
+                class: 'button button--compact button--danger',
+                text: '削除',
+                dataset: { testid: 'interval-delete' },
+                disabled: local.busy,
+                on: {
+                  click: () => {
+                    local.activeForm = null;
+                    local.deleteTarget = interval.intervalId;
+                    render();
+                    rowForm?.focus();
+                  },
                 },
-              },
-            }),
+              }),
+              false,
+            ),
           ]),
         ]),
       );
@@ -420,6 +509,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
           render();
         },
       });
+      rowForm = entry;
       rows.push(
         el('tr', { dataset: { testid: 'interval-edit-row' } }, [
           el('td', { colspan: String(columnCount) }, [entry.element]),
@@ -444,6 +534,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
             render();
           },
         });
+        rowForm = confirm;
         rows.push(
           el('tr', { dataset: { testid: 'interval-delete-row' } }, [
             el('td', { colspan: String(columnCount) }, [confirm.element]),
@@ -541,6 +632,11 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
   }
 
   function render() {
+    // 描き直すと前回のボタンとフォームは捨てられる。参照を先に空にしておかないと、
+    // 画面に無い要素へフォーカスや無効化を当てることになる。
+    outerControls = [];
+    rowForm = null;
+
     const found = selected();
     if (found === null) {
       replaceChildren(container, [
