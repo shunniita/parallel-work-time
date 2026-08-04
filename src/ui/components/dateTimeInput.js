@@ -26,8 +26,13 @@ import { el, field } from '../dom.js';
  * 日時入力欄を作る。
  *
  * @param {{id: string, testid?: string, label?: string, hint?: string,
- *          value?: string, now?: () => Date}} options
- *   `value` はオフセット付きISO 8601。省略すると現在日時（仕様書8.4.3）
+ *          value?: string, startEmpty?: boolean, optional?: boolean,
+ *          now?: () => Date}} options
+ *   `value` はオフセット付きISO 8601。省略すると現在日時（仕様書8.4.3）。
+ *   `startEmpty` を渡すと `value` / `now` を無視して空欄から始める（区間編集で
+ *   「もともと未終了」の場合に使う。設計メモ §4.2.2）。
+ *   `optional` を渡すと、空欄のまま確定しても `ok: true, iso: null` を返す。
+ *   これも未終了区間を未終了のまま保存する編集のためにある。
  * @returns {{element: HTMLElement, input: HTMLElement,
  *            read: () => {ok: boolean, iso: string|null, error: string|null},
  *            setValue: (iso: string) => void, focus: () => void}}
@@ -38,13 +43,15 @@ export function createDateTimeInput({
   label = '日時',
   hint,
   value,
+  startEmpty = false,
+  optional = false,
   now = () => new Date(),
 }) {
   const input = el('input', {
     type: 'datetime-local',
     step: '1',
     class: 'input input--auto',
-    value: toDateTimeLocal(value ?? toIsoSecond(now())),
+    value: startEmpty ? '' : toDateTimeLocal(value ?? toIsoSecond(now())),
     dataset: { testid },
   });
 
@@ -57,11 +64,15 @@ export function createDateTimeInput({
      *
      * 未入力・不正な日付は `ok: false` で返し、例外にしない。画面はエラー文を
      * そのまま出せる。判定は `fromDateTimeLocal()` が受け付ける範囲と一致する
-     * （レビュー指摘 SOL-3）。
+     * （レビュー指摘 SOL-3）。`optional` が true の場合に限り、空欄は
+     * `iso: null` の成功として返す。
      *
      * @returns {{ok: boolean, iso: string|null, error: string|null}}
      */
     read() {
+      if (optional && input.value === '') {
+        return { ok: true, iso: null, error: null };
+      }
       if (!isValidDateTimeLocal(input.value)) {
         return {
           ok: false,

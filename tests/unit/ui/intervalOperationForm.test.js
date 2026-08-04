@@ -53,6 +53,11 @@ function mount(options) {
     cancel: () => query('op-cancel').click(),
     errors: () => query('op-errors'),
     note: form.element.querySelector('.note'),
+    /** 参加者入力欄に積まれている名前（チップ）。 */
+    participantChips: () =>
+      [...form.element.querySelectorAll('[data-testid="op-participants-item"] span')].map(
+        (node) => node.textContent,
+      ),
   };
 }
 
@@ -113,6 +118,46 @@ describe('createIntervalOperationForm', () => {
       expect(view.participants).not.toBeNull();
       expect(view.note.textContent).toContain('1人以上');
     });
+
+    it('進行中の休憩が無ければ「見つからない」と区別して伝える（レビュー指摘 FB-5）', () => {
+      // 状態表示とボタン制御が一致しないままフォームが開かれた場合を想定する。
+      // 到達には多重タブでの競合などが要り、通常操作では起きない。
+      const view = mount({ operation: TASK_OPERATION.RESUME, taskRecord: taskRecord() });
+
+      expect(view.note.textContent).toContain('進行中の休憩が見つかりません');
+      expect(view.note.textContent).not.toContain('参加者0人');
+    });
+  });
+
+  describe('参加者変更（仕様書8.4.10）', () => {
+    it('現在の参加者を初期値にする（空欄からではない）', () => {
+      const view = mount({
+        operation: TASK_OPERATION.CHANGE_PARTICIPANTS,
+        taskRecord: workingTask(['甲', '乙']),
+      });
+
+      expect(view.participants).not.toBeNull();
+      expect(view.participantChips()).toEqual(['甲', '乙']);
+    });
+
+    it('休憩中でも参加者を尋ねる（0人にもできる、仕様書8.9.4）', () => {
+      const view = mount({
+        operation: TASK_OPERATION.CHANGE_PARTICIPANTS,
+        taskRecord: breakingTask(['甲']),
+      });
+
+      expect(view.participants).not.toBeNull();
+      expect(view.participantChips()).toEqual(['甲']);
+    });
+
+    it('進行中の区間が無ければ「見つからない」と伝える', () => {
+      const view = mount({
+        operation: TASK_OPERATION.CHANGE_PARTICIPANTS,
+        taskRecord: taskRecord(),
+      });
+
+      expect(view.note.textContent).toContain('進行中の区間が見つかりません');
+    });
   });
 
   describe('確定', () => {
@@ -149,6 +194,26 @@ describe('createIntervalOperationForm', () => {
       expect(view.onSubmit).toHaveBeenCalledWith({
         at: toIsoSecond(FIXED_NOW),
         // 「追加」を押していない入力欄の値も拾う。
+        participants: ['甲', '乙'],
+      });
+    });
+
+    it('参加者変更は初期値から編集した一覧を渡す（丙が離脱）', async () => {
+      const view = mount({
+        operation: TASK_OPERATION.CHANGE_PARTICIPANTS,
+        taskRecord: workingTask(['甲', '乙', '丙']),
+      });
+      // 最後に積んだ丙を外す。
+      const removeButtons = view.form.element.querySelectorAll(
+        '[data-testid="op-participants-remove"]',
+      );
+      removeButtons[removeButtons.length - 1].click();
+
+      view.submit();
+      await vi.waitFor(() => expect(view.onSubmit).toHaveBeenCalled());
+
+      expect(view.onSubmit).toHaveBeenCalledWith({
+        at: toIsoSecond(FIXED_NOW),
         participants: ['甲', '乙'],
       });
     });

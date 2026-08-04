@@ -1,20 +1,30 @@
 /**
- * 作業項目詳細（仕様書12.2、12.3、12.4、8.4）。
+ * 作業項目詳細（仕様書12.2、12.3、12.4、8.4、11章）。
  *
  * 一つの作業項目について、区間履歴・参加者・工数内訳を出し、状態に応じた操作を
- * 置く。実施回詳細の作業項目行からも同じ操作ができるが（`runView.js`）、こちらは
- * 記録した区間を1件ずつ確かめられる点が違う。
+ * 置く。実施回詳細の作業項目行からも一部の操作ができるが（`runView.js`）、
+ * こちらは記録した区間を1件ずつ確かめ、追加・編集・削除できる点が違う。
  *
- * 実装計画 Step 6 PR-B1 の時点で動くのは開始・休憩・再開・終了である。参加者
- * 変更・区間追加・履歴編集は PR-B2、直接入力は Step 7 で足す。押せるのに何も
- * 起きないボタンにはせず、無効にしたうえで理由を添える（`shell.js` の未実装
- * ナビと同じ扱い）。
+ * 結線済みの操作は開始・休憩・再開・終了・参加者変更・区間追加・履歴編集
+ * （編集・削除）である。直接入力（8.5）だけが Step 7 待ちで残る。押せるのに
+ * 何も起きないボタンにはせず、無効にしたうえで理由を添える（`shell.js` の
+ * 未実装ナビと同じ扱い）。
+ *
+ * ## 画面内で開くフォームは1つ
+ *
+ * `local.activeForm` が、上部の操作ボタンから開くフォーム（開始・休憩・…・
+ * 区間追加）と、区間履歴の行から開く編集フォームの両方を1つのスロットで持つ。
+ * 別の操作を開くと前のフォームは自動的に閉じる。同時に複数の入力が開いた
+ * ままだと、確定したときにどれを保存したのか分かりにくくなるためである。
+ * 削除確認（`local.deleteTarget`）も同様に単一である。
  *
  * 経過時間の1分ごとの再評価（仕様書8.8）は Step 11 である。ここでは未終了区間で
  * あることを表示するにとどめる（設計メモ §5）。
  */
 
+import { compareIso } from '../../domain/datetime.js';
 import {
+  INTERVAL_TYPE,
   INTERVAL_TYPE_LABEL,
   intervalEffortSeconds,
   isOpenInterval,
@@ -30,32 +40,41 @@ import {
   availableOperations,
   taskState,
 } from '../../domain/taskState.js';
+import { createDeleteIntervalConfirm } from '../components/deleteIntervalConfirm.js';
+import { createIntervalEntryForm } from '../components/intervalEntryForm.js';
 import { createIntervalOperationForm } from '../components/intervalOperationForm.js';
 import { el, replaceChildren } from '../dom.js';
 import { RUN_STATUS_LABEL, toMinutesLabel } from '../labels.js';
+import { VIEW } from '../shell.js';
 
-/** PR-B1 で結線済みの操作。 */
+/** 結線済みの操作。直接入力（8.5）だけが Step 7 待ちで残る。 */
 const WIRED_OPERATIONS = new Set([
   TASK_OPERATION.START,
   TASK_OPERATION.BREAK,
   TASK_OPERATION.RESUME,
   TASK_OPERATION.FINISH,
+  TASK_OPERATION.CHANGE_PARTICIPANTS,
+  TASK_OPERATION.ADD_INTERVAL,
+  TASK_OPERATION.EDIT_HISTORY,
 ]);
 
 /** 未実装の操作に添える理由。 */
 const NOT_READY_REASON = {
-  [TASK_OPERATION.CHANGE_PARTICIPANTS]: '参加者変更は次の段階で実装します',
-  [TASK_OPERATION.ADD_INTERVAL]: '区間追加は次の段階で実装します',
-  [TASK_OPERATION.EDIT_HISTORY]: '履歴編集は次の段階で実装します',
   [TASK_OPERATION.DIRECT_ENTRY]: '直接入力は次の段階で実装します',
 };
+
+/** 区間履歴の表の列数。編集モード中は「操作」列が1つ増える。 */
+const BASE_COLUMN_COUNT = 5;
 
 /**
  * 作業項目詳細を作る。
  *
  * @param {{container: HTMLElement, store: object,
  *          actions: {recordStart: Function, recordBreak: Function,
- *                    recordResume: Function, recordFinish: Function},
+ *                    recordResume: Function, recordFinish: Function,
+ *                    recordParticipantChange: Function,
+ *                    addIntervalManually: Function, updateInterval: Function,
+ *                    deleteInterval: Function, previewIntervalDeletion: Function},
  *          handlers: {onBackToRun: Function},
  *          now?: () => Date}} options
  * @returns {{render: () => void, reset: () => void}}
@@ -64,14 +83,21 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
   /**
    * ビュー内部の状態（`src/app/store.js` の規約2）。
    *
-   * `operation` は開いている操作フォーム、`warnings` は直前の保存で出た警告
-   * （区間の重複、仕様書8.9.5）である。ストアへは持たせない。保存を拒否した
-   * エラーはフォーム自身が出す。
+   * - `activeForm`: 開いているフォーム。`{kind:'operation', operation}` /
+   *   `{kind:'addInterval'}` / `{kind:'editInterval', intervalId}` / `null`。
+   * - `historyEditMode`: 区間履歴の行に編集・削除ボタンを出すかどうか
+   *   （「履歴編集」の押下で切り替える）。
+   * - `deleteTarget`: 削除確認を開いている区間のID。
+   * - `warnings`: 直前の保存で出た警告（区間の重複、仕様書8.9.5）。
+   *
+   * 保存を拒否したエラーは各フォーム自身が出す。
    */
-  const local = { operation: null, warnings: [] };
+  const local = { activeForm: null, historyEditMode: false, deleteTarget: null, warnings: [] };
 
   function reset() {
-    local.operation = null;
+    local.activeForm = null;
+    local.historyEditMode = false;
+    local.deleteTarget = null;
     local.warnings = [];
   }
 
@@ -103,79 +129,78 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
   }
 
   /**
-   * 操作を実行する。
+   * この作業項目がいま案件画面の中で表示されているかを確かめる。
    *
-   * 成功したらフォームを閉じる。区間の重複は拒否ではなく警告なので（仕様書
-   * 8.9.5）、保存したうえで画面へ出す。失敗時はフォーム側がエラーを出すため、
-   * ここでは投げ直すだけにする。
+   * 保存を待つあいだに利用者が別の作業項目・別の実施回・別の画面へ移った場合、
+   * ここでの局所描画は `detailPane` を上書きしてしまう（レビュー指摘 FB-7）。
+   * `wrap()` の `store.setState()` が既にストア購読経由で現在の画面を正しく
+   * 描いているため、対象が変わっていれば局所描画をしない。
+   *
+   * @param {string} runId
+   * @param {string} taskRecordId
+   * @returns {boolean}
+   */
+  function isShowingTask(runId, taskRecordId) {
+    const { view, selection } = store.getState();
+    return (
+      view === VIEW.PROJECTS && selection.runId === runId && selection.taskRecordId === taskRecordId
+    );
+  }
+
+  /**
+   * 対象を確定してから保存する共通処理。3つの入口（操作・区間編集・削除）が
+   * 「対象を選ぶ→保存する→ローカル状態を畳む→対象がいまも表示中なら描き直す」
+   * という同じ形をとる。差は呼び出す保存処理だけである。
+   *
+   * @param {(target: {runId: string, taskRecordId: string}) => Promise<object>} perform
+   */
+  async function withCurrentTarget(perform) {
+    const { selection } = store.getState();
+    const target = { runId: selection.runId, taskRecordId: selection.taskRecordId };
+    const result = await perform(target);
+    // 保存の成否によらず、開いていた入力をここで畳む。あとで再びこの作業項目を
+    // 表示したときに古いフォームが残らないようにするためで、描画するかどうかとは
+    // 別に必ず行う。
+    local.activeForm = null;
+    local.deleteTarget = null;
+    local.warnings = (result.warnings ?? []).map((warning) => warning.message);
+    // 保存が成功するとストア購読の再描画が走るが、それはこの行より前、まだ
+    // ローカル状態が残っている時点で起きる。閉じた状態を映すために、対象が
+    // いまも表示中であればここで描き直す（`src/app/store.js` の規約2、
+    // レビュー指摘 FB-7）。
+    if (isShowingTask(target.runId, target.taskRecordId)) {
+      render();
+    }
+  }
+
+  /**
+   * 開始・休憩・再開・終了・参加者変更・区間追加を実行する。
    *
    * @param {Function} action
    * @param {object} input
    */
-  async function runOperation(action, input) {
-    const { selection } = store.getState();
-    const target = { runId: selection.runId, taskRecordId: selection.taskRecordId };
-    const result = await action(target, input);
-    local.operation = null;
-    local.warnings = result.warnings.map((warning) => warning.message);
-    // 保存が成功するとストア購読の再描画が走るが、それはこの行より前、まだ
-    // `local.operation` が残っている時点で起きる。閉じた状態を映すために、
-    // ここで必ず描き直す（`src/app/store.js` の規約2）。
-    render();
+  function runOperation(action, input) {
+    return withCurrentTarget((target) => action(target, input));
   }
 
   /**
-   * 操作ボタンを1つ作る。
+   * 区間を編集する（仕様書8.4.5）。
    *
-   * @param {object} task
-   * @param {string} operation
-   * @param {string[]} allowed
+   * @param {string} intervalId
+   * @param {object} changes
    */
-  function operationButton(task, operation, allowed) {
-    const ready = WIRED_OPERATIONS.has(operation);
-    const enabled = allowed.includes(operation) && ready;
-    return el('button', {
-      type: 'button',
-      class: 'button',
-      text: TASK_OPERATION_LABEL[operation],
-      dataset: { testid: `op-${operation}` },
-      disabled: !enabled,
-      title: ready ? undefined : NOT_READY_REASON[operation],
-      on: {
-        click: () => {
-          local.warnings = [];
-          local.operation = operation;
-          render();
-          // 開いた入力欄へ移す。押したボタンは再描画で作り直されるため、
-          // フォーカスを戻す先が無くなる（レビュー指摘 D-18 の (a) と同じ形）。
-          form?.focus();
-        },
-      },
-    });
+  function runIntervalEdit(intervalId, changes) {
+    return withCurrentTarget((target) => actions.updateInterval(target, intervalId, changes));
   }
 
-  /** 直近に描いた操作フォーム。フォーカス移動のために持つ。 */
-  let form = null;
-
-  function renderOperationForm(task) {
-    form = null;
-    if (local.operation === null) {
-      return null;
-    }
-    const { dataset, selection } = store.getState();
-    form = createIntervalOperationForm({
-      operation: local.operation,
-      taskRecord: task,
-      candidates: collectParticipants(dataset.workRuns, { runId: selection.runId }),
-      now,
-      idPrefix: 'task-op',
-      onSubmit: (input) => runOperation(actionFor(local.operation), input),
-      onCancel: () => {
-        local.operation = null;
-        render();
-      },
-    });
-    return form.element;
+  /**
+   * 区間を削除する（仕様書11章）。理由は呼び出し側（削除確認）が必須にする。
+   *
+   * @param {string} intervalId
+   * @param {{reason: string}} input
+   */
+  function runIntervalDelete(intervalId, input) {
+    return withCurrentTarget((target) => actions.deleteInterval(target, intervalId, input));
   }
 
   /**
@@ -190,25 +215,136 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
         return actions.recordBreak;
       case TASK_OPERATION.RESUME:
         return actions.recordResume;
+      case TASK_OPERATION.CHANGE_PARTICIPANTS:
+        return actions.recordParticipantChange;
       default:
         return actions.recordFinish;
     }
   }
 
   /**
-   * 区間履歴の1行。
+   * 操作ボタンを1つ作る。
+   *
+   * 「履歴編集」だけは他と違い、フォームを開くのではなく区間履歴の行に
+   * 編集・削除ボタンを出す・消すトグルである。
+   *
+   * @param {string} operation
+   * @param {string[]} allowed
+   */
+  function operationButton(operation, allowed) {
+    const ready = WIRED_OPERATIONS.has(operation);
+    const enabled = allowed.includes(operation) && ready;
+    const isHistoryToggle = operation === TASK_OPERATION.EDIT_HISTORY;
+    const pressed = isHistoryToggle && local.historyEditMode;
+    return el('button', {
+      type: 'button',
+      class: pressed ? 'button button--active' : 'button',
+      text: TASK_OPERATION_LABEL[operation],
+      dataset: { testid: `op-${operation}` },
+      disabled: !enabled,
+      title: ready ? undefined : NOT_READY_REASON[operation],
+      'aria-pressed': isHistoryToggle ? String(local.historyEditMode) : undefined,
+      on: {
+        click: () => {
+          if (isHistoryToggle) {
+            local.historyEditMode = !local.historyEditMode;
+            if (!local.historyEditMode) {
+              // 一覧を畳むときは、行から開いていた編集・削除も一緒に畳む。
+              // ボタン自体が消えるため、開いたままだと閉じる手段が無くなる。
+              if (local.activeForm?.kind === 'editInterval') {
+                local.activeForm = null;
+              }
+              local.deleteTarget = null;
+            }
+            render();
+            return;
+          }
+          local.warnings = [];
+          local.deleteTarget = null;
+          local.activeForm =
+            operation === TASK_OPERATION.ADD_INTERVAL
+              ? { kind: 'addInterval' }
+              : { kind: 'operation', operation };
+          render();
+          // 開いた入力欄へ移す。押したボタンは再描画で作り直されるため、
+          // フォーカスを戻す先が無くなる（レビュー指摘 D-18 の (a) と同じ形）。
+          form?.focus();
+        },
+      },
+    });
+  }
+
+  /** 直近に描いた上部フォーム。フォーカス移動のために持つ。 */
+  let form = null;
+
+  /**
+   * 上部の操作フォーム（開始・休憩・…・区間追加）。行の編集フォームは
+   * {@link renderIntervalRow} が別に持つ。
+   *
+   * @param {object} task
+   */
+  function renderOperationForm(task) {
+    form = null;
+    if (local.activeForm === null || local.activeForm.kind === 'editInterval') {
+      return null;
+    }
+    const { dataset, selection } = store.getState();
+    const candidates = collectParticipants(dataset.workRuns, { runId: selection.runId });
+
+    if (local.activeForm.kind === 'addInterval') {
+      form = createIntervalEntryForm({
+        mode: 'add',
+        candidates,
+        now,
+        idPrefix: 'task-add',
+        onSubmit: (input) => runOperation(actions.addIntervalManually, input),
+        onCancel: () => {
+          local.activeForm = null;
+          render();
+        },
+      });
+      return form.element;
+    }
+
+    const operation = local.activeForm.operation;
+    form = createIntervalOperationForm({
+      operation,
+      taskRecord: task,
+      candidates,
+      now,
+      idPrefix: 'task-op',
+      onSubmit: (input) => runOperation(actionFor(operation), input),
+      onCancel: () => {
+        local.activeForm = null;
+        render();
+      },
+    });
+    return form.element;
+  }
+
+  /**
+   * 区間履歴の1行。編集・削除ボタンは「履歴編集」がオンのときだけ出す。
    *
    * 開始・終了とも日付を省略しない。日をまたぐ区間があるため（仕様書8.4.8）、
    * 時刻だけでは前後が読めない行が混ざる。
    *
+   * @param {object} run
+   * @param {object} task
    * @param {object} interval
+   * @returns {HTMLElement[]} 表示行と、開いていれば編集・削除フォームの行
    */
-  function renderIntervalRow(interval) {
+  function renderIntervalRow(run, task, interval) {
     const open = isOpenInterval(interval);
-    return el('tr', { dataset: { testid: 'interval-row', intervalId: interval.intervalId } }, [
+    const editingThis =
+      local.historyEditMode &&
+      local.activeForm?.kind === 'editInterval' &&
+      local.activeForm.intervalId === interval.intervalId;
+    const deletingThis = local.historyEditMode && local.deleteTarget === interval.intervalId;
+
+    const cells = [
       el('td', {}, [
         el('span', {
-          class: `badge badge--${interval.type === 'break' ? 'onBreak' : 'working'}`,
+          class: `badge badge--${interval.type === INTERVAL_TYPE.BREAK ? 'onBreak' : 'working'}`,
           dataset: { testid: 'interval-type' },
           text: INTERVAL_TYPE_LABEL[interval.type] ?? interval.type,
         }),
@@ -231,10 +367,95 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
         dataset: { testid: 'interval-effort' },
         text: toMinutesLabel(intervalEffortSeconds(interval)),
       }),
-    ]);
+    ];
+    if (local.historyEditMode) {
+      cells.push(
+        el('td', {}, [
+          el('div', { class: 'actions actions--inline' }, [
+            el('button', {
+              type: 'button',
+              class: 'button button--compact',
+              text: '編集',
+              dataset: { testid: 'interval-edit' },
+              on: {
+                click: () => {
+                  local.deleteTarget = null;
+                  local.activeForm = { kind: 'editInterval', intervalId: interval.intervalId };
+                  render();
+                },
+              },
+            }),
+            el('button', {
+              type: 'button',
+              class: 'button button--compact button--danger',
+              text: '削除',
+              dataset: { testid: 'interval-delete' },
+              on: {
+                click: () => {
+                  local.activeForm = null;
+                  local.deleteTarget = interval.intervalId;
+                  render();
+                },
+              },
+            }),
+          ]),
+        ]),
+      );
+    }
+
+    const rows = [el('tr', { dataset: { testid: 'interval-row', intervalId: interval.intervalId } }, cells)];
+    const columnCount = BASE_COLUMN_COUNT + (local.historyEditMode ? 1 : 0);
+
+    if (editingThis) {
+      const { dataset } = store.getState();
+      const entry = createIntervalEntryForm({
+        mode: 'edit',
+        interval,
+        candidates: collectParticipants(dataset.workRuns, { runId: run.runId }),
+        now,
+        idPrefix: `task-edit-${interval.intervalId}`,
+        onSubmit: (changes) => runIntervalEdit(interval.intervalId, changes),
+        onCancel: () => {
+          local.activeForm = null;
+          render();
+        },
+      });
+      rows.push(
+        el('tr', { dataset: { testid: 'interval-edit-row' } }, [
+          el('td', { colspan: String(columnCount) }, [entry.element]),
+        ]),
+      );
+    }
+
+    if (deletingThis) {
+      const { dataset } = store.getState();
+      const preview = actions.previewIntervalDeletion(
+        dataset.workRuns,
+        { runId: run.runId, taskRecordId: task.taskRecordId },
+        interval.intervalId,
+      );
+      if (preview.ok) {
+        const confirm = createDeleteIntervalConfirm({
+          preview,
+          idPrefix: `task-delete-${interval.intervalId}`,
+          onConfirm: (reason) => runIntervalDelete(interval.intervalId, { reason }),
+          onCancel: () => {
+            local.deleteTarget = null;
+            render();
+          },
+        });
+        rows.push(
+          el('tr', { dataset: { testid: 'interval-delete-row' } }, [
+            el('td', { colspan: String(columnCount) }, [confirm.element]),
+          ]),
+        );
+      }
+    }
+
+    return rows;
   }
 
-  function renderIntervals(task) {
+  function renderIntervals(run, task) {
     if (task.intervals.length === 0) {
       return el('p', {
         class: 'placeholder',
@@ -242,21 +463,24 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
         text: 'まだ作業区間がありません。「開始」で記録を始めます。',
       });
     }
-    // 開始が早い順に並べる。記録した順ではなく時間の順で読む。
+    // 開始が早い順に並べる。記録した順ではなく時間の順で読む。文字列の辞書順
+    // ではなく実時刻で比べる（レビュー指摘 FB-1）。記録経路は常にローカル
+    // オフセットで書くため実害は無いが、インポートJSON（仕様書9.3）は異なる
+    // オフセットの区間を許すため、`compareIso` を通す（F-25 の集約方針）。
     const ordered = [...task.intervals].sort((left, right) =>
-      left.startAt < right.startAt ? -1 : left.startAt > right.startAt ? 1 : 0,
+      compareIso(left.startAt, right.startAt),
     );
+    const headerCells = [
+      el('th', { scope: 'col', text: '種別' }),
+      el('th', { scope: 'col', text: '開始' }),
+      el('th', { scope: 'col', text: '終了' }),
+      el('th', { scope: 'col', text: '参加者' }),
+      el('th', { scope: 'col', class: 'table__num', text: '工数' }),
+      local.historyEditMode ? el('th', { scope: 'col', text: '操作' }) : null,
+    ];
     return el('table', { class: 'table', dataset: { testid: 'interval-list' } }, [
-      el('thead', {}, [
-        el('tr', {}, [
-          el('th', { scope: 'col', text: '種別' }),
-          el('th', { scope: 'col', text: '開始' }),
-          el('th', { scope: 'col', text: '終了' }),
-          el('th', { scope: 'col', text: '参加者' }),
-          el('th', { scope: 'col', class: 'table__num', text: '工数' }),
-        ]),
-      ]),
-      el('tbody', {}, ordered.map(renderIntervalRow)),
+      el('thead', {}, [el('tr', {}, headerCells)]),
+      el('tbody', {}, ordered.flatMap((interval) => renderIntervalRow(run, task, interval))),
     ]);
   }
 
@@ -382,9 +606,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
         ? el(
             'div',
             { class: 'actions', dataset: { testid: 'task-operations' } },
-            Object.values(TASK_OPERATION).map((operation) =>
-              operationButton(task, operation, allowed),
-            ),
+            Object.values(TASK_OPERATION).map((operation) => operationButton(operation, allowed)),
           )
         : el('p', {
             class: 'note note--warn',
@@ -401,7 +623,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
 
       el('section', { class: 'card' }, [
         el('h3', { class: 'card__title', text: '区間履歴' }),
-        renderIntervals(task),
+        renderIntervals(run, task),
       ]),
     ]);
   }

@@ -16,10 +16,9 @@
  * できる」）。入力は `components/intervalOperationForm.js` が持ち、詳細画面と
  * 共通である。
  *
- * 実装計画 Step 6 PR-B1 の時点で行に出るのは開始・休憩・再開・終了である。
- * 参加者変更・区間追加・履歴編集は PR-B2、直接入力は Step 7 で足す。行を短く
- * 保つため、行には有効な操作だけを出す。まだ無い操作は作業項目詳細側で無効な
- * ボタンとして見える。
+ * 行に出るのは開始・休憩・再開・終了・参加者変更である。区間追加・履歴編集は
+ * 作業項目詳細のみ（PR-B2）、直接入力は Step 7 で足す。行を短く保つため、行には
+ * 有効な操作だけを出す。まだ無い操作は作業項目詳細側で無効なボタンとして見える。
  */
 
 import { summarizeRun, summarizeTask } from '../../domain/effort.js';
@@ -36,6 +35,7 @@ import {
 import { createIntervalOperationForm } from '../components/intervalOperationForm.js';
 import { el, replaceChildren } from '../dom.js';
 import { RUN_STATUS_LABEL, toMinutesLabel } from '../labels.js';
+import { VIEW } from '../shell.js';
 
 /** 並び順の選択（仕様書8.7.3）。 */
 const SORT = {
@@ -43,12 +43,19 @@ const SORT = {
   EXTERNAL_CODE: 'externalCode',
 };
 
-/** 作業項目行に出す操作。PR-B1 で結線済みのもの。 */
+/**
+ * 作業項目行に出す操作。
+ *
+ * 区間追加・履歴編集は区間履歴の表と一緒でないと場所が要る（1件ずつ選ぶ・
+ * 編集後の内容を確かめるなど）ため、実施回詳細の行には出さない。作業項目詳細
+ * （`taskDetailView.js`）にのみ置く。
+ */
 const ROW_OPERATIONS = [
   TASK_OPERATION.START,
   TASK_OPERATION.BREAK,
   TASK_OPERATION.RESUME,
   TASK_OPERATION.FINISH,
+  TASK_OPERATION.CHANGE_PARTICIPANTS,
 ];
 
 /** 表の列数。操作フォーム行の `colspan` に使う。 */
@@ -59,7 +66,8 @@ const COLUMN_COUNT = 7;
  *
  * @param {{container: HTMLElement, store: object,
  *          actions: {recordStart: Function, recordBreak: Function,
- *                    recordResume: Function, recordFinish: Function},
+ *                    recordResume: Function, recordFinish: Function,
+ *                    recordParticipantChange: Function},
  *          handlers: {onOpenTask: Function, onSelectProject: Function},
  *          now?: () => Date}} options
  * @returns {{render: () => void, reset: () => void}}
@@ -122,9 +130,27 @@ export function createRunView({ container, store, actions, handlers, now }) {
         return actions.recordBreak;
       case TASK_OPERATION.RESUME:
         return actions.recordResume;
+      case TASK_OPERATION.CHANGE_PARTICIPANTS:
+        return actions.recordParticipantChange;
       default:
         return actions.recordFinish;
     }
+  }
+
+  /**
+   * この実施回がいま案件画面の中で表示されているかを確かめる。
+   *
+   * 保存を待つあいだに利用者が別の実施回・別の作業項目・別の画面へ移った場合、
+   * ここでの局所描画は `detailPane` を上書きしてしまう（レビュー指摘 FB-7）。
+   * `wrap()` の `store.setState()` が既にストア購読経由で現在の画面を正しく
+   * 描いているため、対象が変わっていれば局所描画をしない。
+   *
+   * @param {string} runId
+   * @returns {boolean}
+   */
+  function isShowingRun(runId) {
+    const { view, selection } = store.getState();
+    return view === VIEW.PROJECTS && selection.taskRecordId === null && selection.runId === runId;
   }
 
   /**
@@ -139,13 +165,19 @@ export function createRunView({ container, store, actions, handlers, now }) {
    */
   async function runOperation(taskRecordId, operation, input) {
     const run = selectedRun();
-    const result = await actionFor(operation)({ runId: run.runId, taskRecordId }, input);
+    const runId = run.runId;
+    const result = await actionFor(operation)({ runId, taskRecordId }, input);
+    // 保存の成否によらず、開いていた入力をここで畳む。あとで再びこの実施回を
+    // 表示したときに古いフォームが残らないようにするためで、描画するかどうかとは
+    // 別に必ず行う。
     local.operation = null;
     local.warnings = result.warnings.map((warning) => warning.message);
     // 保存が成功するとストア購読の再描画が走るが、それはこの行より前、まだ
     // `local.operation` が残っている時点で起きる。閉じた状態を映すために、
-    // ここで必ず描き直す（`src/app/store.js` の規約2）。
-    render();
+    // 対象がいまも表示中であればここで描き直す（`src/app/store.js` の規約2）。
+    if (isShowingRun(runId)) {
+      render();
+    }
   }
 
   /** 直近に描いた操作フォーム。フォーカス移動のために持つ。 */

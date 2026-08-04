@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createRunView } from '../../../src/ui/views/runView.js';
+import { VIEW } from '../../../src/ui/shell.js';
 import {
   breakInterval,
   projectGroup,
@@ -43,18 +44,20 @@ function mount(options = {}) {
     recordBreak: vi.fn(async () => ({ dataset: null, warnings: [] })),
     recordResume: vi.fn(async () => ({ dataset: null, warnings: [] })),
     recordFinish: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    recordParticipantChange: vi.fn(async () => ({ dataset: null, warnings: [] })),
   };
   const handlers = { onOpenTask: vi.fn(), onSelectProject: vi.fn() };
-  const store = {
-    getState: () => ({
-      dataset: { workRuns: [run], projectGroups: [group] },
-      selection: {
-        projectGroupId: group.projectGroupId,
-        runId: run.runId,
-        taskRecordId: null,
-      },
-    }),
+  /** 案件画面・当該実施回を表示中の状態。navigateAway() で書き換えて模擬する。 */
+  let state = {
+    view: VIEW.PROJECTS,
+    dataset: { workRuns: [run], projectGroups: [group] },
+    selection: {
+      projectGroupId: group.projectGroupId,
+      runId: run.runId,
+      taskRecordId: null,
+    },
   };
+  const store = { getState: () => state };
 
   const view = createRunView({
     container,
@@ -83,6 +86,10 @@ function mount(options = {}) {
     /** 行に出ている操作ボタンの名前。 */
     rowOperations: (name) =>
       [...rowOf(name).querySelectorAll('button')].map((button) => button.textContent),
+    /** 保存を待つあいだに、利用者が別の画面／別の実施回へ移った状態を模す。 */
+    navigateAway: (patch) => {
+      state = { ...state, selection: { ...state.selection, ...patch } };
+    },
   };
 }
 
@@ -103,13 +110,19 @@ describe('createRunView', () => {
       expect(view.rowOperations('受入確認')).toEqual(['受入確認', '開始', '詳細']);
     });
 
-    it('作業中の行には休憩と終了を出す', () => {
+    it('作業中の行には休憩・終了・参加者変更を出す', () => {
       const view = mount({ tasks: [working('受入確認', 1)] });
 
-      expect(view.rowOperations('受入確認')).toEqual(['受入確認', '休憩', '終了', '詳細']);
+      expect(view.rowOperations('受入確認')).toEqual([
+        '受入確認',
+        '休憩',
+        '終了',
+        '参加者変更',
+        '詳細',
+      ]);
     });
 
-    it('休憩中の行には再開と終了を出す', () => {
+    it('休憩中の行には再開・終了・参加者変更を出す', () => {
       const view = mount({
         tasks: [
           taskRecord({
@@ -122,7 +135,13 @@ describe('createRunView', () => {
         ],
       });
 
-      expect(view.rowOperations('受入確認')).toEqual(['受入確認', '再開', '終了', '詳細']);
+      expect(view.rowOperations('受入確認')).toEqual([
+        '受入確認',
+        '再開',
+        '終了',
+        '参加者変更',
+        '詳細',
+      ]);
     });
 
     it('転記済みでは操作を出さず理由を示す（仕様書7.2）', () => {
@@ -166,6 +185,31 @@ describe('createRunView', () => {
       });
     });
 
+    it('参加者変更は現在の参加者を初期値にする（仕様書8.4.10、A-16、T-16）', async () => {
+      const task = taskRecord({
+        name: '受入確認',
+        order: 1,
+        intervals: [workInterval('2026-08-01T09:00:00+09:00', null, ['甲', '乙'])],
+      });
+      const view = mount({ tasks: [task] });
+
+      view.rowOf('受入確認').querySelector('[data-testid="row-op-changeParticipants"]').click();
+
+      expect(
+        [...view.container.querySelectorAll('[data-testid="op-participants-item"] span')].map(
+          (node) => node.textContent,
+        ),
+      ).toEqual(['甲', '乙']);
+
+      view.query('op-submit').click();
+      await vi.waitFor(() => expect(view.actions.recordParticipantChange).toHaveBeenCalled());
+
+      expect(view.actions.recordParticipantChange).toHaveBeenCalledWith(
+        { runId: view.run.runId, taskRecordId: task.taskRecordId },
+        { at: expect.any(String), participants: ['甲', '乙'] },
+      );
+    });
+
     it('開いているフォームは1つだけにする', () => {
       const view = mount({ tasks: [working('受入確認', 1), working('本作業', 2)] });
 
@@ -190,6 +234,54 @@ describe('createRunView', () => {
       view.query('op-submit').click();
 
       await vi.waitFor(() => expect(view.query('task-form-row')).toBeNull());
+    });
+
+    it('保存を待つ間に別の実施回へ移っていた場合は上書きしない（レビュー指摘 FB-7）', async () => {
+      const view = mount({ tasks: [working('受入確認', 1)] });
+      let resolveAction;
+      view.actions.recordFinish.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveAction = resolve;
+          }),
+      );
+      view.rowOf('受入確認').querySelector('[data-testid="row-op-finish"]').click();
+      view.query('op-submit').click();
+      await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+      // 保存を待つ間に、利用者が別の実施回へ移ったとする。移動先の画面が
+      // 既に detailPane を描いた状態を模す。
+      view.navigateAway({ runId: 'other-run', taskRecordId: null });
+      view.container.textContent = 'マーカー';
+
+      resolveAction({ dataset: null, warnings: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(view.container.textContent).toBe('マーカー');
+    });
+
+    it('保存を待つ間に作業項目詳細へ移っていた場合は上書きしない（レビュー指摘 FB-7）', async () => {
+      const view = mount({ tasks: [working('受入確認', 1)] });
+      let resolveAction;
+      view.actions.recordFinish.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveAction = resolve;
+          }),
+      );
+      view.rowOf('受入確認').querySelector('[data-testid="row-op-finish"]').click();
+      view.query('op-submit').click();
+      await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+      view.navigateAway({ taskRecordId: view.tasks[0].taskRecordId });
+      view.container.textContent = 'マーカー';
+
+      resolveAction({ dataset: null, warnings: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(view.container.textContent).toBe('マーカー');
     });
 
     it('取消で閉じる', () => {
@@ -218,7 +310,13 @@ describe('createRunView', () => {
         tasks: [working('受入確認', 1), taskRecord({ name: '本作業', order: 2 })],
       });
 
-      expect(view.rowOperations('受入確認')).toEqual(['受入確認', '休憩', '終了', '詳細']);
+      expect(view.rowOperations('受入確認')).toEqual([
+        '受入確認',
+        '休憩',
+        '終了',
+        '参加者変更',
+        '詳細',
+      ]);
       expect(view.rowOperations('本作業')).toEqual(['本作業', '開始', '詳細']);
     });
 
