@@ -1,9 +1,10 @@
 /**
- * 時刻入力の受入試験（仕様書8.4、12.4）。
+ * 時刻入力の受入試験（仕様書8.4、12.4、11章）。
  *
  * 対応する試験例は T-03（A-03 複数項目の同時作業）、T-07 と T-13（A-04 休憩を
- * 除いた工数と日跨ぎ）、T-15（A-14 参加者候補）、T-17（A-17 未終了区間の個数）
- * である。参加者変更（T-16、A-16）は次の段階で足す。
+ * 除いた工数と日跨ぎ）、T-15（A-14 参加者候補）、T-16（A-16 参加者変更）、
+ * T-17（A-17 未終了区間の個数）である。区間の手動追加・編集・削除（8.4.11、
+ * 8.4.5、11章）は受入試験例に個別の番号を持たないため、通しの導線1本にまとめた。
  *
  * 画面の分岐そのものは単体テスト（`tests/unit/ui/`）で固定してある。ここでは
  * 実ブラウザで通しの導線が動くことだけを見る。
@@ -154,6 +155,95 @@ test('T-15 参加者名が別の作業区間で候補表示される（A-14）',
   await expect(options).toHaveCount(2);
   await expect(page.locator('#run-op-participants-options option[value="甲"]')).toHaveCount(1);
   await expect(page.locator('#run-op-participants-options option[value="乙"]')).toHaveCount(1);
+});
+
+test('T-16 参加者変更で2人になり、合計120分となる（A-16）', async ({ page }) => {
+  await setup(page, 'PJ-T16');
+
+  await operate(page, {
+    task: '受入確認',
+    operation: 'start',
+    at: '2026-08-01T09:00:00',
+    participants: ['甲', '乙', '丙'],
+  });
+
+  // 20分後、丙が離脱する（仕様書8.4.10）。参加者入力欄には現在の参加者
+  // （甲・乙・丙）が初期値として並ぶので、丙だけを外す。
+  const row = taskRow(page, '受入確認');
+  await row.getByTestId('row-op-changeParticipants').click();
+  const changeForm = page.getByTestId('op-form');
+  await expect(changeForm).toBeVisible();
+  await fillDateTime(changeForm.getByTestId('op-at'), '2026-08-01T09:20:00');
+  await changeForm
+    .getByTestId('op-participants-item')
+    .filter({ hasText: '丙' })
+    .getByTestId('op-participants-remove')
+    .click();
+  await changeForm.getByTestId('op-submit').click();
+  await expect(changeForm).toBeHidden();
+
+  await operate(page, { task: '受入確認', operation: 'finish', at: '2026-08-01T09:50:00' });
+
+  // (20分×3人) + (30分×2人) = 120分。
+  await expect(row.getByTestId('task-time')).toHaveText('120分');
+
+  // 参加者変更で区間が分割されたことを区間履歴でも確かめる。
+  await row.getByTestId('open-task').click();
+  await expect(page.getByTestId('interval-row')).toHaveCount(2);
+  await expect(page.getByTestId('interval-participants')).toHaveText([
+    '甲、乙、丙',
+    '甲、乙',
+  ]);
+});
+
+test('区間の手動追加・編集・削除ができる（仕様書8.4.11、8.4.5、11章）', async ({ page }) => {
+  await setup(page, 'PJ-ENTRY');
+  await taskRow(page, '受入確認').getByTestId('open-task').click();
+  await expect(page.getByTestId('task-detail-title')).toHaveText('受入確認');
+
+  // 区間追加（仕様書8.4.11）。
+  await page.getByTestId('op-addInterval').click();
+  const addForm = page.getByTestId('entry-form');
+  await expect(addForm).toBeVisible();
+  await fillDateTime(addForm.getByTestId('entry-start'), '2026-07-30T09:00:00');
+  await fillDateTime(addForm.getByTestId('entry-end'), '2026-07-30T10:00:00');
+  await addForm.getByTestId('entry-participants').fill('甲');
+  await addForm.getByTestId('entry-participants-add').click();
+  await addForm.getByTestId('entry-submit').click();
+  await expect(addForm).toBeHidden();
+  await expect(page.getByTestId('interval-row')).toHaveCount(1);
+  await expect(page.getByTestId('interval-start')).toHaveText('2026-07-30 09:00:00');
+  await expect(page.getByTestId('summary-time')).toHaveText('60分');
+
+  // 履歴編集を開くと行に編集・削除ボタンが出る（仕様書8.4.5、11章）。
+  await page.getByTestId('op-editHistory').click();
+  await expect(page.getByTestId('interval-edit')).toBeVisible();
+  await expect(page.getByTestId('interval-delete')).toBeVisible();
+
+  // 編集: 終了日時を1時間延ばす。
+  await page.getByTestId('interval-edit').click();
+  const editForm = page.getByTestId('entry-form');
+  await expect(editForm).toBeVisible();
+  // ブラウザは秒が0の値を表示上 `hh:mm` へ正規化する（`fillDateTime` と同じ理由）。
+  await expect(editForm.getByTestId('entry-start')).toHaveValue('2026-07-30T09:00');
+  await fillDateTime(editForm.getByTestId('entry-end'), '2026-07-30T11:00:00');
+  await editForm.getByTestId('entry-submit').click();
+  await expect(editForm).toBeHidden();
+  await expect(page.getByTestId('interval-end')).toHaveText('2026-07-30 11:00:00');
+  await expect(page.getByTestId('summary-time')).toHaveText('120分');
+
+  // 削除: 理由を入力しないと確定できない（仕様書11章）。
+  await page.getByTestId('interval-delete').click();
+  const deleteConfirm = page.getByTestId('delete-confirm-panel');
+  await expect(deleteConfirm).toBeVisible();
+  await expect(deleteConfirm.getByTestId('delete-confirm-description')).toContainText('甲');
+  await deleteConfirm.getByTestId('delete-confirm').click();
+  await expect(deleteConfirm.getByTestId('delete-errors')).toContainText('理由');
+
+  await deleteConfirm.getByTestId('delete-reason').fill('二重に記録していたため');
+  await deleteConfirm.getByTestId('delete-confirm').click();
+  await expect(deleteConfirm).toBeHidden();
+  await expect(page.getByTestId('interval-empty')).toBeVisible();
 });
 
 test('T-17 作業中は開始ボタンが出ず未終了区間が二重に作られない（A-17）', async ({ page }) => {

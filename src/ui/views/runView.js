@@ -16,10 +16,9 @@
  * できる」）。入力は `components/intervalOperationForm.js` が持ち、詳細画面と
  * 共通である。
  *
- * 実装計画 Step 6 PR-B1 の時点で行に出るのは開始・休憩・再開・終了である。
- * 参加者変更・区間追加・履歴編集は PR-B2、直接入力は Step 7 で足す。行を短く
- * 保つため、行には有効な操作だけを出す。まだ無い操作は作業項目詳細側で無効な
- * ボタンとして見える。
+ * 行に出るのは開始・休憩・再開・終了・参加者変更である。区間追加・履歴編集は
+ * 作業項目詳細のみ（PR-B2）、直接入力は Step 7 で足す。行を短く保つため、行には
+ * 有効な操作だけを出す。まだ無い操作は作業項目詳細側で無効なボタンとして見える。
  */
 
 import { summarizeRun, summarizeTask } from '../../domain/effort.js';
@@ -44,12 +43,19 @@ const SORT = {
   EXTERNAL_CODE: 'externalCode',
 };
 
-/** 作業項目行に出す操作。PR-B1 で結線済みのもの。 */
+/**
+ * 作業項目行に出す操作。
+ *
+ * 区間追加・履歴編集は区間履歴の表と一緒でないと場所が要る（1件ずつ選ぶ・
+ * 編集後の内容を確かめるなど）ため、実施回詳細の行には出さない。作業項目詳細
+ * （`taskDetailView.js`）にのみ置く。
+ */
 const ROW_OPERATIONS = [
   TASK_OPERATION.START,
   TASK_OPERATION.BREAK,
   TASK_OPERATION.RESUME,
   TASK_OPERATION.FINISH,
+  TASK_OPERATION.CHANGE_PARTICIPANTS,
 ];
 
 /** 表の列数。操作フォーム行の `colspan` に使う。 */
@@ -60,7 +66,8 @@ const COLUMN_COUNT = 7;
  *
  * @param {{container: HTMLElement, store: object,
  *          actions: {recordStart: Function, recordBreak: Function,
- *                    recordResume: Function, recordFinish: Function},
+ *                    recordResume: Function, recordFinish: Function,
+ *                    recordParticipantChange: Function},
  *          handlers: {onOpenTask: Function, onSelectProject: Function},
  *          now?: () => Date}} options
  * @returns {{render: () => void, reset: () => void}}
@@ -123,6 +130,8 @@ export function createRunView({ container, store, actions, handlers, now }) {
         return actions.recordBreak;
       case TASK_OPERATION.RESUME:
         return actions.recordResume;
+      case TASK_OPERATION.CHANGE_PARTICIPANTS:
+        return actions.recordParticipantChange;
       default:
         return actions.recordFinish;
     }

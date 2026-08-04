@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTaskDetailView } from '../../../src/ui/views/taskDetailView.js';
+import { previewIntervalDeletion } from '../../../src/app/actions/intervalActions.js';
 import { VIEW } from '../../../src/ui/shell.js';
 import {
   breakInterval,
@@ -44,6 +45,13 @@ function mount(options = {}) {
     recordBreak: vi.fn(async () => ({ dataset: null, warnings: [] })),
     recordResume: vi.fn(async () => ({ dataset: null, warnings: [] })),
     recordFinish: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    recordParticipantChange: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    addIntervalManually: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    updateInterval: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    deleteInterval: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    // 純関数の実体をそのまま使う。テストごとに再実装しない。
+    previewIntervalDeletion: (workRuns, target, intervalId) =>
+      previewIntervalDeletion(workRuns, target, intervalId),
   };
   const handlers = { onBackToRun: vi.fn() };
   /** 案件画面・当該作業項目を表示中の状態。navigateAway() で書き換えて模擬する。 */
@@ -147,12 +155,20 @@ describe('createTaskDetailView', () => {
       expect(view.query('op-finish').disabled).toBe(true);
     });
 
-    it('未実装の操作は理由を添えて無効にする', () => {
+    it('未実装の操作（直接入力）は理由を添えて無効にする', () => {
       const view = mount({ task: TASKS.working() });
 
-      const button = view.query('op-changeParticipants');
+      const button = view.query('op-directEntry');
       expect(button.disabled).toBe(true);
       expect(button.getAttribute('title')).toContain('次の段階');
+    });
+
+    it('参加者変更・区間追加・履歴編集は結線済みである', () => {
+      const view = mount({ task: TASKS.working() });
+
+      expect(view.query('op-changeParticipants').disabled).toBe(false);
+      expect(view.query('op-addInterval').disabled).toBe(false);
+      expect(view.query('op-editHistory').disabled).toBe(false);
     });
 
     it('現在状態をバッジで示す（仕様書12.3）', () => {
@@ -391,6 +407,222 @@ describe('createTaskDetailView', () => {
 
       expect(view.query('task-warnings').textContent).toContain('時間帯が重なる');
       expect(view.query('op-form')).toBeNull();
+    });
+
+    it('参加者変更は現在の参加者を初期値にし、対象を添えて呼ぶ（仕様書8.4.10）', async () => {
+      const view = mount({
+        task: taskRecord({
+          name: '受入確認',
+          intervals: [workInterval('2026-08-01T09:00:00+09:00', null, ['甲', '乙'])],
+        }),
+      });
+
+      view.query('op-changeParticipants').click();
+
+      expect(
+        [...view.container.querySelectorAll('[data-testid="op-participants-item"] span')].map(
+          (node) => node.textContent,
+        ),
+      ).toEqual(['甲', '乙']);
+
+      view.query('op-submit').click();
+      await vi.waitFor(() => expect(view.actions.recordParticipantChange).toHaveBeenCalled());
+
+      expect(view.actions.recordParticipantChange).toHaveBeenCalledWith(
+        { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
+        { at: expect.any(String), participants: ['甲', '乙'] },
+      );
+    });
+  });
+
+  describe('区間追加（仕様書8.4.11）', () => {
+    it('「区間追加」を押すと追加フォームが開く', () => {
+      const view = mount({ task: TASKS.working() });
+
+      view.query('op-addInterval').click();
+
+      expect(view.query('entry-form').dataset.mode).toBe('add');
+      expect(view.actions.addIntervalManually).not.toHaveBeenCalled();
+    });
+
+    it('確定すると対象を添えてアクションを呼ぶ', async () => {
+      const view = mount({ task: TASKS.working() });
+      view.query('op-addInterval').click();
+      view.query('entry-start').value = '2026-07-30T09:00:00';
+      view.query('entry-end').value = '2026-07-30T10:00:00';
+      view.query('entry-participants').value = '甲';
+      view.query('entry-participants-add').click();
+
+      view.query('entry-submit').click();
+      await vi.waitFor(() => expect(view.actions.addIntervalManually).toHaveBeenCalled());
+
+      expect(view.actions.addIntervalManually).toHaveBeenCalledWith(
+        { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
+        expect.objectContaining({ participants: ['甲'] }),
+      );
+    });
+
+    it('未着手でも区間追加は開ける（仕様書8.4.11 は状態を問わない）', () => {
+      const view = mount({ task: TASKS.notStarted() });
+
+      expect(view.query('op-addInterval').disabled).toBe(false);
+    });
+
+    it('取消で閉じる', () => {
+      const view = mount({ task: TASKS.working() });
+      view.query('op-addInterval').click();
+
+      view.query('entry-cancel').click();
+
+      expect(view.query('entry-form')).toBeNull();
+    });
+  });
+
+  describe('履歴編集（仕様書8.4.5、11章）', () => {
+    /** 終了済みの区間を1件持つ作業項目。 */
+    function taskWithInterval() {
+      return taskRecord({
+        name: '受入確認',
+        intervals: [
+          workInterval('2026-08-01T09:00:00+09:00', '2026-08-01T09:20:00+09:00', ['甲', '乙']),
+        ],
+      });
+    }
+
+    it('「履歴編集」を押すと行に編集・削除ボタンが出る', () => {
+      const view = mount({ task: taskWithInterval() });
+
+      expect(view.query('interval-edit')).toBeNull();
+
+      view.query('op-editHistory').click();
+
+      expect(view.query('interval-edit')).not.toBeNull();
+      expect(view.query('interval-delete')).not.toBeNull();
+    });
+
+    it('もう一度押すと畳む', () => {
+      const view = mount({ task: taskWithInterval() });
+      view.query('op-editHistory').click();
+
+      view.query('op-editHistory').click();
+
+      expect(view.query('interval-edit')).toBeNull();
+    });
+
+    describe('編集', () => {
+      it('区間の行に編集フォームが開き、既存の値を初期値にする', () => {
+        const view = mount({ task: taskWithInterval() });
+        view.query('op-editHistory').click();
+
+        view.query('interval-edit').click();
+
+        const form = view.query('entry-form');
+        expect(form.dataset.mode).toBe('edit');
+        expect(view.query('entry-start').value).toBe('2026-08-01T09:00:00');
+      });
+
+      it('保存すると対象区間のIDを添えてアクションを呼ぶ', async () => {
+        const view = mount({ task: taskWithInterval() });
+        const intervalId = view.task.intervals[0].intervalId;
+        view.query('op-editHistory').click();
+        view.query('interval-edit').click();
+        view.query('entry-end').value = '2026-08-01T09:30:00';
+
+        view.query('entry-submit').click();
+        await vi.waitFor(() => expect(view.actions.updateInterval).toHaveBeenCalled());
+
+        expect(view.actions.updateInterval).toHaveBeenCalledWith(
+          { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
+          intervalId,
+          expect.objectContaining({ participants: ['甲', '乙'] }),
+        );
+      });
+
+      it('取消で閉じる（履歴編集モードは維持する）', () => {
+        const view = mount({ task: taskWithInterval() });
+        view.query('op-editHistory').click();
+        view.query('interval-edit').click();
+
+        view.query('entry-cancel').click();
+
+        expect(view.query('entry-form')).toBeNull();
+        expect(view.query('interval-edit')).not.toBeNull();
+      });
+    });
+
+    describe('削除', () => {
+      it('区間の行に削除確認が開き、内容を確認できる', () => {
+        const view = mount({ task: taskWithInterval() });
+        view.query('op-editHistory').click();
+
+        view.query('interval-delete').click();
+
+        expect(view.query('delete-confirm-description').textContent).toContain('甲、乙');
+        expect(view.actions.deleteInterval).not.toHaveBeenCalled();
+      });
+
+      it('理由を入力して確定すると、対象区間のIDと理由を添えて呼ぶ', async () => {
+        const view = mount({ task: taskWithInterval() });
+        const intervalId = view.task.intervals[0].intervalId;
+        view.query('op-editHistory').click();
+        view.query('interval-delete').click();
+        view.query('delete-reason').value = '二重に記録していたため';
+
+        view.query('delete-confirm').click();
+        await vi.waitFor(() => expect(view.actions.deleteInterval).toHaveBeenCalled());
+
+        expect(view.actions.deleteInterval).toHaveBeenCalledWith(
+          { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
+          intervalId,
+          { reason: '二重に記録していたため' },
+        );
+      });
+
+      it('理由が無ければ確定できない（仕様書11章）', () => {
+        const view = mount({ task: taskWithInterval() });
+        view.query('op-editHistory').click();
+        view.query('interval-delete').click();
+
+        view.query('delete-confirm').click();
+
+        expect(view.actions.deleteInterval).not.toHaveBeenCalled();
+      });
+
+      it('取消で閉じる（履歴編集モードは維持する）', () => {
+        const view = mount({ task: taskWithInterval() });
+        view.query('op-editHistory').click();
+        view.query('interval-delete').click();
+
+        view.query('delete-cancel').click();
+
+        expect(view.query('delete-confirm-panel')).toBeNull();
+        expect(view.query('interval-delete')).not.toBeNull();
+      });
+    });
+
+    it('編集と削除は同時に1つしか開かない', () => {
+      const view = mount({
+        task: taskRecord({
+          name: '受入確認',
+          intervals: [
+            workInterval('2026-08-01T09:00:00+09:00', '2026-08-01T09:20:00+09:00', ['甲']),
+            workInterval('2026-08-01T10:00:00+09:00', '2026-08-01T10:20:00+09:00', ['甲']),
+          ],
+        }),
+      });
+      view.query('op-editHistory').click();
+      const [firstEdit, secondEdit] = view.all('interval-edit');
+      const [firstDelete] = view.all('interval-delete');
+
+      firstEdit.click();
+      expect(view.query('entry-form')).not.toBeNull();
+
+      secondEdit.click();
+      expect(view.all('entry-form')).toHaveLength(1);
+
+      firstDelete.click();
+      expect(view.query('entry-form')).toBeNull();
+      expect(view.query('delete-confirm-panel')).not.toBeNull();
     });
   });
 
