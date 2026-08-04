@@ -167,7 +167,7 @@
 - 対象: `src/domain/validation.js:244-283`、`src/app/actions/projectActions.js:169-171,215-217,263-265`
 - 内容: アクション側が `warnings.length > 0` を無条件に `QuantityOverflowError`（累計超過の確認）へ変換する。Step 7 の直接入力重複候補警告（8.9.8）など別種の警告を足した瞬間に誤爆する。警告へ種別コード（`{code, path, message}`）を持たせる。
 - 推奨対応時期: Step 7 前
-- 状況: 一部先行（2026-08-03、Step 6 PR-A）。Step 6 で新設した `intervalOps.js` の警告は最初から `{code, path, message}` 形式であり（`INTERVAL_WARNING.overlap`）、区間の重複は例外へ変換せず返り値の `warnings` で返す。`validateRunDraft` 側の文字列警告と 2 形式が併存しているが、呼び出し経路が分かれているため衝突しない。既存側を揃えるのは予定どおり Step 7 前に行う。
+- 状況: **対応済み（2026-08-05、Step 7 PR-A）**。`Problems` クラスを `src/domain/problems.js` へ一本化し、`validation.js` と `intervalOps.js` が共有する。`validateRunDraft` / `validateTotalQuantityChange` の警告は `VALIDATION_WARNING.QUANTITY_OVERFLOW` を持つ `{code, path, message}` になった。`projectActions.js` の3箇所は `warnings.length > 0` をやめ、`hasWarning(warnings, VALIDATION_WARNING.QUANTITY_OVERFLOW)` で差し戻す。累計超過以外の警告では確認を求めないことを結合テストで固定した。
 
 ### D-16 状態ラベル定数の重複
 
