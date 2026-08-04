@@ -14,7 +14,9 @@
  * あることを表示するにとどめる（設計メモ §5）。
  */
 
+import { compareIso } from '../../domain/datetime.js';
 import {
+  INTERVAL_TYPE,
   INTERVAL_TYPE_LABEL,
   intervalEffortSeconds,
   isOpenInterval,
@@ -33,6 +35,7 @@ import {
 import { createIntervalOperationForm } from '../components/intervalOperationForm.js';
 import { el, replaceChildren } from '../dom.js';
 import { RUN_STATUS_LABEL, toMinutesLabel } from '../labels.js';
+import { VIEW } from '../shell.js';
 
 /** PR-B1 で結線済みの操作。 */
 const WIRED_OPERATIONS = new Set([
@@ -103,6 +106,25 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
   }
 
   /**
+   * この作業項目がいま案件画面の中で表示されているかを確かめる。
+   *
+   * 保存を待つあいだに利用者が別の作業項目・別の実施回・別の画面へ移った場合、
+   * ここでの局所描画は `detailPane` を上書きしてしまう（レビュー指摘 FB-7）。
+   * `wrap()` の `store.setState()` が既にストア購読経由で現在の画面を正しく
+   * 描いているため、対象が変わっていれば局所描画をしない。
+   *
+   * @param {string} runId
+   * @param {string} taskRecordId
+   * @returns {boolean}
+   */
+  function isShowingTask(runId, taskRecordId) {
+    const { view, selection } = store.getState();
+    return (
+      view === VIEW.PROJECTS && selection.runId === runId && selection.taskRecordId === taskRecordId
+    );
+  }
+
+  /**
    * 操作を実行する。
    *
    * 成功したらフォームを閉じる。区間の重複は拒否ではなく警告なので（仕様書
@@ -116,12 +138,17 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
     const { selection } = store.getState();
     const target = { runId: selection.runId, taskRecordId: selection.taskRecordId };
     const result = await action(target, input);
+    // 保存の成否によらず、開いていた入力をここで畳む。あとで再びこの作業項目を
+    // 表示したときに古いフォームが残らないようにするためで、描画するかどうかとは
+    // 別に必ず行う。
     local.operation = null;
     local.warnings = result.warnings.map((warning) => warning.message);
     // 保存が成功するとストア購読の再描画が走るが、それはこの行より前、まだ
     // `local.operation` が残っている時点で起きる。閉じた状態を映すために、
-    // ここで必ず描き直す（`src/app/store.js` の規約2）。
-    render();
+    // 対象がいまも表示中であればここで描き直す（`src/app/store.js` の規約2）。
+    if (isShowingTask(target.runId, target.taskRecordId)) {
+      render();
+    }
   }
 
   /**
@@ -208,7 +235,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
     return el('tr', { dataset: { testid: 'interval-row', intervalId: interval.intervalId } }, [
       el('td', {}, [
         el('span', {
-          class: `badge badge--${interval.type === 'break' ? 'onBreak' : 'working'}`,
+          class: `badge badge--${interval.type === INTERVAL_TYPE.BREAK ? 'onBreak' : 'working'}`,
           dataset: { testid: 'interval-type' },
           text: INTERVAL_TYPE_LABEL[interval.type] ?? interval.type,
         }),
@@ -242,9 +269,12 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
         text: 'まだ作業区間がありません。「開始」で記録を始めます。',
       });
     }
-    // 開始が早い順に並べる。記録した順ではなく時間の順で読む。
+    // 開始が早い順に並べる。記録した順ではなく時間の順で読む。文字列の辞書順
+    // ではなく実時刻で比べる（レビュー指摘 FB-1）。記録経路は常にローカル
+    // オフセットで書くため実害は無いが、インポートJSON（仕様書9.3）は異なる
+    // オフセットの区間を許すため、`compareIso` を通す（F-25 の集約方針）。
     const ordered = [...task.intervals].sort((left, right) =>
-      left.startAt < right.startAt ? -1 : left.startAt > right.startAt ? 1 : 0,
+      compareIso(left.startAt, right.startAt),
     );
     return el('table', { class: 'table', dataset: { testid: 'interval-list' } }, [
       el('thead', {}, [
