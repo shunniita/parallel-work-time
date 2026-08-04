@@ -96,4 +96,37 @@ describe('createDateTimeInput', () => {
     expect(component.element.querySelector('label').getAttribute('for')).toBe('at');
     expect(input.id).toBe('at');
   });
+
+  describe('startEmpty（区間編集で未終了のまま始める、設計メモ §4.2.2）', () => {
+    it('value / now を無視して空欄から始める', () => {
+      const { input } = mount({ startEmpty: true, value: '2026-07-30T09:00:00+09:00' });
+
+      expect(input.value).toBe('');
+    });
+  });
+
+  describe('optional（未終了区間を未終了のまま保存する編集）', () => {
+    it('空欄のまま確定すると iso: null を返す', () => {
+      const { component, input } = mount({ startEmpty: true, optional: true });
+      input.value = '';
+
+      expect(component.read()).toEqual({ ok: true, iso: null, error: null });
+    });
+
+    it('optional でも入力があれば通常どおり変換する', () => {
+      const { component, input } = mount({ startEmpty: true, optional: true });
+      input.value = '2026-08-01T10:00:00';
+
+      const result = component.read();
+      expect(result.ok).toBe(true);
+      expect(result.iso).toBe(toIsoSecond(new Date(2026, 7, 1, 10, 0, 0)));
+    });
+
+    it('optional が false なら空欄はエラーのまま', () => {
+      const { component, input } = mount({ startEmpty: true });
+      input.value = '';
+
+      expect(component.read().ok).toBe(false);
+    });
+  });
 });
