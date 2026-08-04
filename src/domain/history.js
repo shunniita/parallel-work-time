@@ -23,6 +23,7 @@
 
 import { INTERVAL_TYPE_LABEL, intervalEffortSeconds, isOpenInterval } from './effort.js';
 import { dateKeyOf, isValidIsoSecond } from './datetime.js';
+import { formatSeconds } from './directEntryOps.js';
 import { HISTORY_ENTITY_TYPE, HISTORY_OPERATION } from './schema.js';
 
 /** 履歴の対象種別（仕様書11章）。`schema.js` の一覧へ名前を付けたもの。 */
@@ -180,5 +181,45 @@ export function summarizeIntervalDeletion(workRun, taskRecord, interval) {
   return (
     `実施回 ${workRun.workDate} / 作業項目「${taskRecord.name}」の作業区間を削除` +
     `（${describeInterval(interval)}）`
+  );
+}
+
+/**
+ * 直接入力1件の内容を1行で表す。
+ *
+ * 区間の {@link describeInterval} と同じく、削除前の確認と履歴の要約の両方で
+ * 使う。確認画面と履歴で表記が食い違うと、「確認したものが消えたか」を後から
+ * 突き合わせられない。
+ *
+ * 工数は参加者数を掛けない値である（仕様書8.5.6）。参加者は誰の分かを照合する
+ * 補助情報なので（仕様書6.8）、人数から工数を再計算できると誤読されないよう、
+ * 秒数をそのまま出す。
+ *
+ * 備考を含める。直接入力は計測の裏づけが無い数字であり、何のために足した分が
+ * 消えたのかは備考にしか残っていない。
+ *
+ * @param {{seconds: number, participants: string[], note: string}} entry
+ * @returns {string}
+ */
+export function describeDirectEntry(entry) {
+  const participants = entry.participants.length === 0 ? 'なし' : entry.participants.join('、');
+  return (
+    `追加工数: ${formatSeconds(entry.seconds)}（${entry.seconds}秒） / ` +
+    `参加者: ${participants} / 備考: ${entry.note}`
+  );
+}
+
+/**
+ * 直接入力削除の要約文を作る（仕様書11章）。
+ *
+ * @param {{workDate: string}} workRun
+ * @param {{name: string}} taskRecord
+ * @param {object} entry
+ * @returns {string}
+ */
+export function summarizeDirectEntryDeletion(workRun, taskRecord, entry) {
+  return (
+    `実施回 ${workRun.workDate} / 作業項目「${taskRecord.name}」の直接入力を削除` +
+    `（${describeDirectEntry(entry)}）`
   );
 }
