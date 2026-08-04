@@ -41,10 +41,15 @@ import {
   updateTotalQuantity,
 } from './app/actions/projectActions.js';
 import {
+  addIntervalManually,
+  deleteInterval,
+  previewIntervalDeletion,
   recordBreak,
   recordFinish,
+  recordParticipantChange,
   recordResume,
   recordStart,
+  updateInterval,
 } from './app/actions/intervalActions.js';
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
 import { VIEW, renderShell } from './ui/shell.js';
@@ -149,12 +154,24 @@ async function main() {
     };
   }
 
-  /** 区間の記録（仕様書8.4）。作業項目詳細と実施回詳細の行から呼ぶ。 */
+  /**
+   * 区間の記録・修正・削除（仕様書8.4、11章）。作業項目詳細と実施回詳細の行から
+   * 呼ぶ。行は開始・休憩・再開・終了・参加者変更だけを使い、区間追加・編集・
+   * 削除は作業項目詳細だけが使う（`taskDetailView.js`）。
+   *
+   * `previewIntervalDeletion` は保存を行わない純関数のため、`wrap()` を通さず
+   * そのまま渡す（`deps` を引数に取らない）。
+   */
   const intervalActions = {
     recordStart: wrap(recordStart),
     recordBreak: wrap(recordBreak),
     recordResume: wrap(recordResume),
     recordFinish: wrap(recordFinish),
+    recordParticipantChange: wrap(recordParticipantChange),
+    addIntervalManually: wrap(addIntervalManually),
+    updateInterval: wrap(updateInterval),
+    deleteInterval: wrap(deleteInterval),
+    previewIntervalDeletion,
   };
 
   const tree = createTree({

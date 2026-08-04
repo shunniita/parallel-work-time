@@ -1,5 +1,5 @@
 /**
- * 開始・休憩・再開・終了の入力フォーム（仕様書12.4）。
+ * 開始・休憩・再開・終了・参加者変更の入力フォーム（仕様書12.4、8.4.10）。
  *
  * 仕様書12.4 は「いずれも日時の初期値は現在日時とし、確定前に修正できる」と
  * 定めている。ボタンを押した瞬間に記録するのではなく、日時（操作によっては
@@ -10,12 +10,15 @@
  *
  * ## 参加者の入力を求める場面
  *
- * | 操作 | 参加者 |
- * | ---- | ------ |
- * | 開始 | 入力する（作業区間は0人を禁止、仕様書8.9.4） |
- * | 休憩 | 入力しない。直前の作業区間から引き継ぐ（仕様書8.9 補足） |
- * | 再開 | 直前の休憩から引き継ぐ。引き継ぎが0人のときだけ入力する（設計メモ §2.1） |
- * | 終了 | 入力しない。新しい区間を作らない |
+ * | 操作       | 参加者 |
+ * | ---------- | ------ |
+ * | 開始       | 空欄から入力する（作業区間は0人を禁止、仕様書8.9.4） |
+ * | 休憩       | 入力しない。直前の作業区間から引き継ぐ（仕様書8.9 補足） |
+ * | 再開       | 直前の休憩から引き継ぐ。引き継ぎが0人のときだけ入力する（設計メモ §2.1） |
+ * | 終了       | 入力しない。新しい区間を作らない |
+ * | 参加者変更 | 現在の参加者を初期値として入力する（仕様書8.4.10）。空欄からではなく、いま |
+ * |            | の一覧を直す形にする。作業中は0人にできない（仕様書8.9.4）が、休憩中は |
+ * |            | できる（8.9.4、8.4 補足2 の「休憩中に一部だけ作業へ戻る」場面） |
  *
  * 保存の可否そのものは `src/domain/intervalOps.js` が決める。この画面の分岐は
  * 「何を尋ねるか」であって、検証ではない。
@@ -56,6 +59,11 @@ function describeOperation(operation, active) {
         : `進行中の休憩をこの日時で終了し、同じ日時から作業を再開します。参加者（${inherited.join('、')}）を引き継ぎます。`;
     case TASK_OPERATION.FINISH:
       return '進行中の区間をこの日時で終了します。新しい区間は作りません。';
+    case TASK_OPERATION.CHANGE_PARTICIPANTS:
+      if (active === null) {
+        return '進行中の区間が見つかりません。画面を更新してからやり直してください。';
+      }
+      return '進行中の区間をこの日時で終了し、新しい参加者一覧で同じ種別の区間を同じ日時から開始します（仕様書8.4.10）。';
     default:
       return '';
   }
@@ -69,12 +77,26 @@ function describeOperation(operation, active) {
  * @returns {boolean}
  */
 function needsParticipants(operation, inherited) {
-  if (operation === TASK_OPERATION.START) {
+  if (operation === TASK_OPERATION.START || operation === TASK_OPERATION.CHANGE_PARTICIPANTS) {
     return true;
   }
   // 0人の休憩から再開すると引き継いだ結果が 8.9.4 違反になる。黙って0人の
   // 作業区間を作らず、ここで入力を求める。
   return operation === TASK_OPERATION.RESUME && inherited.length === 0;
+}
+
+/**
+ * 参加者入力欄の初期値を決める。
+ *
+ * 参加者変更は「いまの一覧を直す」操作なので、空欄からではなく現在の参加者を
+ * 初期値にする（仕様書8.4.10）。開始は空欄から入力する。
+ *
+ * @param {string} operation
+ * @param {string[]} inherited
+ * @returns {string[]}
+ */
+function initialParticipants(operation, inherited) {
+  return operation === TASK_OPERATION.CHANGE_PARTICIPANTS ? inherited : [];
 }
 
 /**
@@ -113,6 +135,7 @@ export function createIntervalOperationForm({
         label: '参加者',
         hint: '複数登録できます。過去に入力した名前が候補に出ます。',
         candidates,
+        value: initialParticipants(operation, inherited),
       })
     : null;
 

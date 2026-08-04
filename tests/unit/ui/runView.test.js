@@ -44,6 +44,7 @@ function mount(options = {}) {
     recordBreak: vi.fn(async () => ({ dataset: null, warnings: [] })),
     recordResume: vi.fn(async () => ({ dataset: null, warnings: [] })),
     recordFinish: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    recordParticipantChange: vi.fn(async () => ({ dataset: null, warnings: [] })),
   };
   const handlers = { onOpenTask: vi.fn(), onSelectProject: vi.fn() };
   /** 案件画面・当該実施回を表示中の状態。navigateAway() で書き換えて模擬する。 */
@@ -109,13 +110,19 @@ describe('createRunView', () => {
       expect(view.rowOperations('受入確認')).toEqual(['受入確認', '開始', '詳細']);
     });
 
-    it('作業中の行には休憩と終了を出す', () => {
+    it('作業中の行には休憩・終了・参加者変更を出す', () => {
       const view = mount({ tasks: [working('受入確認', 1)] });
 
-      expect(view.rowOperations('受入確認')).toEqual(['受入確認', '休憩', '終了', '詳細']);
+      expect(view.rowOperations('受入確認')).toEqual([
+        '受入確認',
+        '休憩',
+        '終了',
+        '参加者変更',
+        '詳細',
+      ]);
     });
 
-    it('休憩中の行には再開と終了を出す', () => {
+    it('休憩中の行には再開・終了・参加者変更を出す', () => {
       const view = mount({
         tasks: [
           taskRecord({
@@ -128,7 +135,13 @@ describe('createRunView', () => {
         ],
       });
 
-      expect(view.rowOperations('受入確認')).toEqual(['受入確認', '再開', '終了', '詳細']);
+      expect(view.rowOperations('受入確認')).toEqual([
+        '受入確認',
+        '再開',
+        '終了',
+        '参加者変更',
+        '詳細',
+      ]);
     });
 
     it('転記済みでは操作を出さず理由を示す（仕様書7.2）', () => {
@@ -170,6 +183,31 @@ describe('createRunView', () => {
         runId: view.run.runId,
         taskRecordId: view.tasks[0].taskRecordId,
       });
+    });
+
+    it('参加者変更は現在の参加者を初期値にする（仕様書8.4.10、A-16、T-16）', async () => {
+      const task = taskRecord({
+        name: '受入確認',
+        order: 1,
+        intervals: [workInterval('2026-08-01T09:00:00+09:00', null, ['甲', '乙'])],
+      });
+      const view = mount({ tasks: [task] });
+
+      view.rowOf('受入確認').querySelector('[data-testid="row-op-changeParticipants"]').click();
+
+      expect(
+        [...view.container.querySelectorAll('[data-testid="op-participants-item"] span')].map(
+          (node) => node.textContent,
+        ),
+      ).toEqual(['甲', '乙']);
+
+      view.query('op-submit').click();
+      await vi.waitFor(() => expect(view.actions.recordParticipantChange).toHaveBeenCalled());
+
+      expect(view.actions.recordParticipantChange).toHaveBeenCalledWith(
+        { runId: view.run.runId, taskRecordId: task.taskRecordId },
+        { at: expect.any(String), participants: ['甲', '乙'] },
+      );
     });
 
     it('開いているフォームは1つだけにする', () => {
@@ -272,7 +310,13 @@ describe('createRunView', () => {
         tasks: [working('受入確認', 1), taskRecord({ name: '本作業', order: 2 })],
       });
 
-      expect(view.rowOperations('受入確認')).toEqual(['受入確認', '休憩', '終了', '詳細']);
+      expect(view.rowOperations('受入確認')).toEqual([
+        '受入確認',
+        '休憩',
+        '終了',
+        '参加者変更',
+        '詳細',
+      ]);
       expect(view.rowOperations('本作業')).toEqual(['本作業', '開始', '詳細']);
     });
 

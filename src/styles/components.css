@@ -164,6 +164,23 @@
   color: var(--color-text-muted);
 }
 
+/* 押されている状態のトグルボタン。「履歴編集」の開閉に使う。 */
+.button--active {
+  background: var(--color-selected);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* 取り消せない操作（区間削除）の確定ボタン。主要ボタンにはしない。 */
+.button--danger {
+  border-color: var(--color-error-border);
+  color: var(--color-error-text);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: var(--color-error-bg);
+}
+
 .errors {
   margin-bottom: var(--space-4);
   padding: var(--space-3) var(--space-4);
