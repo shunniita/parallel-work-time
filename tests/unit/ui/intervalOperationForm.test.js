@@ -113,6 +113,15 @@ describe('createIntervalOperationForm', () => {
       expect(view.participants).not.toBeNull();
       expect(view.note.textContent).toContain('1人以上');
     });
+
+    it('進行中の休憩が無ければ「見つからない」と区別して伝える（レビュー指摘 FB-5）', () => {
+      // 状態表示とボタン制御が一致しないままフォームが開かれた場合を想定する。
+      // 到達には多重タブでの競合などが要り、通常操作では起きない。
+      const view = mount({ operation: TASK_OPERATION.RESUME, taskRecord: taskRecord() });
+
+      expect(view.note.textContent).toContain('進行中の休憩が見つかりません');
+      expect(view.note.textContent).not.toContain('参加者0人');
+    });
   });
 
   describe('確定', () => {

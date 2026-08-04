@@ -30,17 +30,27 @@ import { createParticipantsInput } from './participantsInput.js';
 /**
  * 操作ごとの補足文。何が起きるかを確定前に示す。
  *
+ * `active` が `null` になるのは、状態表示とボタン制御が一致しないまま
+ * （多重タブでの競合など）フォームが開かれた場合だけである。その場合は
+ * 「引き継ぐ参加者が0人」ではなく「引き継ぐ区間そのものが無い」と区別して
+ * 伝える。0人の休憩からの再開と取り違えると、原因の見当がつかなくなる
+ * （レビュー指摘 FB-5）。
+ *
  * @param {string} operation
- * @param {string[]} inherited 引き継ぐ参加者
+ * @param {object|null} active 進行中区間。無ければ null
  * @returns {string}
  */
-function describeOperation(operation, inherited) {
+function describeOperation(operation, active) {
+  const inherited = active === null ? [] : active.participants;
   switch (operation) {
     case TASK_OPERATION.START:
       return 'この日時から作業区間を開始します。終了日時は空のままです。';
     case TASK_OPERATION.BREAK:
       return `進行中の作業をこの日時で終了し、同じ日時から休憩を開始します。参加者（${inherited.join('、')}）を引き継ぎます。`;
     case TASK_OPERATION.RESUME:
+      if (active === null) {
+        return '進行中の休憩が見つかりません。画面を更新してからやり直してください。';
+      }
       return inherited.length === 0
         ? '直前の休憩は参加者0人です。作業区間は1人以上必要なため、再開する参加者を入力してください（仕様書8.9.4）。'
         : `進行中の休憩をこの日時で終了し、同じ日時から作業を再開します。参加者（${inherited.join('、')}）を引き継ぎます。`;
@@ -187,7 +197,7 @@ export function createIntervalOperationForm({
     [
       el('h3', { class: 'card__title', text: label }),
       errorBox,
-      el('p', { class: 'note', text: describeOperation(operation, inherited) }),
+      el('p', { class: 'note', text: describeOperation(operation, active) }),
       el('div', { class: 'field-row' }, [
         dateTime.element,
         participants === null ? null : participants.element,

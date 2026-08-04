@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTaskDetailView } from '../../../src/ui/views/taskDetailView.js';
+import { VIEW } from '../../../src/ui/shell.js';
 import {
   breakInterval,
   projectGroup,
@@ -45,16 +46,17 @@ function mount(options = {}) {
     recordFinish: vi.fn(async () => ({ dataset: null, warnings: [] })),
   };
   const handlers = { onBackToRun: vi.fn() };
-  const store = {
-    getState: () => ({
-      dataset: { workRuns: [run], projectGroups: [group] },
-      selection: {
-        projectGroupId: group.projectGroupId,
-        runId: run.runId,
-        taskRecordId: task.taskRecordId,
-      },
-    }),
+  /** 案件画面・当該作業項目を表示中の状態。navigateAway() で書き換えて模擬する。 */
+  let state = {
+    view: VIEW.PROJECTS,
+    dataset: { workRuns: [run], projectGroups: [group] },
+    selection: {
+      projectGroupId: group.projectGroupId,
+      runId: run.runId,
+      taskRecordId: task.taskRecordId,
+    },
   };
+  const store = { getState: () => state };
 
   const view = createTaskDetailView({
     container,
@@ -67,7 +69,20 @@ function mount(options = {}) {
 
   const query = (testid) => container.querySelector(`[data-testid="${testid}"]`);
   const all = (testid) => [...container.querySelectorAll(`[data-testid="${testid}"]`)];
-  return { view, container, actions, handlers, run, task, query, all };
+  return {
+    view,
+    container,
+    actions,
+    handlers,
+    run,
+    task,
+    query,
+    all,
+    /** 保存を待つあいだに、利用者が別の画面／別の作業項目へ移った状態を模す。 */
+    navigateAway: (patch) => {
+      state = { ...state, selection: { ...state.selection, ...patch } };
+    },
+  };
 }
 
 /** 状態ごとの作業項目実績。 */
@@ -304,6 +319,54 @@ describe('createTaskDetailView', () => {
       view.query('op-submit').click();
 
       await vi.waitFor(() => expect(view.query('op-form')).toBeNull());
+    });
+
+    it('保存を待つ間に別の作業項目へ移っていた場合は上書きしない（レビュー指摘 FB-7）', async () => {
+      const view = mount({ task: TASKS.working() });
+      let resolveAction;
+      view.actions.recordFinish.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveAction = resolve;
+          }),
+      );
+      view.query('op-finish').click();
+      view.query('op-submit').click();
+      await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+      // 保存を待つ間に、利用者が別の作業項目へ移ったとする。移動先の画面が
+      // 既に detailPane を描いた状態を模す。
+      view.navigateAway({ taskRecordId: 'other-task' });
+      view.container.textContent = 'マーカー';
+
+      resolveAction({ dataset: null, warnings: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(view.container.textContent).toBe('マーカー');
+    });
+
+    it('保存を待つ間に実施回一覧へ戻っていた場合は上書きしない（レビュー指摘 FB-7）', async () => {
+      const view = mount({ task: TASKS.working() });
+      let resolveAction;
+      view.actions.recordFinish.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveAction = resolve;
+          }),
+      );
+      view.query('op-finish').click();
+      view.query('op-submit').click();
+      await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+      view.navigateAway({ taskRecordId: null });
+      view.container.textContent = 'マーカー';
+
+      resolveAction({ dataset: null, warnings: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(view.container.textContent).toBe('マーカー');
     });
 
     it('取消でフォームを閉じる', () => {
