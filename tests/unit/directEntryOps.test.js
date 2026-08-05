@@ -210,6 +210,22 @@ describe('addDirectEntry()', () => {
       expect(result.warnings).toEqual([]);
     });
 
+    it('区切り位置が違えば別の顔ぶれとして扱う（レビュー指摘 S7-3）', () => {
+      // 参加者名は自由入力なので、名前の中に空白が入りうる。単純な区切り文字で
+      // 連結して比べると `['甲 太郎']` と `['甲', '太郎']` が同じキーになる。
+      const task = taskRecord({
+        directEntries: [directEntry(1200, { participants: ['甲 太郎'] })],
+      });
+
+      const result = addDirectEntry(
+        task,
+        input({ seconds: 1200, participants: ['甲', '太郎'] }),
+        context(),
+      );
+
+      expect(result.warnings).toEqual([]);
+    });
+
     it('参加者の並び順が違うだけなら警告する', () => {
       // 「甲、乙」と「乙、甲」は同じ顔ぶれである。入力した順で判定が変わるのは
       // 利用者から見て理解できない。
@@ -336,6 +352,87 @@ describe('editDirectEntry()', () => {
     const result = editDirectEntry(task, task.directEntries[0].entryId, { seconds: -1 }, { now: NOW });
 
     expect(result.ok).toBe(false);
+  });
+
+  it('1秒以上のものを0秒へは変えられない', () => {
+    const task = taskWithEntry();
+
+    const result = editDirectEntry(task, task.directEntries[0].entryId, { seconds: 0 }, { now: NOW });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toContain('1秒以上');
+  });
+
+  describe('取り込んだ0秒レコード（レビュー指摘 S7-2）', () => {
+    // `schema.js` のインポート検証は0秒を通す。「取り込めるが直せない」
+    // レコードを作らないため、0秒のままの保存は編集でも通す。
+    function taskWithZeroEntry() {
+      return taskRecord({
+        directEntries: [directEntry(0, { participants: ['甲'], note: '取り込んだ記録' })],
+      });
+    }
+
+    it('備考だけを直せる', () => {
+      const task = taskWithZeroEntry();
+
+      const result = editDirectEntry(
+        task,
+        task.directEntries[0].entryId,
+        { note: '内容を確認して補記' },
+        { now: NOW },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.updated).toMatchObject({ seconds: 0, note: '内容を確認して補記' });
+    });
+
+    it('参加者だけを直せる', () => {
+      const task = taskWithZeroEntry();
+
+      const result = editDirectEntry(
+        task,
+        task.directEntries[0].entryId,
+        { participants: ['乙'] },
+        { now: NOW },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.updated.participants).toEqual(['乙']);
+    });
+
+    it('画面が0秒をそのまま送り返しても通る', () => {
+      // 編集フォームは分・秒を常に送る。0秒のレコードを開くと 0 が戻ってくる。
+      const task = taskWithZeroEntry();
+
+      const result = editDirectEntry(
+        task,
+        task.directEntries[0].entryId,
+        { seconds: 0, participants: ['甲'], note: '内容を確認して補記' },
+        { now: NOW },
+      );
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('1秒以上へ直すこともできる', () => {
+      const task = taskWithZeroEntry();
+
+      const result = editDirectEntry(
+        task,
+        task.directEntries[0].entryId,
+        { seconds: 600 },
+        { now: NOW },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.updated.seconds).toBe(600);
+    });
+
+    it('新規追加では引き続き0秒を拒む', () => {
+      const result = addDirectEntry(taskWithZeroEntry(), input({ seconds: 0 }), context());
+
+      expect(result.ok).toBe(false);
+    });
   });
 
   it('自分自身は重複候補にしない（仕様書8.9.8）', () => {
