@@ -28,7 +28,9 @@ import {
   ValidationError,
 } from '../../src/app/errors.js';
 import { SAVE_STATE, createPersistence } from '../../src/app/persistence.js';
+import { warningMessages } from '../../src/domain/problems.js';
 import { summarizeQuantity } from '../../src/domain/quantity.js';
+import { VALIDATION_WARNING } from '../../src/domain/validation.js';
 import { MemoryAdapter } from '../../src/storage/MemoryAdapter.js';
 import { ENTITY_TYPE } from '../../src/storage/StorageAdapter.js';
 import { validateImportPayload } from '../../src/domain/schema.js';
@@ -408,8 +410,23 @@ describe('projectActions', () => {
         runQuantity: 150,
       }).catch((caught) => caught);
 
-      expect(error.warnings.join('\n')).toContain('50');
+      expect(warningMessages(error.warnings).join('\n')).toContain('50');
+      expect(error.warnings[0].code).toBe(VALIDATION_WARNING.QUANTITY_OVERFLOW);
       expect(error.preview).toMatchObject({ accumulated: 150, overBy: 50, exceeded: true });
+    });
+
+    it('累計超過以外の警告では確認を求めない（レビュー指摘 D-15）', async () => {
+      // 差し戻すかどうかは種別コードで決める。`warnings` が空でないことを確認
+      // 要求とみなすと、Step 7 以降で別種の警告を足した瞬間に誤爆する。
+      const group = await seedProject({ totalQuantity: 100 });
+
+      const { dataset, warnings } = await createWorkRun(deps, group.projectGroupId, {
+        workDate: '2026-08-01',
+        runQuantity: 50,
+      });
+
+      expect(dataset.workRuns).toHaveLength(1);
+      expect(warnings.filter((w) => w.code === VALIDATION_WARNING.QUANTITY_OVERFLOW)).toEqual([]);
     });
 
     it('確認後は保存できる', async () => {

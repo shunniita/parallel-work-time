@@ -10,50 +10,20 @@
  * 8.9.1〜8.9.9 の総点検を行う。
  *
  * 警告（`warnings`）と拒否（`errors`）を分ける。累計超過は警告し、確認後に
- * 続行できる（仕様書8.9.7）ため、保存を止める `errors` とは別に返す。
+ * 続行できる（仕様書8.9.7）ため、保存を止める `errors` とは別に返す。警告は
+ * 種別コードつきの `{code, path, message}` で返す（`problems.js`、D-15）。
  */
 
 import { normalizeProjectId } from './templateInstantiate.js';
 import { isValidDateKey } from './datetime.js';
+import { Problems } from './problems.js';
 import { previewQuantity, previewTotalQuantity } from './quantity.js';
 
-/**
- * 検証結果を集める入れ物。
- */
-class Problems {
-  constructor() {
-    this.errors = [];
-    this.warnings = [];
-  }
-
-  /**
-   * 保存を止める不備を積む。
-   *
-   * @param {string} path 例: `tasks[2].name`
-   * @param {string} message
-   */
-  add(path, message) {
-    this.errors.push(`${path}: ${message}`);
-  }
-
-  /**
-   * 保存は止めないが利用者へ知らせる事柄を積む。
-   *
-   * @param {string} path
-   * @param {string} message
-   */
-  warn(path, message) {
-    this.warnings.push(`${path}: ${message}`);
-  }
-
-  get ok() {
-    return this.errors.length === 0;
-  }
-
-  toResult(extra = {}) {
-    return { ok: this.ok, errors: this.errors, warnings: this.warnings, ...extra };
-  }
-}
+/** 本モジュールの検証で出る警告の種別。 */
+export const VALIDATION_WARNING = {
+  /** 今回数量の累計が総予定数を超える（仕様書8.9.7）。確認のうえ続行できる。 */
+  QUANTITY_OVERFLOW: 'quantityOverflow',
+};
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim() !== '';
@@ -167,7 +137,7 @@ export function validateTemplateIsNew(existingActiveTemplates, draft) {
  * 内容を画面へ示す必要があり、返す情報の形が違うためである。
  *
  * @param {unknown} draft
- * @returns {{ok: boolean, errors: string[], warnings: string[]}}
+ * @returns {{ok: boolean, errors: string[], warnings: object[]}}
  */
 export function validateProjectGroupDraft(draft) {
   const problems = new Problems();
@@ -208,7 +178,7 @@ export function validateProjectGroupDraft(draft) {
  *
  * @param {object[]} existingGroups 保存済みの案件グループすべて
  * @param {string} projectId 入力された案件ID
- * @returns {{ok: boolean, errors: string[], warnings: string[], conflict: object|null}}
+ * @returns {{ok: boolean, errors: string[], warnings: object[], conflict: object|null}}
  */
 export function validateProjectIdAvailable(existingGroups, projectId) {
   const problems = new Problems();
@@ -239,7 +209,7 @@ export function validateProjectIdAvailable(existingGroups, projectId) {
  * @param {unknown} draft `{workDate, runQuantity, excludedTaskDefinitionIds?}`
  * @param {{projectGroup: object, runs: object[], excludeRunId?: string|null,
  *          generatableCount?: number}} context
- * @returns {{ok: boolean, errors: string[], warnings: string[], preview: object|null}}
+ * @returns {{ok: boolean, errors: string[], warnings: object[], preview: object|null}}
  */
 export function validateRunDraft(draft, context) {
   const problems = new Problems();
@@ -272,6 +242,7 @@ export function validateRunDraft(draft, context) {
     });
     if (preview.exceeded) {
       problems.warn(
+        VALIDATION_WARNING.QUANTITY_OVERFLOW,
         '今回数量',
         `累計 ${preview.accumulated} が総予定数 ${context.projectGroup.totalQuantity} を ` +
           `${preview.overBy} 超える。確認のうえ続行できる。`,
@@ -290,7 +261,7 @@ export function validateRunDraft(draft, context) {
  *
  * @param {{runQuantity: number}[]} runs 当該案件グループの実施回すべて
  * @param {unknown} nextTotalQuantity
- * @returns {{ok: boolean, errors: string[], warnings: string[], preview: object|null}}
+ * @returns {{ok: boolean, errors: string[], warnings: object[], preview: object|null}}
  */
 export function validateTotalQuantityChange(runs, nextTotalQuantity) {
   const problems = new Problems();
@@ -303,6 +274,7 @@ export function validateTotalQuantityChange(runs, nextTotalQuantity) {
   const preview = previewTotalQuantity(runs, nextTotalQuantity);
   if (preview.exceeded) {
     problems.warn(
+      VALIDATION_WARNING.QUANTITY_OVERFLOW,
       '総予定数',
       `累計 ${preview.accumulated} が総予定数 ${nextTotalQuantity} を ` +
         `${preview.overBy} 超える。確認のうえ続行できる。`,

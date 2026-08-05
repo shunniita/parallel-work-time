@@ -51,6 +51,12 @@ import {
   recordStart,
   updateInterval,
 } from './app/actions/intervalActions.js';
+import {
+  createDirectEntry,
+  deleteDirectEntry,
+  previewDirectEntryDeletion,
+  updateDirectEntry,
+} from './app/actions/directEntryActions.js';
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
 import { VIEW, renderShell } from './ui/shell.js';
 import { renderStatusBar } from './ui/statusBar.js';
@@ -174,6 +180,20 @@ async function main() {
     previewIntervalDeletion,
   };
 
+  /**
+   * 直接入力の追加・修正・削除（仕様書8.5、11章）。作業項目詳細だけが使う。
+   * 実施回詳細の行には出さない。備考が必須で、行の中へ収めるには入力が多い。
+   *
+   * `previewDirectEntryDeletion` は保存を行わない純関数のため、`wrap()` を
+   * 通さずそのまま渡す（`deps` を引数に取らない）。
+   */
+  const directEntryActions = {
+    createDirectEntry: wrap(createDirectEntry),
+    updateDirectEntry: wrap(updateDirectEntry),
+    deleteDirectEntry: wrap(deleteDirectEntry),
+    previewDirectEntryDeletion,
+  };
+
   const tree = createTree({
     container: shell.treePane,
     store,
@@ -252,7 +272,7 @@ async function main() {
   const taskDetailView = createTaskDetailView({
     container: shell.detailPane,
     store,
-    actions: intervalActions,
+    actions: { ...intervalActions, ...directEntryActions },
     handlers: { onBackToRun: selectRun },
   });
 
