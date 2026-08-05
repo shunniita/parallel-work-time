@@ -57,6 +57,13 @@ import {
   previewDirectEntryDeletion,
   updateDirectEntry,
 } from './app/actions/directEntryActions.js';
+import {
+  markAggregated,
+  markTransferred,
+  previewStatusChange,
+  reopenRun,
+  revertTransfer,
+} from './app/actions/transferActions.js';
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
 import { VIEW, renderShell } from './ui/shell.js';
 import { renderStatusBar } from './ui/statusBar.js';
@@ -66,6 +73,7 @@ import { createProjectFormView } from './ui/views/projectFormView.js';
 import { createProjectView } from './ui/views/projectView.js';
 import { createRunView } from './ui/views/runView.js';
 import { createTaskDetailView } from './ui/views/taskDetailView.js';
+import { createSummaryView } from './ui/views/summaryView.js';
 import { createPlaceholderView } from './ui/views/placeholderView.js';
 import { el, replaceChildren } from './ui/dom.js';
 
@@ -277,6 +285,28 @@ async function main() {
   });
 
   /**
+   * 集計・転記（仕様書8.7、7.1）。左ツリーで選んだ実施回を対象にする。
+   *
+   * `previewStatusChange` は保存を行わない純関数のため、`wrap()` を通さず
+   * そのまま渡す（`deps` を引数に取らない）。
+   */
+  const summaryView = createSummaryView({
+    container: shell.detailPane,
+    store,
+    actions: {
+      markAggregated: wrap(markAggregated),
+      reopenRun: wrap(reopenRun),
+      markTransferred: wrap(markTransferred),
+      revertTransfer: wrap(revertTransfer),
+      previewStatusChange,
+    },
+    handlers: {
+      // 集計中に記録の誤りへ気づいたとき、実施回詳細へ移れるようにする。
+      onSelectRun: (runId) => selectRun(runId),
+    },
+  });
+
+  /**
    * 案件画面の中身を描く。
    *
    * 選択の深さで内容が変わる。作業項目まで選んでいれば作業項目詳細、実施回まで
@@ -312,14 +342,7 @@ async function main() {
     [VIEW.TEMPLATES, { render: () => templateView.render() }],
     [VIEW.PROJECT_FORM, projectFormView],
     [VIEW.PROJECTS, { render: renderProjectsView, reset: resetProjectsView }],
-    [
-      VIEW.SUMMARY,
-      createPlaceholderView({
-        container: shell.detailPane,
-        title: '集計・転記',
-        note: '実施回ごとの転記値一覧は実装計画 Step 8 で作ります。',
-      }),
-    ],
+    [VIEW.SUMMARY, summaryView],
     [
       VIEW.ARCHIVE,
       createPlaceholderView({

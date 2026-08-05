@@ -45,7 +45,7 @@ import {
 } from '../../domain/effort.js';
 import { formatSeconds } from '../../domain/directEntryOps.js';
 import { collectParticipants } from '../../domain/participants.js';
-import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
+import { RUN_STATUS_LABEL, describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
 import {
   TASK_OPERATION,
   TASK_OPERATION_LABEL,
@@ -53,12 +53,12 @@ import {
   availableOperations,
   taskState,
 } from '../../domain/taskState.js';
-import { createDeleteConfirm } from '../components/deleteConfirm.js';
+import { createReasonConfirm } from '../components/reasonConfirm.js';
 import { createDirectEntryForm } from '../components/directEntryForm.js';
 import { createIntervalEntryForm } from '../components/intervalEntryForm.js';
 import { createIntervalOperationForm } from '../components/intervalOperationForm.js';
 import { el, replaceChildren } from '../dom.js';
-import { RUN_STATUS_LABEL, toMinutesLabel } from '../labels.js';
+import { toMinutesLabel } from '../labels.js';
 import { VIEW } from '../shell.js';
 
 /** 区間履歴の表の列数。編集モード中は「操作」列が1つ増える。 */
@@ -611,7 +611,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
         interval.intervalId,
       );
       if (preview.ok) {
-        const confirm = createDeleteConfirm({
+        const confirm = createReasonConfirm({
           preview,
           subject: '区間',
           idPrefix: `task-delete-${interval.intervalId}`,
@@ -743,7 +743,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
         entry.entryId,
       );
       if (preview.ok) {
-        const confirm = createDeleteConfirm({
+        const confirm = createReasonConfirm({
           preview,
           subject: '直接入力',
           idPrefix: `task-direct-delete-${entry.entryId}`,

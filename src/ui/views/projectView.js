@@ -16,12 +16,12 @@
  */
 
 import { previewQuantity, summarizeQuantity } from '../../domain/quantity.js';
+import { RUN_STATUS_LABEL } from '../../domain/runStatus.js';
 import { generatableTasks } from '../../domain/templateInstantiate.js';
 import { toDateKey } from '../../domain/datetime.js';
 import { findActiveTemplate } from '../../app/actions/projectActions.js';
 import { QuantityOverflowError, toErrorMessages } from '../../app/errors.js';
 import { el, field, replaceChildren, setNote, setText } from '../dom.js';
-import { RUN_STATUS_LABEL } from '../labels.js';
 import { toIntegerInput } from '../numeric.js';
 
 /**

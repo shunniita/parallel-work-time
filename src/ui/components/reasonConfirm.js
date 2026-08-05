@@ -28,40 +28,56 @@ import { toErrorMessages } from '../../app/errors.js';
 import { el, field, replaceChildren } from '../dom.js';
 
 /**
- * 削除確認を作る。
+ * 理由必須の確認を作る。
+ *
+ * 既定は削除の文言である。転記済みの取り消し（仕様書7.1、11章）のように、削除
+ * 以外で理由を要る操作は `action` で語を差し替える。
  *
  * @param {{preview: {description: string, deletable: boolean,
- *          blockedReason: string|null}, subject?: string, idPrefix?: string,
+ *          blockedReason: string|null}, subject?: string,
+ *          action?: {verb?: string, noun?: string, danger?: boolean,
+ *                    reasonHint?: string},
+ *          idPrefix?: string, testidPrefix?: string,
  *          onConfirm: (reason: string) => Promise<unknown>,
  *          onCancel: () => void}} options
  *   `subject` は見出しへ入れる対象の呼び名（例: `区間` / `直接入力`）。
+ *   `action.verb` は「削除する」の「削除」に当たる語、`action.noun` は
+ *   「削除の理由」の「削除」に当たる語である（多くは同じだが、「取り消し」の
+ *   ように送り仮名で変わる場合に分ける）。
  * @returns {{element: HTMLElement, focus: () => void}}
  */
-export function createDeleteConfirm({
+export function createReasonConfirm({
   preview,
   subject = '区間',
+  action = {},
   idPrefix = 'delete',
+  testidPrefix = 'delete',
   onConfirm,
   onCancel,
 }) {
+  const verb = action.verb ?? '削除';
+  const noun = action.noun ?? verb;
+  const danger = action.danger ?? true;
+  const reasonHint = action.reasonHint ?? '必須です。変更履歴に記録されます（仕様書11章）。';
+
   const reasonInput = el('textarea', {
     class: 'input',
     rows: '2',
-    dataset: { testid: 'delete-reason' },
+    dataset: { testid: `${testidPrefix}-reason` },
   });
 
   const errorBox = el('div', {
     class: 'errors',
     role: 'alert',
-    dataset: { testid: 'delete-errors' },
+    dataset: { testid: `${testidPrefix}-errors` },
     hidden: true,
   });
 
   const confirmButton = el('button', {
     type: 'button',
-    class: 'button button--danger',
-    text: '削除する',
-    dataset: { testid: 'delete-confirm' },
+    class: danger ? 'button button--danger' : 'button button--primary',
+    text: `${verb}する`,
+    dataset: { testid: `${testidPrefix}-confirm` },
     disabled: !preview.deletable,
     on: { click: submit },
   });
@@ -70,7 +86,7 @@ export function createDeleteConfirm({
     type: 'button',
     class: 'button',
     text: '取消',
-    dataset: { testid: 'delete-cancel' },
+    dataset: { testid: `${testidPrefix}-cancel` },
     on: { click: () => onCancel() },
   });
 
@@ -79,7 +95,7 @@ export function createDeleteConfirm({
    */
   function showErrors(messages) {
     replaceChildren(errorBox, [
-      el('p', { class: 'errors__title', text: '削除できません' }),
+      el('p', { class: 'errors__title', text: `${verb}できません` }),
       el(
         'ul',
         {},
@@ -121,27 +137,27 @@ export function createDeleteConfirm({
     'section',
     {
       class: 'card card--warn',
-      dataset: { testid: 'delete-confirm-panel' },
+      dataset: { testid: `${testidPrefix}-confirm-panel` },
       role: 'alertdialog',
-      'aria-label': `${subject}の削除確認`,
+      'aria-label': `${subject}の${noun}確認`,
     },
     [
-      el('h3', { class: 'card__title', text: `${subject}を削除します` }),
+      el('h3', { class: 'card__title', text: `${subject}を${verb}します` }),
       errorBox,
       el('p', {
-        dataset: { testid: 'delete-confirm-description' },
+        dataset: { testid: `${testidPrefix}-confirm-description` },
         text: preview.description,
       }),
       preview.deletable
         ? field({
             id: `${idPrefix}-reason`,
-            label: '削除の理由',
-            hint: '必須です。変更履歴に記録されます（仕様書11章）。',
+            label: `${noun}の理由`,
+            hint: reasonHint,
             input: reasonInput,
           })
         : el('p', {
             class: 'note note--warn',
-            dataset: { testid: 'delete-blocked' },
+            dataset: { testid: `${testidPrefix}-blocked` },
             text: preview.blockedReason,
           }),
       el('div', { class: 'actions' }, [confirmButton, cancelButton]),

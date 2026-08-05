@@ -14,9 +14,9 @@
  */
 
 import { summarizeQuantity } from '../domain/quantity.js';
+import { RUN_STATUS_LABEL } from '../domain/runStatus.js';
 import { TASK_STATE, TASK_STATE_LABEL, taskState } from '../domain/taskState.js';
 import { el, replaceChildren } from './dom.js';
-import { RUN_STATUS_LABEL } from './labels.js';
 
 /**
  * 作業項目の状態を表す記号（仕様書7.2）。

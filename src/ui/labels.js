@@ -2,20 +2,14 @@
  * 画面表示のための語と数値の書式。
  *
  * 状態や種別そのものの表示名は `src/domain/` 側（`taskState.js` の
- * `TASK_STATE_LABEL`、`effort.js` の `INTERVAL_TYPE_LABEL`）が持つ。ここへ置くのは
- * 保存する値と対応しない、画面だけの語と書式である。
+ * `TASK_STATE_LABEL`、`effort.js` の `INTERVAL_TYPE_LABEL`、`runStatus.js` の
+ * `RUN_STATUS_LABEL`）が持つ。ここへ置くのは保存する値と対応しない、画面だけの
+ * 語と書式である。
  *
- * レビュー指摘 D-16（ラベル定数の重複）の寄せ先である。Step 8 の集計画面を作る
- * ときに、`tree.js` と `projectView.js` に残っている複製をここへ向け直す。
+ * レビュー指摘 D-16（ラベル定数の重複）の寄せ先である。`RUN_STATUS_LABEL` は
+ * Step 8 で `domain/runStatus.js` へ移した。状態遷移を拒む理由の文言でも同じ語を
+ * 使うため、画面側に置くと domain が UI を参照することになる。
  */
-
-/** 実施回の状態の表示名（仕様書7章）。 */
-export const RUN_STATUS_LABEL = {
-  working: '作業中',
-  aggregated: '集計済み',
-  transferred: '転記済み',
-  archived: 'アーカイブ',
-};
 
 /**
  * 秒を「n分」表記へ直す。
