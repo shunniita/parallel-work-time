@@ -10,10 +10,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTaskDetailView } from '../../../src/ui/views/taskDetailView.js';
+import { previewDirectEntryDeletion } from '../../../src/app/actions/directEntryActions.js';
 import { previewIntervalDeletion } from '../../../src/app/actions/intervalActions.js';
 import { VIEW } from '../../../src/ui/shell.js';
 import {
   breakInterval,
+  directEntry,
   projectGroup,
   resetIds,
   taskRecord,
@@ -49,9 +51,14 @@ function mount(options = {}) {
     addIntervalManually: vi.fn(async () => ({ dataset: null, warnings: [] })),
     updateInterval: vi.fn(async () => ({ dataset: null, warnings: [] })),
     deleteInterval: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    createDirectEntry: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    updateDirectEntry: vi.fn(async () => ({ dataset: null, warnings: [] })),
+    deleteDirectEntry: vi.fn(async () => ({ dataset: null, warnings: [] })),
     // 純関数の実体をそのまま使う。テストごとに再実装しない。
     previewIntervalDeletion: (workRuns, target, intervalId) =>
       previewIntervalDeletion(workRuns, target, intervalId),
+    previewDirectEntryDeletion: (workRuns, target, entryId) =>
+      previewDirectEntryDeletion(workRuns, target, entryId),
   };
   const handlers = { onBackToRun: vi.fn() };
   /** 案件画面・当該作業項目を表示中の状態。navigateAway() で書き換えて模擬する。 */
@@ -155,20 +162,25 @@ describe('createTaskDetailView', () => {
       expect(view.query('op-finish').disabled).toBe(true);
     });
 
-    it('未実装の操作（直接入力）は理由を添えて無効にする', () => {
-      const view = mount({ task: TASKS.working() });
+    it('直接入力は全状態で押せる（仕様書12.4）', () => {
+      // 計測し損ねた工数を後から入れる操作であり、いま作業中かどうかとは
+      // 関わりがない。
+      for (const task of [TASKS.notStarted(), TASKS.working(), TASKS.onBreak(), TASKS.done()]) {
+        const view = mount({ task });
 
-      const button = view.query('op-directEntry');
-      expect(button.disabled).toBe(true);
-      expect(button.getAttribute('title')).toContain('次の段階');
+        expect(view.query('op-directEntry').disabled).toBe(false);
+      }
     });
 
-    it('参加者変更・区間追加・履歴編集は結線済みである', () => {
+    it('仕様書12.4 の操作がすべて結線済みである', () => {
       const view = mount({ task: TASKS.working() });
 
       expect(view.query('op-changeParticipants').disabled).toBe(false);
       expect(view.query('op-addInterval').disabled).toBe(false);
       expect(view.query('op-editHistory').disabled).toBe(false);
+      expect(view.query('op-directEntry').disabled).toBe(false);
+      // 未実装を示す注記は残っていない。
+      expect(view.all('op-directEntry')[0].getAttribute('title')).toBeNull();
     });
 
     it('現在状態をバッジで示す（仕様書12.3）', () => {
@@ -394,6 +406,84 @@ describe('createTaskDetailView', () => {
       expect(view.query('op-form')).toBeNull();
     });
 
+    describe('保存中の多重操作（レビュー指摘 FB-10）', () => {
+      /**
+       * 保存を止めたまま送信した状態を作る。
+       *
+       * @returns {{view: object, finish: (result?: object) => void}}
+       */
+      function submitAndHold() {
+        const view = mount({ task: TASKS.working() });
+        let settle;
+        view.actions.recordFinish.mockImplementation(
+          () =>
+            new Promise((resolve, reject) => {
+              settle = { resolve, reject };
+            }),
+        );
+        view.query('op-finish').click();
+        view.query('op-submit').click();
+        return { view, settle: () => settle };
+      }
+
+      it('保存中は上部の操作ボタンを押せない', async () => {
+        const { view } = submitAndHold();
+        await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+        // ここで別のフォームを開けてしまうと、先の保存の完了処理が
+        // `activeForm` を畳み、開いたばかりの入力ごと消える。
+        expect(view.query('op-break').disabled).toBe(true);
+        expect(view.query('op-addInterval').disabled).toBe(true);
+        expect(view.query('op-editHistory').disabled).toBe(true);
+      });
+
+      it('保存中は区間履歴の編集・削除ボタンも押せない', async () => {
+        const view = mount({ task: taskRecord({
+          name: '受入確認',
+          intervals: [workInterval('2026-08-01T09:00:00+09:00', null, ['甲'])],
+        }) });
+        let resolveAction;
+        view.actions.recordFinish.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveAction = resolve;
+            }),
+        );
+        view.query('op-editHistory').click();
+        view.query('op-finish').click();
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+        expect(view.query('interval-edit').disabled).toBe(true);
+        expect(view.query('interval-delete').disabled).toBe(true);
+
+        resolveAction({ dataset: null, warnings: [] });
+      });
+
+      it('保存が終われば操作ボタンが戻る', async () => {
+        const { view, settle } = submitAndHold();
+        await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+        settle().resolve({ dataset: null, warnings: [] });
+        await vi.waitFor(() => expect(view.query('op-form')).toBeNull());
+
+        // 状態が許す操作だけが戻る。「作業中」なので休憩は押せて開始は押せない。
+        expect(view.query('op-break').disabled).toBe(false);
+        expect(view.query('op-start').disabled).toBe(true);
+      });
+
+      it('保存が失敗したらフォームは開いたまま、操作ボタンだけ戻る', async () => {
+        const { view, settle } = submitAndHold();
+        await vi.waitFor(() => expect(view.actions.recordFinish).toHaveBeenCalled());
+
+        settle().reject(new Error('保存できない'));
+        await vi.waitFor(() => expect(view.query('op-break').disabled).toBe(false));
+
+        // 入力を直して押し直せるよう、フォームは閉じない。
+        expect(view.query('op-form')).not.toBeNull();
+      });
+    });
+
     it('保存で出た警告を記録後に示す（仕様書8.9.5）', async () => {
       const view = mount({ task: TASKS.working() });
       view.actions.recordFinish.mockResolvedValue({
@@ -600,6 +690,28 @@ describe('createTaskDetailView', () => {
       });
     });
 
+    describe('フォーカス（レビュー指摘 FB-11）', () => {
+      it('編集を押すと編集フォームの先頭入力欄へフォーカスが移る', () => {
+        const view = mount({ task: taskWithInterval() });
+        view.query('op-editHistory').click();
+
+        view.query('interval-edit').click();
+
+        // 押したボタンは再描画で捨てられる。移す先が無いとフォーカスは画面
+        // 先頭側へ戻り、キーボードだけでは入力欄へたどり着けない（仕様書13章）。
+        expect(document.activeElement).toBe(view.query('entry-start'));
+      });
+
+      it('削除を押すと削除理由の入力欄へフォーカスが移る', () => {
+        const view = mount({ task: taskWithInterval() });
+        view.query('op-editHistory').click();
+
+        view.query('interval-delete').click();
+
+        expect(document.activeElement).toBe(view.query('delete-reason'));
+      });
+    });
+
     it('編集と削除は同時に1つしか開かない', () => {
       const view = mount({
         task: taskRecord({
@@ -623,6 +735,300 @@ describe('createTaskDetailView', () => {
       firstDelete.click();
       expect(view.query('entry-form')).toBeNull();
       expect(view.query('delete-confirm-panel')).not.toBeNull();
+    });
+  });
+
+  describe('直接入力（仕様書8.5）', () => {
+    /** 直接入力を1件持つ作業項目実績。 */
+    function taskWithEntry() {
+      return taskRecord({
+        name: '受入確認',
+        directEntries: [
+          directEntry(1230, { participants: ['甲', '乙'], note: '移動時間を追加' }),
+        ],
+      });
+    }
+
+    it('直接入力が無ければ案内を出す', () => {
+      const view = mount({ task: TASKS.working() });
+
+      expect(view.query('direct-empty')).not.toBeNull();
+      expect(view.query('direct-list')).toBeNull();
+    });
+
+    it('一覧に追加工数・参加者・備考を出す', () => {
+      const view = mount({ task: taskWithEntry() });
+
+      expect(view.query('direct-effort').textContent).toBe('20分30秒');
+      expect(view.query('direct-participants').textContent).toBe('甲、乙');
+      expect(view.query('direct-note').textContent).toBe('移動時間を追加');
+    });
+
+    it('参加者が0人なら「なし」と出す', () => {
+      const view = mount({
+        task: taskRecord({
+          name: '受入確認',
+          directEntries: [directEntry(600, { participants: [] })],
+        }),
+      });
+
+      expect(view.query('direct-participants').textContent).toBe('なし');
+    });
+
+    it('登録した順で並べる', () => {
+      const view = mount({
+        task: taskRecord({
+          name: '受入確認',
+          directEntries: [directEntry(600), directEntry(60), directEntry(1200)],
+        }),
+      });
+
+      expect(view.all('direct-effort').map((cell) => cell.textContent)).toEqual([
+        '10分0秒',
+        '1分0秒',
+        '20分0秒',
+      ]);
+    });
+
+    describe('追加', () => {
+      it('「直接入力」でフォームが開き、入力欄へフォーカスが移る', () => {
+        const view = mount({ task: TASKS.working() });
+
+        view.query('op-directEntry').click();
+
+        expect(view.query('direct-form').dataset.mode).toBe('add');
+        expect(document.activeElement).toBe(view.query('direct-duration-minutes'));
+      });
+
+      it('分と秒を合計した秒数で呼ぶ（仕様書8.5.1）', async () => {
+        const view = mount({ task: TASKS.working() });
+        view.query('op-directEntry').click();
+        view.query('direct-duration-minutes').value = '20';
+        view.query('direct-duration-seconds').value = '30';
+        view.query('direct-note').value = '移動時間';
+
+        view.query('direct-submit').click();
+        await vi.waitFor(() => expect(view.actions.createDirectEntry).toHaveBeenCalled());
+
+        expect(view.actions.createDirectEntry).toHaveBeenCalledWith(
+          { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
+          { seconds: 1230, participants: [], note: '移動時間' },
+        );
+      });
+
+      it('分だけの入力も通る（秒は0として扱う）', async () => {
+        const view = mount({ task: TASKS.working() });
+        view.query('op-directEntry').click();
+        view.query('direct-duration-minutes').value = '20';
+        view.query('direct-note').value = '移動時間';
+
+        view.query('direct-submit').click();
+        await vi.waitFor(() => expect(view.actions.createDirectEntry).toHaveBeenCalled());
+
+        expect(view.actions.createDirectEntry.mock.calls[0][1].seconds).toBe(1200);
+      });
+
+      it('整数でない入力は呼ばずにエラーを出す', () => {
+        const view = mount({ task: TASKS.working() });
+        view.query('op-directEntry').click();
+        view.query('direct-duration-minutes').value = '1.5';
+        view.query('direct-note').value = '移動時間';
+
+        view.query('direct-submit').click();
+
+        expect(view.actions.createDirectEntry).not.toHaveBeenCalled();
+        expect(view.query('direct-errors').hidden).toBe(false);
+        expect(view.query('direct-errors').textContent).toContain('0以上の整数');
+      });
+
+      it('参加者も添えて呼ぶ', async () => {
+        const view = mount({ task: TASKS.working() });
+        view.query('op-directEntry').click();
+        view.query('direct-duration-minutes').value = '20';
+        view.query('direct-participants').value = '甲';
+        view.query('direct-note').value = '移動時間';
+
+        view.query('direct-submit').click();
+        await vi.waitFor(() => expect(view.actions.createDirectEntry).toHaveBeenCalled());
+
+        expect(view.actions.createDirectEntry.mock.calls[0][1].participants).toEqual(['甲']);
+      });
+
+      it('取消でフォームを閉じる', () => {
+        const view = mount({ task: TASKS.working() });
+        view.query('op-directEntry').click();
+
+        view.query('direct-cancel').click();
+
+        expect(view.query('direct-form')).toBeNull();
+      });
+
+      it('保存で出た重複候補の警告を記録後に示す（仕様書8.9.8）', async () => {
+        const view = mount({ task: TASKS.working() });
+        view.actions.createDirectEntry.mockResolvedValue({
+          dataset: null,
+          warnings: [
+            {
+              code: 'directEntryDuplicate',
+              path: '直接入力',
+              message: '同じ参加者・同じ追加工数の記録が既に 1 件ある',
+            },
+          ],
+        });
+        view.query('op-directEntry').click();
+        view.query('direct-duration-minutes').value = '20';
+        view.query('direct-note').value = '移動時間';
+
+        view.query('direct-submit').click();
+        await vi.waitFor(() => expect(view.query('task-warnings')).not.toBeNull());
+
+        expect(view.query('task-warnings').textContent).toContain('同じ参加者');
+        expect(view.query('direct-form')).toBeNull();
+      });
+    });
+
+    describe('編集・削除', () => {
+      it('「履歴編集」に隠さず、常に操作ボタンを出す', () => {
+        // 区間が1件も無い（＝未着手の）作業項目でも編集・削除できる。仕様書12.4
+        // の「履歴編集」は未着手では無効であり、そこへ寄せると直接入力だけを
+        // 記録した作業項目で手が出せなくなる。
+        const view = mount({ task: taskWithEntry() });
+
+        expect(view.query('task-detail-state').textContent).toBe('未着手');
+        expect(view.query('op-editHistory').disabled).toBe(true);
+        expect(view.query('direct-edit')).not.toBeNull();
+        expect(view.query('direct-delete')).not.toBeNull();
+      });
+
+      it('転記済みでは操作ボタンを出さない（仕様書7.2）', () => {
+        const view = mount({ task: taskWithEntry(), status: 'transferred' });
+
+        expect(view.query('direct-edit')).toBeNull();
+        expect(view.query('direct-delete')).toBeNull();
+      });
+
+      it('編集フォームに現在の値が入り、フォーカスが移る', () => {
+        const view = mount({ task: taskWithEntry() });
+
+        view.query('direct-edit').click();
+
+        expect(view.query('direct-form').dataset.mode).toBe('edit');
+        expect(view.query('direct-duration-minutes').value).toBe('20');
+        expect(view.query('direct-duration-seconds').value).toBe('30');
+        expect(document.activeElement).toBe(view.query('direct-duration-minutes'));
+      });
+
+      it('保存すると対象のIDを添えて呼ぶ', async () => {
+        const view = mount({ task: taskWithEntry() });
+        const entryId = view.task.directEntries[0].entryId;
+        view.query('direct-edit').click();
+        view.query('direct-duration-minutes').value = '10';
+
+        view.query('direct-submit').click();
+        await vi.waitFor(() => expect(view.actions.updateDirectEntry).toHaveBeenCalled());
+
+        expect(view.actions.updateDirectEntry).toHaveBeenCalledWith(
+          { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
+          entryId,
+          { seconds: 630, participants: ['甲', '乙'], note: '移動時間を追加' },
+        );
+      });
+
+      it('削除確認に内容が出て、理由の入力欄へフォーカスが移る', () => {
+        const view = mount({ task: taskWithEntry() });
+
+        view.query('direct-delete').click();
+
+        expect(view.query('delete-confirm-description').textContent).toContain('20分30秒');
+        expect(view.query('delete-confirm-description').textContent).toContain('移動時間を追加');
+        expect(document.activeElement).toBe(view.query('delete-reason'));
+      });
+
+      it('理由を入力して確定すると、IDと理由を添えて呼ぶ（仕様書11章）', async () => {
+        const view = mount({ task: taskWithEntry() });
+        const entryId = view.task.directEntries[0].entryId;
+        view.query('direct-delete').click();
+        view.query('delete-reason').value = '二重に記録していたため';
+
+        view.query('delete-confirm').click();
+        await vi.waitFor(() => expect(view.actions.deleteDirectEntry).toHaveBeenCalled());
+
+        expect(view.actions.deleteDirectEntry).toHaveBeenCalledWith(
+          { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
+          entryId,
+          { reason: '二重に記録していたため' },
+        );
+      });
+
+      it('理由が無ければ確定できない（仕様書11章）', () => {
+        const view = mount({ task: taskWithEntry() });
+        view.query('direct-delete').click();
+
+        view.query('delete-confirm').click();
+
+        expect(view.actions.deleteDirectEntry).not.toHaveBeenCalled();
+      });
+
+      it('区間と直接入力の編集は同時に1つしか開かない', () => {
+        const view = mount({
+          task: taskRecord({
+            name: '受入確認',
+            intervals: [
+              workInterval('2026-08-01T09:00:00+09:00', '2026-08-01T09:20:00+09:00', ['甲']),
+            ],
+            directEntries: [directEntry(600)],
+          }),
+        });
+        view.query('op-editHistory').click();
+
+        view.query('interval-edit').click();
+        expect(view.query('entry-form')).not.toBeNull();
+
+        view.query('direct-edit').click();
+        expect(view.query('entry-form')).toBeNull();
+        expect(view.query('direct-form')).not.toBeNull();
+
+        view.query('interval-delete').click();
+        expect(view.query('direct-form')).toBeNull();
+        expect(view.query('delete-confirm-panel')).not.toBeNull();
+      });
+
+      it('区間の削除確認を開くと直接入力の削除確認は閉じる', () => {
+        const view = mount({
+          task: taskRecord({
+            name: '受入確認',
+            intervals: [
+              workInterval('2026-08-01T09:00:00+09:00', '2026-08-01T09:20:00+09:00', ['甲']),
+            ],
+            directEntries: [directEntry(600)],
+          }),
+        });
+        view.query('op-editHistory').click();
+        view.query('direct-delete').click();
+        expect(view.query('direct-delete-row')).not.toBeNull();
+
+        view.query('interval-delete').click();
+
+        expect(view.query('direct-delete-row')).toBeNull();
+        expect(view.query('interval-delete-row')).not.toBeNull();
+      });
+
+      it('上部の操作を開くと直接入力の編集は閉じる', () => {
+        const view = mount({
+          task: taskRecord({
+            name: '受入確認',
+            intervals: [workInterval('2026-08-01T09:00:00+09:00', null, ['甲'])],
+            directEntries: [directEntry(600)],
+          }),
+        });
+        view.query('direct-edit').click();
+        expect(view.query('direct-form')).not.toBeNull();
+
+        view.query('op-break').click();
+
+        expect(view.query('direct-form')).toBeNull();
+        expect(view.query('op-form')).not.toBeNull();
+      });
     });
   });
 

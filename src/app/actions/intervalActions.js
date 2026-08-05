@@ -44,74 +44,12 @@ import {
 } from '../../domain/intervalOps.js';
 import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
-import { RunNotEditableError, ValidationError } from '../errors.js';
+import { ValidationError } from '../errors.js';
 import { resolveDeps } from './deps.js';
-
-/**
- * 実施回と作業項目実績を引く。見つからない理由を返す。
- *
- * 削除前の確認（{@link previewIntervalDeletion}）は例外を投げずに理由を表示
- * したいので、探す処理と例外にする処理を分けてある。
- *
- * @param {object[]} workRuns
- * @param {{runId: string, taskRecordId: string}} target
- * @returns {{workRun: object|null, taskRecord: object|null, errors: string[]}}
- */
-function findTask(workRuns, target) {
-  const workRun = workRuns.find((run) => run.runId === target.runId);
-  if (workRun === undefined) {
-    return {
-      workRun: null,
-      taskRecord: null,
-      errors: [`実施回: 見つからない（${String(target.runId)}）`],
-    };
-  }
-  const taskRecord = workRun.tasks.find(
-    (task) => task.taskRecordId === target.taskRecordId,
-  );
-  if (taskRecord === undefined) {
-    return {
-      workRun,
-      taskRecord: null,
-      errors: [`作業項目: 見つからない（${String(target.taskRecordId)}）`],
-    };
-  }
-  return { workRun, taskRecord, errors: [] };
-}
-
-/**
- * 実施回と作業項目実績を引く。見つからなければ例外にする。
- *
- * @param {object[]} workRuns
- * @param {{runId: string, taskRecordId: string}} target
- * @returns {{workRun: object, taskRecord: object}}
- * @throws {ValidationError} 見つからない場合
- */
-function locateTask(workRuns, target) {
-  const found = findTask(workRuns, target);
-  if (found.errors.length > 0) {
-    throw new ValidationError(found.errors);
-  }
-  return found;
-}
-
-/**
- * 実施回が書き換えられる状態かを確かめる（仕様書7.2）。
- *
- * @param {object} workRun
- * @throws {RunNotEditableError}
- */
-function assertEditable(workRun) {
-  if (!isRunEditable(workRun)) {
-    throw new RunNotEditableError(describeNotEditable(workRun), workRun.status);
-  }
-}
+import { assertEditable, findTask, locateTask, replaceTaskFields, taskOf } from './taskTarget.js';
 
 /**
  * 作業項目実績の区間を差し替えた実施回を作る。
- *
- * 元のオブジェクトは書き換えない。保存に失敗したとき、画面が持っている
- * データセットが中途半端に変わっているのを避けるためである。
  *
  * @param {object} workRun
  * @param {string} taskRecordId
@@ -120,13 +58,7 @@ function assertEditable(workRun) {
  * @returns {object}
  */
 function replaceIntervals(workRun, taskRecordId, intervals, updatedAt) {
-  return {
-    ...workRun,
-    tasks: workRun.tasks.map((task) =>
-      task.taskRecordId === taskRecordId ? { ...task, intervals } : task,
-    ),
-    updatedAt,
-  };
+  return replaceTaskFields(workRun, taskRecordId, { intervals }, updatedAt);
 }
 
 /**
@@ -165,9 +97,7 @@ async function applyIntervalChange(deps, target, apply) {
     };
   });
 
-  const taskRecord = value.workRun.tasks.find(
-    (task) => task.taskRecordId === target.taskRecordId,
-  );
+  const taskRecord = taskOf(value.workRun, target.taskRecordId);
   return { dataset, workRun: value.workRun, taskRecord, warnings: value.warnings };
 }
 
@@ -362,9 +292,7 @@ export async function deleteInterval(deps, target, intervalId, input = {}) {
     };
   });
 
-  const taskRecord = value.workRun.tasks.find(
-    (task) => task.taskRecordId === target.taskRecordId,
-  );
+  const taskRecord = taskOf(value.workRun, target.taskRecordId);
   return {
     dataset,
     workRun: value.workRun,

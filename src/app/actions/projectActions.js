@@ -8,12 +8,17 @@
  * `confirmedOverflow: true` を渡すと保存へ進む。確認なしで超過する場合は
  * `QuantityOverflowError` を投げ、画面は警告文を出して確認を求める。
  *
+ * 差し戻すのは累計超過の警告だけである。警告があること自体を確認要求とみなすと、
+ * 別種の警告を足した瞬間に無関係な確認ダイアログが出る（レビュー指摘 D-15）。
+ * 種別コードで絞り込み、それ以外の警告は返り値へ載せて画面へ渡す。
+ *
  * 読み込みから書き込みまでは `persistence.run()` の中で行う。累計の判定は他の
  * 実施回の内容に依存するため、読み込んだ後に別の操作が割り込むと判断の前提が
  * 崩れる（`src/app/persistence.js`）。
  */
 
 import { toIsoSecond } from '../../domain/datetime.js';
+import { hasWarning } from '../../domain/problems.js';
 import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
 import {
   generatableTasks,
@@ -23,6 +28,7 @@ import {
 } from '../../domain/templateInstantiate.js';
 import { activeTemplates } from '../../domain/templateOps.js';
 import {
+  VALIDATION_WARNING,
   validateProjectGroupDraft,
   validateProjectIdAvailable,
   validateRunDraft,
@@ -99,7 +105,7 @@ export async function createProjectGroup(deps, draft) {
  * @param {string} projectGroupId
  * @param {{workDate: string, runQuantity: number,
  *          excludedTaskDefinitionIds?: string[], confirmedOverflow?: boolean}} draft
- * @returns {Promise<{dataset: object, workRun: object, warnings: string[]}>}
+ * @returns {Promise<{dataset: object, workRun: object, warnings: object[]}>}
  */
 export async function createWorkRun(deps, projectGroupId, draft) {
   const { adapter, persistence, now, newId } = resolveDeps(deps);
@@ -135,7 +141,10 @@ export async function createWorkRun(deps, projectGroupId, draft) {
         throw new ValidationError(result.errors);
       }
       // 超過は確認を取れば続行できる（仕様書8.9.7）。
-      if (result.warnings.length > 0 && draft.confirmedOverflow !== true) {
+      if (
+        hasWarning(result.warnings, VALIDATION_WARNING.QUANTITY_OVERFLOW) &&
+        draft.confirmedOverflow !== true
+      ) {
         throw new QuantityOverflowError(result.warnings, result.preview);
       }
 
@@ -169,7 +178,7 @@ export async function createWorkRun(deps, projectGroupId, draft) {
  * @param {{adapter: object, persistence: object, now?: () => Date}} deps
  * @param {string} projectGroupId
  * @param {{totalQuantity: number, confirmedOverflow?: boolean}} change
- * @returns {Promise<{dataset: object, projectGroup: object, warnings: string[]}>}
+ * @returns {Promise<{dataset: object, projectGroup: object, warnings: object[]}>}
  */
 export async function updateTotalQuantity(deps, projectGroupId, change) {
   const { adapter, persistence, now } = resolveDeps(deps);
@@ -185,7 +194,10 @@ export async function updateTotalQuantity(deps, projectGroupId, change) {
     if (!result.ok) {
       throw new ValidationError(result.errors);
     }
-    if (result.warnings.length > 0 && change.confirmedOverflow !== true) {
+    if (
+      hasWarning(result.warnings, VALIDATION_WARNING.QUANTITY_OVERFLOW) &&
+      change.confirmedOverflow !== true
+    ) {
       throw new QuantityOverflowError(result.warnings, result.preview);
     }
 
@@ -216,7 +228,7 @@ export async function updateTotalQuantity(deps, projectGroupId, change) {
  * @param {{adapter: object, persistence: object, now?: () => Date}} deps
  * @param {string} runId
  * @param {{runQuantity: number, confirmedOverflow?: boolean}} change
- * @returns {Promise<{dataset: object, workRun: object, warnings: string[]}>}
+ * @returns {Promise<{dataset: object, workRun: object, warnings: object[]}>}
  */
 export async function updateRunQuantity(deps, runId, change) {
   const { adapter, persistence, now } = resolveDeps(deps);
@@ -244,7 +256,10 @@ export async function updateRunQuantity(deps, runId, change) {
     if (!result.ok) {
       throw new ValidationError(result.errors);
     }
-    if (result.warnings.length > 0 && change.confirmedOverflow !== true) {
+    if (
+      hasWarning(result.warnings, VALIDATION_WARNING.QUANTITY_OVERFLOW) &&
+      change.confirmedOverflow !== true
+    ) {
       throw new QuantityOverflowError(result.warnings, result.preview);
     }
 

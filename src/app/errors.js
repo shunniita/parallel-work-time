@@ -14,6 +14,8 @@
  * 保存領域の問題と入力の問題は画面での扱いが違う。
  */
 
+import { warningMessages } from '../domain/problems.js';
+
 /**
  * 利用者へ見せる想定のアプリ層の失敗。
  *
@@ -72,11 +74,12 @@ export class ProjectIdConflictError extends ValidationError {
  */
 export class QuantityOverflowError extends AppError {
   /**
-   * @param {string[]} warnings
+   * @param {{code: string, path: string, message: string}[]} warnings
+   *   `validateRunDraft` などが返す種別コードつきの警告（`domain/problems.js`）
    * @param {object} preview `previewQuantity` の結果
    */
   constructor(warnings, preview) {
-    super(warnings.join(' / '));
+    super(warningMessages(warnings).join(' / '));
     this.name = 'QuantityOverflowError';
     this.warnings = warnings;
     this.preview = preview;

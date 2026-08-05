@@ -77,12 +77,34 @@ export function createRunView({ container, store, actions, handlers, now }) {
    * ビュー内部の状態（`src/app/store.js` の規約2）。
    *
    * `operation` は開いている操作フォームの対象（作業項目と操作の組）である。
+   * `busy` は保存中かどうかで、その間は行の操作ボタンを止める
+   * （レビュー指摘 FB-10。詳細は `taskDetailView.js` の冒頭）。
    */
-  const local = { sort: SORT.ORDER, operation: null, warnings: [] };
+  const local = { sort: SORT.ORDER, operation: null, warnings: [], busy: false };
 
   function reset() {
     local.operation = null;
     local.warnings = [];
+    local.busy = false;
+  }
+
+  /**
+   * 保存中に押せてはいけない行の操作ボタン。描き直すたびに作り直す。
+   *
+   * @type {HTMLButtonElement[]}
+   */
+  let outerControls = [];
+
+  /**
+   * 保存中かどうかを、いま画面にあるボタンへ反映する。
+   *
+   * `render()` を呼ばずに `disabled` だけを切り替える。保存中に描き直すと、
+   * まさに送信中のフォームが作り直され、入力内容と「保存中」の表示が失われる。
+   */
+  function applyBusy() {
+    for (const button of outerControls) {
+      button.disabled = local.busy;
+    }
   }
 
   function selectedRun() {
@@ -166,10 +188,26 @@ export function createRunView({ container, store, actions, handlers, now }) {
   async function runOperation(taskRecordId, operation, input) {
     const run = selectedRun();
     const runId = run.runId;
-    const result = await actionFor(operation)({ runId, taskRecordId }, input);
-    // 保存の成否によらず、開いていた入力をここで畳む。あとで再びこの実施回を
-    // 表示したときに古いフォームが残らないようにするためで、描画するかどうかとは
-    // 別に必ず行う。
+    // 保存中は行の操作ボタンを止める。押せたままだと、この await の間に別の行の
+    // フォームが開き、下の畳み込みがそれを消す（レビュー指摘 FB-10）。
+    local.busy = true;
+    applyBusy();
+
+    let result;
+    try {
+      result = await actionFor(operation)({ runId, taskRecordId }, input);
+    } catch (error) {
+      // 保存を拒否された。フォームは開いたままにし、送信元のフォームが自分で
+      // エラーを出す。戻すのは行のボタンだけにする。
+      local.busy = false;
+      applyBusy();
+      throw error;
+    }
+
+    // 保存できたので、開いていた入力を畳む。あとで再びこの実施回を表示した
+    // ときに古いフォームが残らないようにするためで、描画するかどうかとは別に
+    // 必ず行う。
+    local.busy = false;
     local.operation = null;
     local.warnings = result.warnings.map((warning) => warning.message);
     // 保存が成功するとストア購読の再描画が走るが、それはこの行より前、まだ
@@ -190,12 +228,13 @@ export function createRunView({ container, store, actions, handlers, now }) {
    * @param {string[]} allowed
    */
   function operationButtons(task, allowed) {
-    return ROW_OPERATIONS.filter((operation) => allowed.includes(operation)).map((operation) =>
-      el('button', {
+    return ROW_OPERATIONS.filter((operation) => allowed.includes(operation)).map((operation) => {
+      const button = el('button', {
         type: 'button',
         class: 'button button--compact',
         text: TASK_OPERATION_LABEL[operation],
         dataset: { testid: `row-op-${operation}` },
+        disabled: local.busy,
         on: {
           click: () => {
             local.warnings = [];
@@ -204,8 +243,10 @@ export function createRunView({ container, store, actions, handlers, now }) {
             form?.focus();
           },
         },
-      }),
-    );
+      });
+      outerControls.push(button);
+      return button;
+    });
   }
 
   function renderTaskRow(task, allowed) {
@@ -337,6 +378,9 @@ export function createRunView({ container, store, actions, handlers, now }) {
 
   function render() {
     form = null;
+    // 描き直すと前回のボタンは捨てられる。画面に無い要素へ無効化を当てないよう、
+    // 参照を先に空にする。
+    outerControls = [];
     const run = selectedRun();
     if (run === null) {
       replaceChildren(container, [
@@ -463,7 +507,7 @@ export function createRunView({ container, store, actions, handlers, now }) {
       }),
       el('p', {
         class: 'note',
-        text: '直接入力は次の段階で実装します。',
+        text: '直接入力の追加・編集・削除は、作業項目名を押して詳細から行います。',
       }),
     ]);
   }
