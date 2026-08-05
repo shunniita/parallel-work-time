@@ -97,6 +97,13 @@ function mount(options = {}) {
     navigateAway: (patch) => {
       state = { ...state, selection: { ...state.selection, ...patch } };
     },
+    /** 実施回の状態が変わった状態を模す（転記済み化・アーカイブ）。 */
+    setRunStatus: (status) => {
+      state = {
+        ...state,
+        dataset: { ...state.dataset, workRuns: [{ ...run, status }] },
+      };
+    },
   };
 }
 
@@ -196,6 +203,34 @@ describe('createTaskDetailView', () => {
 
       expect(view.query('task-operations')).toBeNull();
       expect(view.query('task-not-editable').textContent).toContain('転記済み');
+    });
+
+    it('閲覧のみへ変わったら開いていた入力を閉じる（レビュー指摘 FB-2）', () => {
+      // Step 8 で転記済み化が画面へ入ったため、フォームを開いたまま同じ画面の
+      // 操作で転記済みへ進める。「閲覧のみ」の注記と入力欄が同居してはならない。
+      const view = mount({ task: TASKS.working() });
+      view.query('op-break').click();
+      expect(view.query('op-form')).not.toBeNull();
+
+      view.setRunStatus('transferred');
+      view.view.render();
+
+      expect(view.query('op-form')).toBeNull();
+      expect(view.query('task-not-editable')).not.toBeNull();
+    });
+
+    it('閲覧のみへ変わったら直接入力の編集も閉じる（レビュー指摘 FB-2 の追記）', () => {
+      const view = mount({
+        task: taskRecord({ name: '受入確認', directEntries: [directEntry(600)] }),
+      });
+      view.query('direct-edit').click();
+      expect(view.query('direct-form')).not.toBeNull();
+
+      view.setRunStatus('archived');
+      view.view.render();
+
+      expect(view.query('direct-form')).toBeNull();
+      expect(view.query('direct-edit')).toBeNull();
     });
 
     it('アーカイブ済みでも同様に閲覧のみとする', () => {

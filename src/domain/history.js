@@ -22,7 +22,7 @@
  */
 
 import { INTERVAL_TYPE_LABEL, intervalEffortSeconds, isOpenInterval } from './effort.js';
-import { dateKeyOf, isValidIsoSecond } from './datetime.js';
+import { dateKeyOf, formatIsoForHuman, isValidIsoSecond } from './datetime.js';
 import { formatSeconds } from './directEntryOps.js';
 import { HISTORY_ENTITY_TYPE, HISTORY_OPERATION } from './schema.js';
 
@@ -104,20 +104,6 @@ export function buildHistoryEntry(draft, meta) {
       reason: draft.reason.trim(),
     },
   };
-}
-
-/**
- * 日時を画面と履歴で読める形へ直す。
- *
- * 保存形式（`2026-07-30T09:00:00+09:00`）のままでは要約として読みにくい。
- * オフセットは落とす。区間の開始と終了は同じオフセットで記録されるため、
- * 前後関係の判断に要らない。
- *
- * @param {string} iso
- * @returns {string} 例: `2026-07-30 09:00:00`
- */
-export function formatIsoForHuman(iso) {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
 }
 
 /**

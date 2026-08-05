@@ -403,6 +403,13 @@ export function createRunView({ container, store, actions, handlers, now }) {
     ) {
       local.operation = null;
     }
+    // 実施回が閲覧のみへ変わったら閉じる（レビュー指摘 FB-2）。Step 8 で転記済み化を
+    // 画面へ足したため、フォームを開いたまま同じ画面の操作で転記済みへ進める。
+    // 保存はアクション層が拒むので誤記録にはならないが、「閲覧のみ」の注記と入力欄が
+    // 同居して見えるのはそれ自体が矛盾した表示である。
+    if (!editable) {
+      local.operation = null;
+    }
 
     replaceChildren(container, [
       el('div', { class: 'view__head' }, [
