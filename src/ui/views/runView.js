@@ -24,7 +24,7 @@
 import { summarizeRun, summarizeTask } from '../../domain/effort.js';
 import { compareExternalCode } from '../../domain/naturalSort.js';
 import { collectParticipants } from '../../domain/participants.js';
-import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
+import { RUN_STATUS_LABEL, describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
 import {
   TASK_OPERATION,
   TASK_OPERATION_LABEL,
@@ -34,7 +34,7 @@ import {
 } from '../../domain/taskState.js';
 import { createIntervalOperationForm } from '../components/intervalOperationForm.js';
 import { el, replaceChildren } from '../dom.js';
-import { RUN_STATUS_LABEL, toMinutesLabel } from '../labels.js';
+import { toMinutesLabel } from '../labels.js';
 import { VIEW } from '../shell.js';
 
 /** 並び順の選択（仕様書8.7.3）。 */
