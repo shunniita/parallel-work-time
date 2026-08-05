@@ -216,18 +216,33 @@ test.describe('作業項目の生成（仕様書8.3、A-01）', () => {
   });
 
   test('外部項目コード順へ並べ替えられる（仕様書8.7.3）', async ({ page }) => {
+    // 「対象種別A / 標準」は表示順と自然順が一致するため、この試験には使えない。
+    // 並べ替えを外しても通ってしまい、何も確かめていないことになる
+    // （レビュー指摘 E-21）。「拡張」は表示順と自然順が食い違う。
+    //
+    //   表示順: 受入確認(X-100) → 本作業(X-1000) → 追加加工(X-2000) → 検査(X-1100)
+    //   自然順: X-100 < X-1000 < X-1100 < X-2000
+    await createProject(page, { projectId: 'PJ-SORT', variant: '拡張', totalQuantity: 100 });
+    await createRun(page, { workDate: '2026-08-01', runQuantity: 50 });
+
+    // 並べ替える前は表示順である。
+    expect(await readTaskNames(page)).toEqual(['受入確認', '本作業', '追加加工', '検査']);
+
+    await page.getByTestId('run-sort').selectOption('externalCode');
+
+    // 追加加工（X-2000）が検査（X-1100）より後ろへ動く。辞書順なら X-1100 <
+    // X-1200 < X-2000 で同じ並びになるが、自然順でも X-1100 < X-2000 である。
+    expect(await readTaskNames(page)).toEqual(['受入確認', '本作業', '検査', '追加加工']);
+  });
+
+  test('外部項目コード順でも未設定は末尾へ置く（仕様書8.7.3、8.7.4）', async ({ page }) => {
+    // 「標準」には未設定（後片付け）がある。未設定の位置だけをここで見る。
     await createRun(page, { workDate: '2026-08-01', runQuantity: 50 });
 
     await page.getByTestId('run-sort').selectOption('externalCode');
 
-    // 自然順で X-100 < X-200 < X-1000 < X-1100、未設定は末尾。
-    expect(await readTaskNames(page)).toEqual([
-      '受入確認',
-      '前処理',
-      '本作業',
-      '検査',
-      '後片付け',
-    ]);
+    const names = await readTaskNames(page);
+    expect(names.at(-1)).toBe('後片付け');
   });
 });
 

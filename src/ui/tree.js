@@ -14,23 +14,24 @@
  */
 
 import { summarizeQuantity } from '../domain/quantity.js';
-import { TASK_STATE, taskState } from '../domain/taskState.js';
+import { TASK_STATE, TASK_STATE_LABEL, taskState } from '../domain/taskState.js';
 import { el, replaceChildren } from './dom.js';
+import { RUN_STATUS_LABEL } from './labels.js';
 
-/** 作業項目の状態表示（仕様書7.2）。 */
-const TASK_STATE_LABEL = {
-  [TASK_STATE.NOT_STARTED]: { text: '未着手', mark: '○' },
-  [TASK_STATE.WORKING]: { text: '作業中', mark: '●' },
-  [TASK_STATE.ON_BREAK]: { text: '休憩中', mark: '◐' },
-  [TASK_STATE.DONE]: { text: '完了', mark: '✓' },
-};
-
-/** 実施回の状態バッジ（仕様書7章）。 */
-const RUN_STATUS_LABEL = {
-  working: '作業中',
-  aggregated: '集計済み',
-  transferred: '転記済み',
-  archived: 'アーカイブ',
+/**
+ * 作業項目の状態を表す記号（仕様書7.2）。
+ *
+ * 語そのものは `TASK_STATE_LABEL`（`domain/taskState.js`）を使う。ここが持つのは
+ * ツリーでしか使わない記号だけである（レビュー指摘 D-16）。
+ *
+ * 記号は語の代わりではなく添え物である。`title` に語を入れてあり、記号だけで
+ * 意味を取らせない。記号を支援技術へ伝える対応は Step 11（D-18 の (c)）。
+ */
+const TASK_STATE_MARK = {
+  [TASK_STATE.NOT_STARTED]: '○',
+  [TASK_STATE.WORKING]: '●',
+  [TASK_STATE.ON_BREAK]: '◐',
+  [TASK_STATE.DONE]: '✓',
 };
 
 /**
@@ -78,7 +79,6 @@ export function createTree({ container, store, handlers }) {
 
   function renderTaskNode(run, task, selection) {
     const state = taskState(task);
-    const label = TASK_STATE_LABEL[state];
     const current = selection.taskRecordId === task.taskRecordId;
 
     return el('li', { class: 'tree__item tree__item--task' }, [
@@ -92,10 +92,10 @@ export function createTree({ container, store, handlers }) {
           state,
         },
         'aria-current': current ? 'true' : 'false',
-        title: `${task.name}（${label.text}）`,
+        title: `${task.name}（${TASK_STATE_LABEL[state]}）`,
         on: { click: () => handlers.onSelectTask(run.runId, task.taskRecordId) },
       }, [
-        el('span', { class: `tree__mark tree__mark--${state}`, text: label.mark }),
+        el('span', { class: `tree__mark tree__mark--${state}`, text: TASK_STATE_MARK[state] }),
         el('span', { class: 'tree__text', text: task.name }),
       ]),
     ]);

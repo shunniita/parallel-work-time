@@ -35,7 +35,7 @@
  * あることを表示するにとどめる（設計メモ §5）。
  */
 
-import { compareIso } from '../../domain/datetime.js';
+import { compareIso, formatIsoForHuman } from '../../domain/datetime.js';
 import {
   INTERVAL_TYPE,
   INTERVAL_TYPE_LABEL,
@@ -44,7 +44,6 @@ import {
   summarizeTask,
 } from '../../domain/effort.js';
 import { formatSeconds } from '../../domain/directEntryOps.js';
-import { formatIsoForHuman } from '../../domain/history.js';
 import { collectParticipants } from '../../domain/participants.js';
 import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
 import {
@@ -881,6 +880,17 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
     const group = projectOf(run);
     const state = taskState(task);
     const editable = isRunEditable(run);
+    // 実施回が閲覧のみへ変わったら、開いていた入力をすべて閉じる
+    // （レビュー指摘 FB-2 とその追記）。Step 8 で転記済み化を画面へ足したため、
+    // フォームを開いたまま同じ画面の操作で転記済みへ進める。保存はアクション層が
+    // 拒むので誤記録にはならないが、「閲覧のみ」の注記と入力欄が同居して見えるのは
+    // それ自体が矛盾した表示である。区間の追加・編集、直接入力、削除確認のいずれも
+    // 対象にする。
+    if (!editable) {
+      local.activeForm = null;
+      local.deleteTarget = null;
+      local.historyEditMode = false;
+    }
     const allowed = availableOperations(task, { runEditable: editable });
 
     replaceChildren(container, [
