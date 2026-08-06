@@ -87,6 +87,31 @@ export class QuantityOverflowError extends AppError {
 }
 
 /**
+ * 集計済みの実施回で未終了区間を生じる操作を差し戻す例外（仕様書7.1）。
+ *
+ * 保存を禁止する意味ではない。`QuantityOverflowError` と同じく確認を求めるための
+ * 差し戻しであり、画面が `confirmedResume: true` を付けて呼び直せば、実施回を
+ * 作業中へ戻したうえで保存される。入力が誤っているわけではないので
+ * `ValidationError` を継承しない。
+ *
+ * 集計済みは「未終了区間がない」状態である（仕様書7章）。作業を再開すればその
+ * 前提は崩れるため、状態を作業中へ戻す必要がある。ただし集計済み→作業中は
+ * 利用者の確認操作によると定められており（7.1）、黙って戻すことはできない。
+ * そのため「確認を取ってから、状態変更と区間生成を一緒に行う」形にしている。
+ */
+export class ResumeConfirmationRequiredError extends AppError {
+  /**
+   * @param {string} message
+   * @param {string} runId
+   */
+  constructor(message, runId) {
+    super(message);
+    this.name = 'ResumeConfirmationRequiredError';
+    this.runId = runId;
+  }
+}
+
+/**
  * 状態が許さない操作を拒否したことを表す例外（仕様書7.2）。
  *
  * 転記済み・アーカイブの実施回は閲覧のみで、記録も数量も変更できない。入力の

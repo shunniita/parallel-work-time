@@ -218,19 +218,33 @@ describe('transferActions', () => {
       await expect(seedClosedInterval(1)).rejects.toThrow();
     });
 
-    describe('集計済みの後に記録が増えた場合（レビュー指摘 S8-1）', () => {
-      // 集計済みは編集できる状態である（閲覧のみとするのは転記済みとアーカイブ
-      // だけ）。そのため「集計済みにする → 区間を開始する → 転記済みにする」が
-      // 通ってしまい、転記値が未確定のまま転記済みとして保存できていた。
+    describe('集計済みなのに未終了区間がある場合の防御（レビュー指摘 S8-1）', () => {
+      // 仕様書1.3 で「集計済みで未終了区間を生む操作は確認後に作業中へ戻してから
+      // 行う」と定めたため、通常の操作でこの状態にはならない
+      // （`intervalActions.test.js` の「集計済みからの作業再開」を参照）。
+      //
+      // それでも遷移の手前で確かめるのは、取り込んだJSONや旧版のデータが同じ
+      // 組み合わせを持ちうるためである。画面の制御だけに頼らないのと同じ理由で、
+      // 状態の入口でも中身を見る。ここでは保存層へ直接書いてその状態を作る。
 
-      /** 集計済みにした後、未終了区間を1つ作る。 */
-      async function aggregateThenStart() {
+      /** 集計済みのまま未終了区間を1つ持つ実施回を、保存層へ直接作る。 */
+      async function seedAggregatedWithOpenInterval() {
         await toAggregated();
-        await recordStart(deps, target(), {
-          at: '2026-08-01T11:00:00+09:00',
+        const saved = await reloadRun();
+        saved.tasks[0].intervals.push({
+          intervalId: 'open-1',
+          type: INTERVAL_TYPE.WORK,
+          startAt: '2026-08-01T11:00:00+09:00',
+          endAt: null,
           participants: ['甲'],
+          createdAt: NOW_ISO,
+          updatedAt: NOW_ISO,
         });
+        await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, saved);
       }
+
+      /** 上の状態を作るための別名（読みやすさのため）。 */
+      const aggregateThenStart = seedAggregatedWithOpenInterval;
 
       it('未終了区間があれば転記済みにできない', async () => {
         await aggregateThenStart();
@@ -271,16 +285,22 @@ describe('transferActions', () => {
 
       it('区間を終わらせれば転記済みにできる', async () => {
         await aggregateThenStart();
-        const open = (await reloadRun()).tasks[0].intervals.find(
-          (interval) => interval.endAt === null,
-        );
-        await updateInterval(deps, target(), open.intervalId, {
+        await updateInterval(deps, target(), 'open-1', {
           endAt: '2026-08-01T12:00:00+09:00',
         });
 
         await markTransferred(deps, run.runId);
 
         expect((await reloadRun()).status).toBe(RUN_STATUS.TRANSFERRED);
+      });
+
+      it('作業中へ戻せば直せる（修復導線）', async () => {
+        // 画面はこの状態のとき「作業中へ戻す」を案内する。
+        await aggregateThenStart();
+
+        await reopenRun(deps, run.runId);
+
+        expect((await reloadRun()).status).toBe(RUN_STATUS.WORKING);
       });
 
       it('直接入力を足しただけなら転記済みにできる', async () => {

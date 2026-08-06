@@ -207,7 +207,7 @@ test('表示順へ切り替えてもコピーは外部項目コード順にな�
   expect(codes).toEqual(['X-100', 'X-1000', 'X-1100', 'X-2000']);
 });
 
-test('集計済みの後に区間を開始したら転記済みにできない（仕様書7章、S8-1）', async ({ page }) => {
+test('集計済みで作業を再開すると確認のうえ作業中へ戻る（仕様書7.1、S8-1）', async ({ page }) => {
   await setup(page, 'PJ-REOPEN');
 
   await addDirectEntry(page, { task: '受入確認', minutes: '10', note: '計測漏れ' });
@@ -215,31 +215,76 @@ test('集計済みの後に区間を開始したら転記済みにできない�
   await page.getByTestId('mark-aggregated').click();
   await expect(page.getByTestId('summary-run-status')).toHaveText('集計済み');
 
-  // 集計済みのまま新しい区間を開始する（集計済みは編集できる状態である）。
+  // 集計済みのまま作業を開始しようとする。
   await page.getByTestId('open-run-detail').click();
   await taskRow(page, '本作業').getByTestId('row-op-start').click();
   const startForm = page.getByTestId('op-form');
   await startForm.getByTestId('op-participants').fill('甲');
   await startForm.getByTestId('op-participants-add').click();
   await startForm.getByTestId('op-submit').click();
-  await expect(startForm).toBeHidden();
 
+  // 確認が出て、まだ何も保存されていない。
+  const confirm = page.getByTestId('resume-panel');
+  await expect(confirm).toBeVisible();
+  await expect(confirm).toContainText('作業中へ戻します');
+  await expect(page.getByTestId('run-status')).toHaveText('集計済み');
+
+  // やめると状態も区間も変わらない。
+  await confirm.getByTestId('resume-cancel').click();
+  await expect(confirm).toBeHidden();
+  await expect(page.getByTestId('run-status')).toHaveText('集計済み');
+  await expect(taskRow(page, '本作業').getByTestId('task-state')).toHaveText('未着手');
+
+  // 再開すると作業中へ戻り、同時に区間ができる。
+  await taskRow(page, '本作業').getByTestId('row-op-start').click();
+  const retryForm = page.getByTestId('op-form');
+  await retryForm.getByTestId('op-participants').fill('甲');
+  await retryForm.getByTestId('op-participants-add').click();
+  await retryForm.getByTestId('op-submit').click();
+  await page.getByTestId('resume-panel').getByTestId('resume-accept').click();
+
+  await expect(page.getByTestId('run-status')).toHaveText('作業中');
+  await expect(taskRow(page, '本作業').getByTestId('task-state')).toHaveText('作業中');
+
+  // 集計画面でも作業中になっており、転記済みへは進めない。
   await openSummary(page);
-
-  // 転記値が未確定になっており、転記済みへは進めない。
+  await expect(page.getByTestId('summary-run-status')).toHaveText('作業中');
   await expect(page.getByTestId('total-transfer')).toContainText('未確定');
-  const button = page.getByTestId('mark-transferred');
-  await expect(button).toBeDisabled();
-  await expect(button).toHaveAttribute('title', /未終了/);
+  await expect(page.getByTestId('mark-transferred')).toHaveCount(0);
+});
 
-  // 区間を終わらせれば進める。
-  await page.getByTestId('open-run-detail').click();
-  await taskRow(page, '本作業').getByTestId('row-op-finish').click();
-  const finishForm = page.getByTestId('op-form');
-  await finishForm.getByTestId('op-submit').click();
-  await expect(finishForm).toBeHidden();
+test('集計済みのまま終了済み区間や直接入力は編集できる（仕様書7.1）', async ({ page }) => {
+  await setup(page, 'PJ-EDITAGG');
 
+  await addDirectEntry(page, { task: '受入確認', minutes: '10', note: '計測漏れ' });
   await openSummary(page);
+  await page.getByTestId('mark-aggregated').click();
+  await expect(page.getByTestId('summary-run-status')).toHaveText('集計済み');
+
+  // 直接入力の修正は未終了区間を生まないため、確認は要らない。
+  await page.getByTestId('open-run-detail').click();
+  await taskRow(page, '受入確認').getByTestId('open-task').click();
+  await page.getByTestId('direct-edit').click();
+  const editForm = page.getByTestId('direct-form');
+  await editForm.getByTestId('direct-duration-minutes').fill('20');
+  await editForm.getByTestId('direct-submit').click();
+  await expect(editForm).toBeHidden();
+  await expect(page.getByTestId('resume-panel')).toHaveCount(0);
+
+  // 区間の手動追加（終了日時が必須）も同様である。
+  await page.getByTestId('op-addInterval').click();
+  const addForm = page.getByTestId('entry-form');
+  await addForm.getByTestId('entry-start').fill('2026-08-01T09:00');
+  await addForm.getByTestId('entry-end').fill('2026-08-01T09:30');
+  await addForm.getByTestId('entry-participants').fill('甲');
+  await addForm.getByTestId('entry-participants-add').click();
+  await addForm.getByTestId('entry-submit').click();
+  await expect(addForm).toBeHidden();
+  await expect(page.getByTestId('resume-panel')).toHaveCount(0);
+
+  // 集計済みのままで、転記済みへも進める。
+  await openSummary(page);
+  await expect(page.getByTestId('summary-run-status')).toHaveText('集計済み');
   await expect(page.getByTestId('mark-transferred')).toBeEnabled();
 });
 
