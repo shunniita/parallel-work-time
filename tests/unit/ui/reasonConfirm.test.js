@@ -8,7 +8,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { createDeleteConfirm } from '../../../src/ui/components/deleteConfirm.js';
+import { createReasonConfirm } from '../../../src/ui/components/reasonConfirm.js';
 import { ValidationError } from '../../../src/app/errors.js';
 
 const DELETABLE_PREVIEW = {
@@ -21,7 +21,7 @@ const DELETABLE_PREVIEW = {
 function mount(overrides = {}) {
   const onConfirm = overrides.onConfirm ?? vi.fn(async () => ({}));
   const onCancel = overrides.onCancel ?? vi.fn();
-  const form = createDeleteConfirm({
+  const form = createReasonConfirm({
     preview: overrides.preview ?? DELETABLE_PREVIEW,
     onConfirm,
     onCancel,
@@ -41,7 +41,7 @@ function mount(overrides = {}) {
   };
 }
 
-describe('createDeleteConfirm', () => {
+describe('createReasonConfirm', () => {
   it('対象区間の内容を確認できる（削除前）', () => {
     const view = mount();
 

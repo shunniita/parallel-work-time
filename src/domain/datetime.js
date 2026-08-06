@@ -362,3 +362,22 @@ export function isValidDateKey(value) {
   }
   return isValidIsoSecond(`${value}T00:00:00Z`);
 }
+
+/**
+ * 日時を画面と履歴で読める形へ直す。
+ *
+ * 保存形式（`2026-07-30T09:00:00+09:00`）のままでは読みにくい。オフセットは
+ * 落とす。区間の開始と終了は同じオフセットで記録されるため、前後関係の判断に
+ * 要らない。
+ *
+ * `history.js` にあったものをここへ移した。汎用の日時整形であり、変更履歴に
+ * 固有の処理ではない。画面が「履歴」モジュールから表示用の関数を取り込む形は、
+ * 区間履歴と変更履歴を取り違える読み方を招く（レビュー指摘 FB-2 の追記、
+ * D-16 の寄せ先整理）。
+ *
+ * @param {string} iso
+ * @returns {string} 例: `2026-07-30 09:00:00`
+ */
+export function formatIsoForHuman(iso) {
+  return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
+}

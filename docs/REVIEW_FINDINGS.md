@@ -123,12 +123,15 @@
 - 対象: `src/storage/MemoryAdapter.js:71-79,202-212` vs `src/storage/IndexedDbAdapter.js:147-169,294-308`
 - 内容: IndexedDB の `getAll()` は主キー（UUID文字列）昇順、Memory は `Map` の挿入順を返す。契約テストは件数1件か `.sort()` 後の比較のため差を検出しない。設定欠落時の `settings` が IndexedDB は `null`、Memory は `undefined` になる差、`close()` 後に IndexedDB は全操作失敗・Memory は動き続ける差もある。契約として「順序不定。表示側で必ずソートする」を明記するか、両者を揃える。
 - 推奨対応時期: Step 8 前（集計一覧が並び順に依存し始める前）
+- 状況: **対応済み（2026-08-05、Step 8 準備）**。`StorageAdapter.loadAll()` の契約へ「各コレクションは主キーの昇順」「設定が無ければ `null`」を明記し、`MemoryAdapter` を IndexedDB 側へ揃えた（`sortedByKey()`、`settings === undefined ? null`）。並び順は契約テスト3件（保存順と異なる順での投入、置き換え、削除）で両実装に通す。あわせて「画面が並び順をこの契約に頼ってはならない。表示順・外部項目コード順・時刻順は表示側で明示的に並べ替える」ことも契約へ書いた。設定欠落は `initialize()` が既定値を書き `deleteEntity()` が設定の削除を拒むため公開APIから到達せず、契約テストは置いていない（実装をそろえたのは防御である旨を明記）。`close()` 後の挙動差は据え置き（後始末でしか呼ばない）。
 
 ### C-10 `schema.js` に業務的整合性の検証がない
 
 - 対象: `src/domain/schema.js:292-317`、`src/domain/effort.js:44-53`
 - 内容: インポート検証が構造検証のみで、`endAt >= startAt`（仕様8.9.3）、主キー重複（同一 `runId` 2件は put で黙って上書き）、`projectGroupId` の参照整合、`status` と `transferredAt`/`archivedAt` の整合を見ない。特に `endAt < startAt` は `effort.js` が0秒に丸めて黙って飲み込むため、取り込み後に工数が静かに欠落する。どこまで拒否するかを決める。
 - テンプレートの不変条件も検証対象に含める。少なくとも「同一の対象種別×バリエーションに有効版は1件」「同一 `templateSeriesId` 内で版番号と `templateId` が重複しない」を取り込み前に確認する。C-7 のアクション入口検証と両方で不変条件を守る。
+- 追記（2026-08-06、敵対的検証 PWT-REVIEW-005 §4.2）: **孤立参照**も対象へ含める。存在しない `templateId` を指す実施回、存在しない `runId` / `targetId` を指す変更履歴、テンプレートに無い `taskDefinitionId` を持つ作業項目実績が取り込まれた場合、集計は黙って通るが元をたどれない記録が残る。拒否するか警告にとどめるかを決めて明記する。
+- 追記（2026-08-06、Step 8）: `status` と中身の整合も対象へ含める。Step 8 で `status="transferred"` と未終了区間が同居しないことをアクション層で保証したが（S8-1）、インポート経路にはこのガードが無い。取り込んだJSONが同じ矛盾を持ちうる。
 - 推奨対応時期: Step 9 前
 
 ### C-11 サンプルテンプレート投入が非原子的で、部分投入が回復不能
@@ -175,6 +178,7 @@
 - 内容: Step 8 の集計画面でさらに増える前に `src/ui/labels.js` 等へ一本化する。`runView.js:45-52` の `toMinutesLabel` も集計画面で共有になる。
 - 推奨対応時期: Step 8 前
 - 状況: 一部対応（2026-08-03、Step 6 PR-A / PR-B1）。`TASK_STATE_LABEL` を `src/domain/taskState.js`、`INTERVAL_TYPE_LABEL` と `TASK_OPERATION_LABEL` を定義と同じ場所（`effort.js` / `taskState.js`）へ置いた。画面だけの語と書式は `src/ui/labels.js` を新設して `RUN_STATUS_LABEL` と `toMinutesLabel` を移し、`runView.js` の複製を解消した。`taskDetailView.js` はこの寄せ先を使っているため、複製は増えていない。`tree.js` と `projectView.js` に残る複製を向け直すのは予定どおり Step 8 前に行う。
+- 状況: **対応済み（2026-08-05、Step 8 準備）**。`tree.js` と `projectView.js` の `RUN_STATUS_LABEL` を `ui/labels.js` へ向け直した。`tree.js` の `TASK_STATE_LABEL` は `{text, mark}` の独自形だったため、語は `domain/taskState.js` の `TASK_STATE_LABEL` を使い、ツリー固有の記号だけを `TASK_STATE_MARK` として残した。あわせて FB-2 の追記で挙がっていた `formatIsoForHuman` を `domain/history.js` から `domain/datetime.js` へ移した（汎用の日時整形であり、UI が「履歴」モジュールから表示用関数を取り込む形は区間履歴と変更履歴の取り違えを招く）。
 
 ### D-17 `label` の `for` が実際の入力欄と紐づいていない
 
@@ -211,6 +215,7 @@
 - 対象: `tests/e2e/project.spec.js:218-231`
 - 内容: 期待値が既定の表示順と完全に同一であり、並べ替え操作を消してもテストが通る。表示順と自然順が食い違うテンプレートを使う並びへ変える（自然順そのものは `tests/unit/naturalSort.test.js` で担保済み）。
 - 推奨対応時期: Step 8 前
+- 状況: **対応済み（2026-08-05、Step 8 準備）**。サンプルの「対象種別A / 拡張」は表示順（受入確認 X-100 → 本作業 X-1000 → 追加加工 X-2000 → 検査 X-1100）と自然順（X-100 < X-1000 < X-1100 < X-2000）が食い違うため、これを使う試験へ変えた。並べ替え前の並びも先に固定してある。**並べ替え操作を消すと落ちることを実際に確認した**（`追加加工` と `検査` が入れ替わる）。未設定を末尾へ置く点は「標準」を使う別の試験へ分けた。
 
 ### E-22 `test:e2e` がスクリーンショット試験を毎回実行する
 

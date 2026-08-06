@@ -35,7 +35,7 @@
  * あることを表示するにとどめる（設計メモ §5）。
  */
 
-import { compareIso } from '../../domain/datetime.js';
+import { compareIso, formatIsoForHuman } from '../../domain/datetime.js';
 import {
   INTERVAL_TYPE,
   INTERVAL_TYPE_LABEL,
@@ -44,9 +44,8 @@ import {
   summarizeTask,
 } from '../../domain/effort.js';
 import { formatSeconds } from '../../domain/directEntryOps.js';
-import { formatIsoForHuman } from '../../domain/history.js';
 import { collectParticipants } from '../../domain/participants.js';
-import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
+import { RUN_STATUS_LABEL, describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
 import {
   TASK_OPERATION,
   TASK_OPERATION_LABEL,
@@ -54,12 +53,14 @@ import {
   availableOperations,
   taskState,
 } from '../../domain/taskState.js';
-import { createDeleteConfirm } from '../components/deleteConfirm.js';
+import { ResumeConfirmationRequiredError } from '../../app/errors.js';
+import { createConfirmPanel } from '../components/confirmPanel.js';
+import { createReasonConfirm } from '../components/reasonConfirm.js';
 import { createDirectEntryForm } from '../components/directEntryForm.js';
 import { createIntervalEntryForm } from '../components/intervalEntryForm.js';
 import { createIntervalOperationForm } from '../components/intervalOperationForm.js';
 import { el, replaceChildren } from '../dom.js';
-import { RUN_STATUS_LABEL, toMinutesLabel } from '../labels.js';
+import { toMinutesLabel } from '../labels.js';
 import { VIEW } from '../shell.js';
 
 /** 区間履歴の表の列数。編集モード中は「操作」列が1つ増える。 */
@@ -95,6 +96,8 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
    *   （「履歴編集」の押下で切り替える）。
    * - `deleteTarget`: 削除確認を開いている対象。`{kind:'interval'|'directEntry',
    *   id}` または `null`。
+   * - `resumeConfirm`: 集計済みからの作業再開の確認（仕様書7.1）。`{retry}` または
+   *   `null`。承諾されたら同じ入力で呼び直す。
    * - `warnings`: 直前の保存で出た警告（区間の重複は仕様書8.9.5、直接入力の
    *   重複候補は8.9.8）。
    * - `busy`: 保存中かどうか。外側のボタンを止める（レビュー指摘 FB-10）。
@@ -105,6 +108,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
     activeForm: null,
     historyEditMode: false,
     deleteTarget: null,
+    resumeConfirm: null,
     warnings: [],
     busy: false,
   };
@@ -113,6 +117,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
     local.activeForm = null;
     local.historyEditMode = false;
     local.deleteTarget = null;
+    local.resumeConfirm = null;
     local.warnings = [];
     local.busy = false;
   }
@@ -197,9 +202,11 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
    * 「対象を選ぶ→保存する→ローカル状態を畳む→対象がいまも表示中なら描き直す」
    * という同じ形をとる。差は呼び出す保存処理だけである。
    *
-   * @param {(target: {runId: string, taskRecordId: string}) => Promise<object>} perform
+   * @param {(target: {runId: string, taskRecordId: string},
+   *          confirmedResume: boolean) => Promise<object>} perform
+   * @param {boolean} [confirmedResume] 集計済みからの再開を承諾済みか（仕様書7.1）
    */
-  async function withCurrentTarget(perform) {
+  async function withCurrentTarget(perform, confirmedResume = false) {
     const { selection } = store.getState();
     const target = { runId: selection.runId, taskRecordId: selection.taskRecordId };
     // 保存中は外側のボタンを止める。押せたままだと、この await の間に次の
@@ -209,13 +216,26 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
 
     let result;
     try {
-      result = await perform(target);
+      result = await perform(target, confirmedResume);
     } catch (error) {
+      local.busy = false;
+      if (error instanceof ResumeConfirmationRequiredError) {
+        // 拒否ではなく確認待ちである（仕様書7.1）。フォームを畳んで確認パネルへ
+        // 差し替え、承諾されたら同じ入力で呼び直す。フォーム内のエラー欄へ出すと
+        // 「入力が誤っている」ように読めるため、そちらの経路へは流さない。
+        local.activeForm = null;
+        local.deleteTarget = null;
+        local.resumeConfirm = { retry: () => withCurrentTarget(perform, true) };
+        if (isShowingTask(target.runId, target.taskRecordId)) {
+          render();
+          resumePanel?.focus();
+        }
+        return;
+      }
       // 保存を拒否された。フォームは開いたままにする。送信元のフォームが自分で
       // エラーを出し、利用者は入力を直して押し直せる（`intervalEntryForm` の
       // `submit()`）。ここで描き直すとその表示ごと消えるため、戻すのは外側の
       // ボタンだけにする。
-      local.busy = false;
       applyBusy();
       throw error;
     }
@@ -226,6 +246,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
     local.busy = false;
     local.activeForm = null;
     local.deleteTarget = null;
+    local.resumeConfirm = null;
     local.warnings = (result.warnings ?? []).map((warning) => warning.message);
     // 保存が成功するとストア購読の再描画が走るが、それはこの行より前、まだ
     // ローカル状態が残っている時点で起きる。閉じた状態を映すために、対象が
@@ -239,11 +260,16 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
   /**
    * 開始・休憩・再開・終了・参加者変更・区間追加を実行する。
    *
+   * 集計済みからの再開で差し戻された場合は、確認後に同じ入力で呼び直す。入力を
+   * 覚えておくのではなく、この関数ごと `retry` として保持する（仕様書7.1）。
+   *
    * @param {Function} action
    * @param {object} input
    */
   function runOperation(action, input) {
-    return withCurrentTarget((target) => action(target, input));
+    return withCurrentTarget((target, confirmedResume) =>
+      action(target, { ...input, confirmedResume }),
+    );
   }
 
   /**
@@ -397,6 +423,37 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
 
   /** 直近に描いた上部フォーム。フォーカス移動のために持つ。 */
   let form = null;
+
+  /** 直近に描いた再開確認パネル。フォーカス移動のために持つ。 */
+  let resumePanel = null;
+
+  /**
+   * 集計済みからの作業再開の確認（仕様書7.1）。
+   *
+   * 集計済みは「未終了区間がない」状態なので、再開すると実施回を作業中へ戻す
+   * ことになる。黙って戻さず、何が起きるかを示してから続ける。
+   */
+  function renderResumeConfirm() {
+    resumePanel = null;
+    if (local.resumeConfirm === null) {
+      return null;
+    }
+    resumePanel = createConfirmPanel({
+      title: '集計済みを解除して作業を再開しますか',
+      description:
+        'この実施回は集計済みです。作業を再開すると未終了の区間ができるため、' +
+        '実施回を作業中へ戻します。',
+      note: '転記値は作業を終了するまで未確定になります（仕様書8.6.5）。',
+      confirmLabel: '再開する',
+      testidPrefix: 'resume',
+      onConfirm: () => local.resumeConfirm.retry(),
+      onCancel: () => {
+        local.resumeConfirm = null;
+        render();
+      },
+    });
+    return resumePanel.element;
+  }
 
   /**
    * 直近に描いた行内フォーム（区間・直接入力の編集と削除確認）。
@@ -612,7 +669,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
         interval.intervalId,
       );
       if (preview.ok) {
-        const confirm = createDeleteConfirm({
+        const confirm = createReasonConfirm({
           preview,
           subject: '区間',
           idPrefix: `task-delete-${interval.intervalId}`,
@@ -744,7 +801,7 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
         entry.entryId,
       );
       if (preview.ok) {
-        const confirm = createDeleteConfirm({
+        const confirm = createReasonConfirm({
           preview,
           subject: '直接入力',
           idPrefix: `task-direct-delete-${entry.entryId}`,
@@ -881,6 +938,18 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
     const group = projectOf(run);
     const state = taskState(task);
     const editable = isRunEditable(run);
+    // 実施回が閲覧のみへ変わったら、開いていた入力をすべて閉じる
+    // （レビュー指摘 FB-2 とその追記）。Step 8 で転記済み化を画面へ足したため、
+    // フォームを開いたまま同じ画面の操作で転記済みへ進める。保存はアクション層が
+    // 拒むので誤記録にはならないが、「閲覧のみ」の注記と入力欄が同居して見えるのは
+    // それ自体が矛盾した表示である。区間の追加・編集、直接入力、削除確認のいずれも
+    // 対象にする。
+    if (!editable) {
+      local.activeForm = null;
+      local.deleteTarget = null;
+      local.resumeConfirm = null;
+      local.historyEditMode = false;
+    }
     const allowed = availableOperations(task, { runEditable: editable });
 
     replaceChildren(container, [
@@ -937,6 +1006,8 @@ export function createTaskDetailView({ container, store, actions, handlers, now 
             dataset: { testid: 'task-not-editable' },
             text: describeNotEditable(run),
           }),
+
+      renderResumeConfirm(),
 
       renderOperationForm(task),
 

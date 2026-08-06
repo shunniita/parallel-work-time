@@ -31,6 +31,21 @@ function clone(value) {
 }
 
 /**
+ * ストアの中身を主キーの昇順で返す（`StorageAdapter.loadAll()` の契約）。
+ *
+ * IndexedDB の `getAll()` はキー昇順で返す。`Map` は挿入順なので、そのままでは
+ * 2つの実装で並びが食い違う（レビュー指摘 C-9）。キーはすべて文字列である。
+ *
+ * @param {Map<string, object>} store
+ * @returns {object[]}
+ */
+function sortedByKey(store) {
+  return [...store.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([, entity]) => entity);
+}
+
+/**
  * 案件グループの集まりに案件IDの重複が無いことを確かめる（仕様書8.2.6）。
  *
  * @param {Map<string, object>} groups
@@ -71,9 +86,16 @@ export class MemoryAdapter extends StorageAdapter {
   async loadAll() {
     this.assertInitialized();
     const dataset = createEmptyDataset();
-    dataset.settings = clone(this.stores.get(ENTITY_TYPE.SETTINGS).get(SETTINGS_KEY));
+    // 設定が無ければ `null` を返す。`Map#get` の `undefined` をそのまま流すと
+    // `IndexedDbAdapter`（`?? null`）と形が違い、呼び出し側が両方を書き分ける
+    // ことになる（レビュー指摘 C-9）。
+    const settings = this.stores.get(ENTITY_TYPE.SETTINGS).get(SETTINGS_KEY);
+    dataset.settings = settings === undefined ? null : clone(settings);
     for (const type of COLLECTION_TYPES) {
-      dataset[type] = [...this.stores.get(type).values()].map(clone);
+      // 主キーの昇順で返す。`Map` の挿入順のままだと IndexedDB の `getAll()` と
+      // 並びが違い、`MemoryAdapter` で書いたテストが通るのに実装では別の順に
+      // なる差が残る（C-9）。
+      dataset[type] = sortedByKey(this.stores.get(type)).map(clone);
     }
     return dataset;
   }

@@ -23,7 +23,12 @@ import {
 } from '../../src/app/actions/intervalActions.js';
 import { createProjectGroup, createWorkRun } from '../../src/app/actions/projectActions.js';
 import { createTemplate } from '../../src/app/actions/templateActions.js';
-import { RunNotEditableError, ValidationError } from '../../src/app/errors.js';
+import { markAggregated } from '../../src/app/actions/transferActions.js';
+import {
+  ResumeConfirmationRequiredError,
+  RunNotEditableError,
+  ValidationError,
+} from '../../src/app/errors.js';
 import { createPersistence } from '../../src/app/persistence.js';
 import { SCHEMA_VERSION, createDefaultSettings } from '../../src/config.js';
 import { toIsoSecond } from '../../src/domain/datetime.js';
@@ -628,6 +633,153 @@ describe('intervalActions', () => {
         expect(
           previewIntervalDeletion(workRuns, { runId: 'missing', taskRecordId: 'x' }, 'y'),
         ).toMatchObject({ ok: false });
+      });
+    });
+  });
+
+  describe('集計済みからの作業再開（仕様書7.1、レビュー指摘 S8-1）', () => {
+    // 集計済みは「未終了区間がない」状態である。作業を再開すればその前提は崩れる
+    // ため、確認を取ってから実施回を作業中へ戻す。集計済み→作業中は利用者の確認
+    // 操作によると定められている（7.1）ので、黙って戻すことはできない。
+
+    /** 終了済みの区間を1件入れてから集計済みにする。 */
+    async function toAggregated() {
+      await addIntervalManually(deps, target(), {
+        type: INTERVAL_TYPE.WORK,
+        startAt: '2026-08-01T09:00:00+09:00',
+        endAt: '2026-08-01T10:00:00+09:00',
+        participants: ['甲'],
+      });
+      await markAggregated(deps, run.runId);
+    }
+
+    it('確認なしでは差し戻す', async () => {
+      await toAggregated();
+
+      await expect(
+        recordStart(deps, target(), { at: '2026-08-01T11:00:00+09:00', participants: ['甲'] }),
+      ).rejects.toBeInstanceOf(ResumeConfirmationRequiredError);
+    });
+
+    it('差し戻したときは状態も区間も変えない', async () => {
+      await toAggregated();
+
+      await recordStart(deps, target(), {
+        at: '2026-08-01T11:00:00+09:00',
+        participants: ['甲'],
+      }).catch(() => {});
+
+      const saved = await reloadTask();
+      expect(saved.intervals).toHaveLength(1);
+      expect((await adapter.loadAll()).workRuns[0].status).toBe('aggregated');
+    });
+
+    it('差し戻しの文言で何が起きるかを伝える', async () => {
+      await toAggregated();
+
+      const error = await recordStart(deps, target(), { participants: ['甲'] }).catch(
+        (caught) => caught,
+      );
+
+      expect(error.message).toContain('集計済み');
+      expect(error.message).toContain('作業中');
+      expect(error.runId).toBe(run.runId);
+    });
+
+    it('確認すると作業中へ戻り、同時に区間ができる', async () => {
+      await toAggregated();
+
+      await recordStart(deps, target(), {
+        at: '2026-08-01T11:00:00+09:00',
+        participants: ['甲'],
+        confirmedResume: true,
+      });
+
+      const { workRuns } = await adapter.loadAll();
+      expect(workRuns[0].status).toBe('working');
+      expect(workRuns[0].tasks[0].intervals).toHaveLength(2);
+      expect(taskState(await reloadTask())).toBe(TASK_STATE.WORKING);
+    });
+
+    it('状態変更と区間生成が同じ保存で成立する', async () => {
+      // WorkRun は状態も区間も同じ文書に持つ。片方だけが保存された状態は作れない。
+      await toAggregated();
+
+      await recordStart(deps, target(), {
+        participants: ['甲'],
+        confirmedResume: true,
+      });
+
+      const saved = (await adapter.loadAll()).workRuns[0];
+      const open = saved.tasks[0].intervals.filter((interval) => interval.endAt === null);
+      expect(saved.status).toBe('working');
+      expect(open).toHaveLength(1);
+    });
+
+    it('保存に失敗すれば状態も区間も変わらない', async () => {
+      await toAggregated();
+      const failing = {
+        ...deps,
+        adapter: {
+          ...adapter,
+          loadAll: () => adapter.loadAll(),
+          saveEntity: async () => {
+            throw new Error('書き込み失敗');
+          },
+        },
+      };
+
+      await expect(
+        recordStart(failing, target(), { participants: ['甲'], confirmedResume: true }),
+      ).rejects.toThrow();
+
+      const saved = (await adapter.loadAll()).workRuns[0];
+      expect(saved.status).toBe('aggregated');
+      expect(saved.tasks[0].intervals).toHaveLength(1);
+    });
+
+    it('作業中では確認を求めない', async () => {
+      await expect(
+        recordStart(deps, target(), { participants: ['甲'] }),
+      ).resolves.toBeDefined();
+    });
+
+    describe('未終了区間を生まない操作は集計済みのまま行える（仕様書7.1）', () => {
+      it('区間の手動追加（終了日時が必須）', async () => {
+        await toAggregated();
+
+        await expect(
+          addIntervalManually(deps, target(), {
+            type: INTERVAL_TYPE.WORK,
+            startAt: '2026-08-01T13:00:00+09:00',
+            endAt: '2026-08-01T14:00:00+09:00',
+            participants: ['甲'],
+          }),
+        ).resolves.toBeDefined();
+
+        expect((await adapter.loadAll()).workRuns[0].status).toBe('aggregated');
+      });
+
+      it('終了済み区間の編集', async () => {
+        await toAggregated();
+        const { intervalId } = (await reloadTask()).intervals[0];
+
+        await expect(
+          updateInterval(deps, target(), intervalId, { participants: ['甲', '乙'] }),
+        ).resolves.toBeDefined();
+
+        expect((await adapter.loadAll()).workRuns[0].status).toBe('aggregated');
+      });
+
+      it('区間の削除', async () => {
+        await toAggregated();
+        const { intervalId } = (await reloadTask()).intervals[0];
+
+        await expect(
+          deleteInterval(deps, target(), intervalId, { reason: '誤入力' }),
+        ).resolves.toBeDefined();
+
+        expect((await adapter.loadAll()).workRuns[0].status).toBe('aggregated');
       });
     });
   });

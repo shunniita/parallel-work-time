@@ -16,20 +16,13 @@
  */
 
 import { previewQuantity, summarizeQuantity } from '../../domain/quantity.js';
+import { RUN_STATUS_LABEL } from '../../domain/runStatus.js';
 import { generatableTasks } from '../../domain/templateInstantiate.js';
 import { toDateKey } from '../../domain/datetime.js';
 import { findActiveTemplate } from '../../app/actions/projectActions.js';
 import { QuantityOverflowError, toErrorMessages } from '../../app/errors.js';
 import { el, field, replaceChildren, setNote, setText } from '../dom.js';
 import { toIntegerInput } from '../numeric.js';
-
-/** 実施回の状態表示（仕様書7章）。 */
-const RUN_STATUS_LABEL = {
-  working: '作業中',
-  aggregated: '集計済み',
-  transferred: '転記済み',
-  archived: 'アーカイブ',
-};
 
 /**
  * 案件詳細を作る。

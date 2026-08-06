@@ -206,7 +206,8 @@ describe('createRunView', () => {
 
       expect(view.actions.recordParticipantChange).toHaveBeenCalledWith(
         { runId: view.run.runId, taskRecordId: task.taskRecordId },
-        { at: expect.any(String), participants: ['甲', '乙'] },
+        // `confirmedResume` は集計済みからの再開の確認済みフラグ（仕様書7.1）。
+        { at: expect.any(String), participants: ['甲', '乙'], confirmedResume: false },
       );
     });
 
