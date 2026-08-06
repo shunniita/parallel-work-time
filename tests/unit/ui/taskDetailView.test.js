@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTaskDetailView } from '../../../src/ui/views/taskDetailView.js';
+import { ResumeConfirmationRequiredError } from '../../../src/app/errors.js';
 import { previewDirectEntryDeletion } from '../../../src/app/actions/directEntryActions.js';
 import { previewIntervalDeletion } from '../../../src/app/actions/intervalActions.js';
 import { VIEW } from '../../../src/ui/shell.js';
@@ -96,6 +97,13 @@ function mount(options = {}) {
     /** 保存を待つあいだに、利用者が別の画面／別の作業項目へ移った状態を模す。 */
     navigateAway: (patch) => {
       state = { ...state, selection: { ...state.selection, ...patch } };
+    },
+    /** 実施回の状態が変わった状態を模す（転記済み化・アーカイブ）。 */
+    setRunStatus: (status) => {
+      state = {
+        ...state,
+        dataset: { ...state.dataset, workRuns: [{ ...run, status }] },
+      };
     },
   };
 }
@@ -196,6 +204,34 @@ describe('createTaskDetailView', () => {
 
       expect(view.query('task-operations')).toBeNull();
       expect(view.query('task-not-editable').textContent).toContain('転記済み');
+    });
+
+    it('閲覧のみへ変わったら開いていた入力を閉じる（レビュー指摘 FB-2）', () => {
+      // Step 8 で転記済み化が画面へ入ったため、フォームを開いたまま同じ画面の
+      // 操作で転記済みへ進める。「閲覧のみ」の注記と入力欄が同居してはならない。
+      const view = mount({ task: TASKS.working() });
+      view.query('op-break').click();
+      expect(view.query('op-form')).not.toBeNull();
+
+      view.setRunStatus('transferred');
+      view.view.render();
+
+      expect(view.query('op-form')).toBeNull();
+      expect(view.query('task-not-editable')).not.toBeNull();
+    });
+
+    it('閲覧のみへ変わったら直接入力の編集も閉じる（レビュー指摘 FB-2 の追記）', () => {
+      const view = mount({
+        task: taskRecord({ name: '受入確認', directEntries: [directEntry(600)] }),
+      });
+      view.query('direct-edit').click();
+      expect(view.query('direct-form')).not.toBeNull();
+
+      view.setRunStatus('archived');
+      view.view.render();
+
+      expect(view.query('direct-form')).toBeNull();
+      expect(view.query('direct-edit')).toBeNull();
     });
 
     it('アーカイブ済みでも同様に閲覧のみとする', () => {
@@ -318,7 +354,9 @@ describe('createTaskDetailView', () => {
 
       expect(view.actions.recordBreak).toHaveBeenCalledWith(
         { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
-        { at: expect.stringMatching(/^2026-08-01T12:00:00/) },
+        // `confirmedResume` は集計済みからの再開の確認済みフラグ（仕様書7.1）。
+        // 最初の呼び出しでは false で渡り、差し戻された場合だけ true で呼び直す。
+        { at: expect.stringMatching(/^2026-08-01T12:00:00/), confirmedResume: false },
       );
     });
 
@@ -404,6 +442,69 @@ describe('createTaskDetailView', () => {
       view.query('op-cancel').click();
 
       expect(view.query('op-form')).toBeNull();
+    });
+
+    describe('集計済みからの作業再開（仕様書7.1）', () => {
+      /** 差し戻しを返す `recordStart` を仕込む。 */
+      function mountWithResumeGuard() {
+        const view = mount({ task: TASKS.notStarted(), status: 'aggregated' });
+        view.actions.recordStart.mockRejectedValue(
+          new ResumeConfirmationRequiredError('実施回: 集計済みです。', view.run.runId),
+        );
+        return view;
+      }
+
+      it('差し戻されると確認パネルを出し、フォームは畳む', async () => {
+        const view = mountWithResumeGuard();
+        view.query('op-start').click();
+        view.query('op-participants').value = '甲';
+
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.query('resume-panel')).not.toBeNull());
+
+        // フォーム内のエラー欄には出さない。「入力が誤っている」と読めるため。
+        expect(view.query('op-form')).toBeNull();
+        expect(view.query('resume-description').textContent).toContain('作業中へ戻します');
+      });
+
+      it('確認パネルへフォーカスを移す', async () => {
+        const view = mountWithResumeGuard();
+        view.query('op-start').click();
+        view.query('op-participants').value = '甲';
+
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.query('resume-panel')).not.toBeNull());
+
+        expect(document.activeElement).toBe(view.query('resume-accept'));
+      });
+
+      it('承諾すると同じ入力を confirmedResume 付きで呼び直す', async () => {
+        const view = mountWithResumeGuard();
+        view.query('op-start').click();
+        view.query('op-participants').value = '甲';
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.query('resume-panel')).not.toBeNull());
+
+        view.actions.recordStart.mockResolvedValue({ dataset: null, warnings: [] });
+        view.query('resume-accept').click();
+        await vi.waitFor(() => expect(view.actions.recordStart).toHaveBeenCalledTimes(2));
+
+        const [, second] = view.actions.recordStart.mock.calls;
+        expect(second[1]).toMatchObject({ participants: ['甲'], confirmedResume: true });
+      });
+
+      it('やめると何も呼ばずにパネルを閉じる', async () => {
+        const view = mountWithResumeGuard();
+        view.query('op-start').click();
+        view.query('op-participants').value = '甲';
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.query('resume-panel')).not.toBeNull());
+
+        view.query('resume-cancel').click();
+
+        expect(view.query('resume-panel')).toBeNull();
+        expect(view.actions.recordStart).toHaveBeenCalledTimes(1);
+      });
     });
 
     describe('保存中の多重操作（レビュー指摘 FB-10）', () => {
@@ -520,7 +621,7 @@ describe('createTaskDetailView', () => {
 
       expect(view.actions.recordParticipantChange).toHaveBeenCalledWith(
         { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
-        { at: expect.any(String), participants: ['甲', '乙'] },
+        { at: expect.any(String), participants: ['甲', '乙'], confirmedResume: false },
       );
     });
   });

@@ -271,8 +271,26 @@ export class StorageAdapter {
   /**
    * 全データを読み込む。
    *
-   * @returns {Promise<{settings: object, taskTemplates: object[], projectGroups: object[],
-   *                    workRuns: object[], changeHistory: object[]}>}
+   * ## 実装が守る契約（レビュー指摘 C-9）
+   *
+   * - **並び順**: 各コレクションは主キーの昇順で返す。IndexedDB の `getAll()` が
+   *   この順で返すため、実装側の都合ではなくこちらを契約とした。順序を約束して
+   *   おかないと、`MemoryAdapter` で書いたテストが通るのに `IndexedDbAdapter`
+   *   では別の順になる、という形の差が残る。
+   * - **設定の欠落**: 保存された設定が無ければ `settings` は `null` とする
+   *   （`undefined` ではない）。呼び出し側が `settings === null` の1つの形だけを
+   *   見ればよいようにする。`initialize()` が既定値を書き、`deleteEntity()` は
+   *   設定の削除を拒むため、この状態へは現在の公開APIから到達しない。契約テスト
+   *   が無いのはそのためで、実装をそろえてあるのは防御である。
+   *
+   * ただし**画面が並び順をこの契約に頼ってはならない**。主キーはUUIDであり、
+   * 昇順に意味は無い。表示順・外部項目コード順・時刻順はいずれも表示側で明示的に
+   * 並べ替える（`naturalSort.js`、`compareIso`）。ここで順序を定めるのは、
+   * 2つの実装の間で結果が食い違わないようにするためだけである。
+   *
+   * @returns {Promise<{settings: object|null, taskTemplates: object[],
+   *                    projectGroups: object[], workRuns: object[],
+   *                    changeHistory: object[]}>}
    */
   async loadAll() {
     throw new Error('loadAll() は実装が必要');

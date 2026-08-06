@@ -12,9 +12,9 @@ import {
   buildHistoryEntry,
   describeInterval,
   formatIntervalRange,
-  formatIsoForHuman,
   summarizeIntervalDeletion,
 } from '../../src/domain/history.js';
+import { formatIsoForHuman } from '../../src/domain/datetime.js';
 import { validateImportPayload } from '../../src/domain/schema.js';
 import { SCHEMA_VERSION, createDefaultSettings } from '../../src/config.js';
 import {

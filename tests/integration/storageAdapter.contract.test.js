@@ -108,6 +108,63 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
       expect(dataset.workRuns[0].tasks[0].directEntries).toHaveLength(1);
       expect(dataset.workRuns[0].tasks[0].intervals[1].endAt).toBeNull();
     });
+
+    describe('並び順の契約（レビュー指摘 C-9）', () => {
+      /** 主キーを明示した案件グループ。ビルダーは採番を握るためここでは使わない。 */
+      function groupWithId(projectGroupId, projectId, overrides = {}) {
+        return { ...projectGroup({ projectId }), projectGroupId, ...overrides };
+      }
+
+      it('コレクションを主キーの昇順で返す', async () => {
+        // 保存した順ではなくキーの順で返す。片方が挿入順、片方がキー順だと、
+        // `MemoryAdapter` で書いたテストが通るのに実装では別の順になる。
+        for (const group of [
+          groupWithId('g-3', 'PJ-3'),
+          groupWithId('g-1', 'PJ-1'),
+          groupWithId('g-2', 'PJ-2'),
+        ]) {
+          await adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, group);
+        }
+
+        const dataset = await adapter.loadAll();
+
+        expect(dataset.projectGroups.map((group) => group.projectGroupId)).toEqual([
+          'g-1',
+          'g-2',
+          'g-3',
+        ]);
+      });
+
+      it('置き換えても主キーの昇順のままになる', async () => {
+        await adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, groupWithId('g-1', 'PJ-1'));
+        await adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, groupWithId('g-2', 'PJ-2'));
+        // 先に入れた方を上書きする。挿入順を保つ実装では末尾へ移りうる。
+        await adapter.saveEntity(
+          ENTITY_TYPE.PROJECT_GROUPS,
+          groupWithId('g-1', 'PJ-1', { totalQuantity: 200 }),
+        );
+
+        const dataset = await adapter.loadAll();
+
+        expect(dataset.projectGroups.map((group) => group.projectGroupId)).toEqual(['g-1', 'g-2']);
+        expect(dataset.projectGroups[0].totalQuantity).toBe(200);
+      });
+
+      it('削除しても残りは主キーの昇順のままになる', async () => {
+        for (const group of [
+          groupWithId('g-1', 'PJ-1'),
+          groupWithId('g-2', 'PJ-2'),
+          groupWithId('g-3', 'PJ-3'),
+        ]) {
+          await adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, group);
+        }
+
+        await adapter.deleteEntity(ENTITY_TYPE.PROJECT_GROUPS, 'g-2');
+
+        const dataset = await adapter.loadAll();
+        expect(dataset.projectGroups.map((group) => group.projectGroupId)).toEqual(['g-1', 'g-3']);
+      });
+    });
   });
 
   describe('saveEntity()', () => {
