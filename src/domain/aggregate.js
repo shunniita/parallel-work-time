@@ -110,6 +110,19 @@ function sortRows(rows, sort) {
  *
  * 形式は `外部項目コード<TAB>転記値分` の行であり、外部項目コード順に並べる。
  *
+ * ## 渡された並び順を信用しない（レビュー指摘 S8-2）
+ *
+ * 受け取った `rows` の順をそのまま使わず、ここで外部項目コードの自然順へ並べ
+ * 直す。画面は表示順と外部項目コード順を切り替えられるが（8.7.3）、それは
+ * **画面の都合**である。仕様書8.7.7 が定めるコピーの並びは外部項目コード順の
+ * 一択であり、画面でどう見ていたかで変わってはならない。
+ *
+ * 当初の実装は呼び出し側が並べた `rows` を順に読んでいたため、表示順を選んだ
+ * 後にコピーすると貼り付け先の並びまで変わっていた。転記は行の並びを前提に
+ * 突き合わせる作業なので、これは入力誤りに直結する。
+ *
+ * 呼び出し側の状態に契約を依存させないため、並べ替えはこの関数の中で行う。
+ *
  * ## 何を出さないか
  *
  * 次の行は除く。除いた件数は呼び出し側へ返し、画面が理由を示す。黙って落とすと
@@ -132,7 +145,12 @@ export function buildTransferText(aggregate) {
   let skippedUnconfirmed = 0;
   const lines = [];
 
-  for (const row of aggregate.rows) {
+  // 複製してから並べ替える。呼び出し側が表示に使っている配列を並べ替えると、
+  // コピーしただけで画面の並びが変わる。
+  const ordered = [...aggregate.rows];
+  sortRows(ordered, AGGREGATE_SORT.EXTERNAL_CODE);
+
+  for (const row of ordered) {
     if (row.externalCodeMissing) {
       skippedMissingCode += 1;
       continue;
