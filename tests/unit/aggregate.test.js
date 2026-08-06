@@ -39,6 +39,17 @@ function doneTask({ name, externalCode = 'X-100', order, minutes, participants =
   });
 }
 
+/**
+ * 09:00 から n 秒後の時刻を `hh:mm:ss` で返す。
+ *
+ * @param {number} seconds
+ */
+function isoClock(seconds) {
+  const total = 9 * 3600 + seconds;
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
+}
+
 /** 未終了区間を持つ作業項目。 */
 function openTask({ name, externalCode = 'X-900', order }) {
   return taskRecord({
@@ -238,6 +249,49 @@ describe('aggregateRun()', () => {
       expect(result.unconfirmedCount).toBe(1);
     });
 
+    it('区間を細かく分割しても合計は変わらない（敵対的検証 3.3）', () => {
+      // 参加者変更は進行中の区間を分割する（仕様書8.4.10）。分割で切り上げ誤差が
+      // 累積するのではないかという指摘への確認である。
+      //
+      // 累積しない理由は2つある。
+      //   1. 切り上げは区間ごとではなく作業項目の合計に対して一度だけ（8.6.4）
+      //   2. 日時は秒精度で保存するため（8.4.4）、区間ごとの `floor(ms/1000)` は
+      //      端数を切り捨てるところがない
+      const whole = taskRecord({
+        name: '一括',
+        externalCode: 'X-100',
+        order: 1,
+        intervals: [
+          workInterval('2026-08-01T09:00:00+09:00', '2026-08-01T09:10:01+09:00', ['甲']),
+        ],
+      });
+      // 同じ 601 秒を 7 + 7 + ... の細切れへ分ける（端数の出る長さで刻む）。
+      const pieces = [];
+      for (let offset = 0; offset < 601; offset += 7) {
+        const end = Math.min(offset + 7, 601);
+        pieces.push(
+          workInterval(
+            `2026-08-01T${isoClock(offset)}+09:00`,
+            `2026-08-01T${isoClock(end)}+09:00`,
+            ['甲'],
+          ),
+        );
+      }
+      const split = taskRecord({
+        name: '分割',
+        externalCode: 'X-200',
+        order: 2,
+        intervals: pieces,
+      });
+
+      const result = aggregateRun(workRun({ tasks: [whole, split] }));
+      const [wholeRow, splitRow] = result.rows;
+
+      expect(splitRow.timeSeconds).toBe(wholeRow.timeSeconds);
+      expect(splitRow.transferMinutes).toBe(wholeRow.transferMinutes);
+      expect(splitRow.transferMinutes).toBe(11);
+    });
+
     it('作業項目が無ければ0で確定とする', () => {
       const result = aggregateRun(workRun({ tasks: [] }));
 
@@ -300,6 +354,43 @@ describe('buildTransferText()（仕様書8.7.7）', () => {
 
     expect(result.text).toBe('');
     expect(result.copiedCount).toBe(0);
+  });
+
+  describe('画面の並び順に依存しない（レビュー指摘 S8-2）', () => {
+    /** 表示順と自然順が食い違う実施回。 */
+    function mixedRun() {
+      return workRun({
+        tasks: [
+          doneTask({ name: '追加加工', externalCode: 'X-2000', order: 1, minutes: 30 }),
+          doneTask({ name: '検査', externalCode: 'X-1100', order: 2, minutes: 40 }),
+        ],
+      });
+    }
+
+    it('表示順で集計してもコピーは外部項目コード順になる', () => {
+      // 仕様書8.7.7 が定めるコピーの並びは外部項目コード順の一択である。画面で
+      // どう見ていたかで変わってはならない。
+      const byOrder = aggregateRun(mixedRun(), { sort: AGGREGATE_SORT.ORDER });
+
+      expect(byOrder.rows.map((row) => row.externalCode)).toEqual(['X-2000', 'X-1100']);
+      expect(buildTransferText(byOrder).text).toBe('X-1100\t40\nX-2000\t30');
+    });
+
+    it('外部項目コード順で集計した場合と同じ結果になる', () => {
+      const byOrder = buildTransferText(aggregateRun(mixedRun(), { sort: AGGREGATE_SORT.ORDER }));
+      const byCode = buildTransferText(aggregateRun(mixedRun()));
+
+      expect(byOrder).toEqual(byCode);
+    });
+
+    it('渡された集計結果の並びを書き換えない', () => {
+      // コピーしただけで画面の並びが変わってはならない。
+      const byOrder = aggregateRun(mixedRun(), { sort: AGGREGATE_SORT.ORDER });
+
+      buildTransferText(byOrder);
+
+      expect(byOrder.rows.map((row) => row.externalCode)).toEqual(['X-2000', 'X-1100']);
+    });
   });
 
   it('分の値だけを出す（単位は付けない）', () => {

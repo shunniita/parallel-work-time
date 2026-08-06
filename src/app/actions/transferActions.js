@@ -16,7 +16,7 @@
  * 「その遷移が許されているか」（7.1）と「記録の中身が揃っているか」（8.9.6）は
  * 別の問いである。前者は `canTransition()`、後者は `canAggregate()` が答える。
  * まとめて1つのエラーにすると、利用者は「なぜ進めないのか」を区別できない。
- * 作業中から集計済みへ進む場合だけ、両方を順に確かめる。
+ * どの遷移で中身を確かめるかは {@link requiresClosedIntervals} が決める。
  *
  * ## 自動遷移は行わない
  *
@@ -40,6 +40,41 @@ import { RUN_STATUS } from '../../domain/schema.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
 import { ValidationError } from '../errors.js';
 import { resolveDeps } from './deps.js';
+
+/**
+ * 遷移先が「未終了区間が無いこと」を要求するか（仕様書7章、8.9.6）。
+ *
+ * 集計済みと転記済みはどちらも「未終了区間がなく、転記値を確認できる」状態と
+ * 定義されている（仕様書7章の状態表）。したがって**その状態へ入るたびに**中身を
+ * 確かめる必要がある。入口を1つだけ見ればよいわけではない。
+ *
+ * ## 集計済みからの再編集で破れる（レビュー指摘 S8-1）
+ *
+ * 集計済みは編集できる状態である（7.2 で閲覧のみとするのは転記済みとアーカイブ
+ * だけ）。そのため「集計済みにする → 新しい区間を開始する → 転記済みにする」が
+ * できてしまい、当初の実装はこの経路で中身を確かめていなかった。結果、転記値が
+ * 未確定（`transferMinutesSum === null`）のまま `status="transferred"` と
+ * `transferredAt` が保存され、しかも転記済みは閲覧のみなので、利用者は理由を
+ * 書いて集計済みへ戻すまでその区間を終了できなくなる。
+ *
+ * 状態の意味は「その状態へ到達した瞬間に条件を満たしていた」ではなく「その状態で
+ * ある間は条件を満たしている」である。遷移のたびに評価する。
+ *
+ * ## 転記済みから戻すときは確かめない
+ *
+ * 戻す操作は、まさにその未終了区間を直すためにある。中身を理由に拒むと直す手段が
+ * 無くなる。
+ *
+ * @param {string} from
+ * @param {string} to
+ * @returns {boolean}
+ */
+function requiresClosedIntervals(from, to) {
+  if (to === RUN_STATUS.TRANSFERRED) {
+    return true;
+  }
+  return to === RUN_STATUS.AGGREGATED && from === RUN_STATUS.WORKING;
+}
 
 /**
  * 実施回を引く。見つからなければ例外にする。
@@ -79,10 +114,7 @@ async function changeStatus(deps, runId, nextStatus, input = {}) {
       throw new ValidationError([allowed.reason]);
     }
 
-    // 集計済みへ進むときだけ、記録の中身も確かめる（仕様書8.9.6、A-08）。
-    // 転記済みから戻る場合は確かめない。既に集計済みだった記録であり、
-    // 戻すこと自体を未終了区間の有無で拒む理由が無い。
-    if (nextStatus === RUN_STATUS.AGGREGATED && from === RUN_STATUS.WORKING) {
+    if (requiresClosedIntervals(from, nextStatus)) {
       const ready = canAggregate(current);
       if (!ready.ok) {
         throw new ValidationError([`実施回: ${ready.reason}`]);
@@ -157,7 +189,7 @@ function summarizeStatusChange(workRun, from, to) {
 /**
  * 集計済みにする（仕様書7.1、8.9.6）。
  *
- * 未終了区間が1つでもあれば拒否する（A-08）。作業中からの遷移でのみ確かめる。
+ * 作業中からの遷移では、未終了区間が1つでもあれば拒否する（A-08）。
  *
  * @param {object} deps
  * @param {string} runId
@@ -184,6 +216,9 @@ export async function reopenRun(deps, runId) {
  *
  * 転記済みは実施回単位でのみ管理する。作業項目単位の転記済みは保存しない
  * （仕様書8.7.5）。画面の一時チェックは画面の中だけで持つ。
+ *
+ * 集計済みになった後で記録が増えている場合があるため、ここでも未終了区間が
+ * 無いことを確かめる（レビュー指摘 S8-1、{@link requiresClosedIntervals}）。
  *
  * @param {object} deps
  * @param {string} runId
@@ -220,7 +255,9 @@ export function previewStatusChange(workRun, nextStatus) {
   if (!allowed.ok) {
     return allowed;
   }
-  if (nextStatus === RUN_STATUS.AGGREGATED && workRun.status === RUN_STATUS.WORKING) {
+  // 判定は {@link requiresClosedIntervals} と同じ条件でなければならない。ここが
+  // 緩いとボタンは押せるのにアクション層が拒み、押してから初めて理由を知る。
+  if (requiresClosedIntervals(workRun.status, nextStatus)) {
     const ready = canAggregate(workRun);
     if (!ready.ok) {
       return { ok: false, reason: ready.reason };

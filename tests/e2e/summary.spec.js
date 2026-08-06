@@ -173,6 +173,76 @@ test('外部項目コード順に並べ替えられ、未設定は末尾で警�
   expect(byOrder).toEqual(['受入確認', '本作業', '追加加工', '検査']);
 });
 
+test('表示順へ切り替えてもコピーは外部項目コード順になる（仕様書8.7.7、S8-2）', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await openFresh(page);
+  // 「拡張」は表示順と自然順が食い違う。
+  await createProject(page, { projectId: 'PJ-COPYSORT', variant: '拡張', totalQuantity: 100 });
+  await createRun(page, { workDate: '2026-08-01', runQuantity: 10 });
+
+  await taskRow(page, '追加加工').getByTestId('open-task').click();
+  await page.getByTestId('op-directEntry').click();
+  const form = page.getByTestId('direct-form');
+  await form.getByTestId('direct-duration-minutes').fill('30');
+  await form.getByTestId('direct-note').fill('計測漏れ');
+  await form.getByTestId('direct-submit').click();
+  await expect(form).toBeHidden();
+  await page.getByTestId('back-to-run').click();
+
+  await openSummary(page);
+  await page.getByTestId('summary-sort').selectOption('order');
+  // 画面は表示順（追加加工 X-2000 が 検査 X-1100 より前）。
+  const names = await page.getByTestId('summary-name').allTextContents();
+  expect(names).toEqual(['受入確認', '本作業', '追加加工', '検査']);
+
+  await page.getByTestId('copy-transfer').click();
+  await expect(page.getByTestId('summary-notice')).toContainText('コピーしました');
+
+  // コピーは画面の並びに関わらず外部項目コード順である。
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  const codes = clipboard.split('\n').map((line) => line.split('\t')[0]);
+  expect(codes).toEqual(['X-100', 'X-1000', 'X-1100', 'X-2000']);
+});
+
+test('集計済みの後に区間を開始したら転記済みにできない（仕様書7章、S8-1）', async ({ page }) => {
+  await setup(page, 'PJ-REOPEN');
+
+  await addDirectEntry(page, { task: '受入確認', minutes: '10', note: '計測漏れ' });
+  await openSummary(page);
+  await page.getByTestId('mark-aggregated').click();
+  await expect(page.getByTestId('summary-run-status')).toHaveText('集計済み');
+
+  // 集計済みのまま新しい区間を開始する（集計済みは編集できる状態である）。
+  await page.getByTestId('open-run-detail').click();
+  await taskRow(page, '本作業').getByTestId('row-op-start').click();
+  const startForm = page.getByTestId('op-form');
+  await startForm.getByTestId('op-participants').fill('甲');
+  await startForm.getByTestId('op-participants-add').click();
+  await startForm.getByTestId('op-submit').click();
+  await expect(startForm).toBeHidden();
+
+  await openSummary(page);
+
+  // 転記値が未確定になっており、転記済みへは進めない。
+  await expect(page.getByTestId('total-transfer')).toContainText('未確定');
+  const button = page.getByTestId('mark-transferred');
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveAttribute('title', /未終了/);
+
+  // 区間を終わらせれば進める。
+  await page.getByTestId('open-run-detail').click();
+  await taskRow(page, '本作業').getByTestId('row-op-finish').click();
+  const finishForm = page.getByTestId('op-form');
+  await finishForm.getByTestId('op-submit').click();
+  await expect(finishForm).toBeHidden();
+
+  await openSummary(page);
+  await expect(page.getByTestId('mark-transferred')).toBeEnabled();
+});
+
 test('外部項目コード未設定を警告する（仕様書8.7.4）', async ({ page }) => {
   await setup(page, 'PJ-MISSING');
 

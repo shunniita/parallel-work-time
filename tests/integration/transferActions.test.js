@@ -9,7 +9,12 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { addIntervalManually, recordStart } from '../../src/app/actions/intervalActions.js';
+import { createDirectEntry } from '../../src/app/actions/directEntryActions.js';
+import {
+  addIntervalManually,
+  recordStart,
+  updateInterval,
+} from '../../src/app/actions/intervalActions.js';
 import { createProjectGroup, createWorkRun } from '../../src/app/actions/projectActions.js';
 import { createTemplate } from '../../src/app/actions/templateActions.js';
 import {
@@ -211,6 +216,87 @@ describe('transferActions', () => {
       await toTransferred();
 
       await expect(seedClosedInterval(1)).rejects.toThrow();
+    });
+
+    describe('集計済みの後に記録が増えた場合（レビュー指摘 S8-1）', () => {
+      // 集計済みは編集できる状態である（閲覧のみとするのは転記済みとアーカイブ
+      // だけ）。そのため「集計済みにする → 区間を開始する → 転記済みにする」が
+      // 通ってしまい、転記値が未確定のまま転記済みとして保存できていた。
+
+      /** 集計済みにした後、未終了区間を1つ作る。 */
+      async function aggregateThenStart() {
+        await toAggregated();
+        await recordStart(deps, target(), {
+          at: '2026-08-01T11:00:00+09:00',
+          participants: ['甲'],
+        });
+      }
+
+      it('未終了区間があれば転記済みにできない', async () => {
+        await aggregateThenStart();
+
+        await expect(markTransferred(deps, run.runId)).rejects.toBeInstanceOf(ValidationError);
+      });
+
+      it('拒んだ後も集計済みのままで、転記完了日時も付かない', async () => {
+        await aggregateThenStart();
+
+        await markTransferred(deps, run.runId).catch(() => {});
+
+        const saved = await reloadRun();
+        expect(saved.status).toBe(RUN_STATUS.AGGREGATED);
+        expect(saved.transferredAt).toBeNull();
+      });
+
+      it('拒む理由に未終了の件数を入れる', async () => {
+        await aggregateThenStart();
+
+        const error = await markTransferred(deps, run.runId).catch((caught) => caught);
+
+        expect(error.message).toContain('未終了');
+        expect(error.message).toContain('1 件');
+      });
+
+      it('画面のボタン制御も同じ条件で拒む', async () => {
+        // ここが緩いと、押せるボタンをアクション層が拒む形になり、利用者は
+        // 押してから初めて理由を知る。
+        await aggregateThenStart();
+        const saved = await reloadRun();
+
+        const preview = previewStatusChange(saved, RUN_STATUS.TRANSFERRED);
+
+        expect(preview.ok).toBe(false);
+        expect(preview.reason).toContain('未終了');
+      });
+
+      it('区間を終わらせれば転記済みにできる', async () => {
+        await aggregateThenStart();
+        const open = (await reloadRun()).tasks[0].intervals.find(
+          (interval) => interval.endAt === null,
+        );
+        await updateInterval(deps, target(), open.intervalId, {
+          endAt: '2026-08-01T12:00:00+09:00',
+        });
+
+        await markTransferred(deps, run.runId);
+
+        expect((await reloadRun()).status).toBe(RUN_STATUS.TRANSFERRED);
+      });
+
+      it('直接入力を足しただけなら転記済みにできる', async () => {
+        // 直接入力は未終了になりようがない。編集を一律に拒むのではなく、
+        // 未終了区間の有無だけを条件にしていることを固定する。
+        await toAggregated();
+        await createDirectEntry(deps, target(), {
+          seconds: 600,
+          participants: ['甲'],
+          note: '計測漏れ分',
+        });
+
+        await markTransferred(deps, run.runId);
+
+        expect((await reloadRun()).status).toBe(RUN_STATUS.TRANSFERRED);
+      });
     });
   });
 
