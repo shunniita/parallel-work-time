@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTaskDetailView } from '../../../src/ui/views/taskDetailView.js';
+import { ResumeConfirmationRequiredError } from '../../../src/app/errors.js';
 import { previewDirectEntryDeletion } from '../../../src/app/actions/directEntryActions.js';
 import { previewIntervalDeletion } from '../../../src/app/actions/intervalActions.js';
 import { VIEW } from '../../../src/ui/shell.js';
@@ -353,7 +354,9 @@ describe('createTaskDetailView', () => {
 
       expect(view.actions.recordBreak).toHaveBeenCalledWith(
         { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
-        { at: expect.stringMatching(/^2026-08-01T12:00:00/) },
+        // `confirmedResume` は集計済みからの再開の確認済みフラグ（仕様書7.1）。
+        // 最初の呼び出しでは false で渡り、差し戻された場合だけ true で呼び直す。
+        { at: expect.stringMatching(/^2026-08-01T12:00:00/), confirmedResume: false },
       );
     });
 
@@ -439,6 +442,69 @@ describe('createTaskDetailView', () => {
       view.query('op-cancel').click();
 
       expect(view.query('op-form')).toBeNull();
+    });
+
+    describe('集計済みからの作業再開（仕様書7.1）', () => {
+      /** 差し戻しを返す `recordStart` を仕込む。 */
+      function mountWithResumeGuard() {
+        const view = mount({ task: TASKS.notStarted(), status: 'aggregated' });
+        view.actions.recordStart.mockRejectedValue(
+          new ResumeConfirmationRequiredError('実施回: 集計済みです。', view.run.runId),
+        );
+        return view;
+      }
+
+      it('差し戻されると確認パネルを出し、フォームは畳む', async () => {
+        const view = mountWithResumeGuard();
+        view.query('op-start').click();
+        view.query('op-participants').value = '甲';
+
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.query('resume-panel')).not.toBeNull());
+
+        // フォーム内のエラー欄には出さない。「入力が誤っている」と読めるため。
+        expect(view.query('op-form')).toBeNull();
+        expect(view.query('resume-description').textContent).toContain('作業中へ戻します');
+      });
+
+      it('確認パネルへフォーカスを移す', async () => {
+        const view = mountWithResumeGuard();
+        view.query('op-start').click();
+        view.query('op-participants').value = '甲';
+
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.query('resume-panel')).not.toBeNull());
+
+        expect(document.activeElement).toBe(view.query('resume-accept'));
+      });
+
+      it('承諾すると同じ入力を confirmedResume 付きで呼び直す', async () => {
+        const view = mountWithResumeGuard();
+        view.query('op-start').click();
+        view.query('op-participants').value = '甲';
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.query('resume-panel')).not.toBeNull());
+
+        view.actions.recordStart.mockResolvedValue({ dataset: null, warnings: [] });
+        view.query('resume-accept').click();
+        await vi.waitFor(() => expect(view.actions.recordStart).toHaveBeenCalledTimes(2));
+
+        const [, second] = view.actions.recordStart.mock.calls;
+        expect(second[1]).toMatchObject({ participants: ['甲'], confirmedResume: true });
+      });
+
+      it('やめると何も呼ばずにパネルを閉じる', async () => {
+        const view = mountWithResumeGuard();
+        view.query('op-start').click();
+        view.query('op-participants').value = '甲';
+        view.query('op-submit').click();
+        await vi.waitFor(() => expect(view.query('resume-panel')).not.toBeNull());
+
+        view.query('resume-cancel').click();
+
+        expect(view.query('resume-panel')).toBeNull();
+        expect(view.actions.recordStart).toHaveBeenCalledTimes(1);
+      });
     });
 
     describe('保存中の多重操作（レビュー指摘 FB-10）', () => {
@@ -555,7 +621,7 @@ describe('createTaskDetailView', () => {
 
       expect(view.actions.recordParticipantChange).toHaveBeenCalledWith(
         { runId: view.run.runId, taskRecordId: view.task.taskRecordId },
-        { at: expect.any(String), participants: ['甲', '乙'] },
+        { at: expect.any(String), participants: ['甲', '乙'], confirmedResume: false },
       );
     });
   });

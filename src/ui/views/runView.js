@@ -32,6 +32,8 @@ import {
   availableOperations,
   taskState,
 } from '../../domain/taskState.js';
+import { ResumeConfirmationRequiredError } from '../../app/errors.js';
+import { createConfirmPanel } from '../components/confirmPanel.js';
 import { createIntervalOperationForm } from '../components/intervalOperationForm.js';
 import { el, replaceChildren } from '../dom.js';
 import { toMinutesLabel } from '../labels.js';
@@ -80,10 +82,17 @@ export function createRunView({ container, store, actions, handlers, now }) {
    * `busy` は保存中かどうかで、その間は行の操作ボタンを止める
    * （レビュー指摘 FB-10。詳細は `taskDetailView.js` の冒頭）。
    */
-  const local = { sort: SORT.ORDER, operation: null, warnings: [], busy: false };
+  const local = {
+    sort: SORT.ORDER,
+    operation: null,
+    resumeConfirm: null,
+    warnings: [],
+    busy: false,
+  };
 
   function reset() {
     local.operation = null;
+    local.resumeConfirm = null;
     local.warnings = [];
     local.busy = false;
   }
@@ -185,7 +194,7 @@ export function createRunView({ container, store, actions, handlers, now }) {
    * @param {string} operation
    * @param {object} input
    */
-  async function runOperation(taskRecordId, operation, input) {
+  async function runOperation(taskRecordId, operation, input, confirmedResume = false) {
     const run = selectedRun();
     const runId = run.runId;
     // 保存中は行の操作ボタンを止める。押せたままだと、この await の間に別の行の
@@ -195,11 +204,24 @@ export function createRunView({ container, store, actions, handlers, now }) {
 
     let result;
     try {
-      result = await actionFor(operation)({ runId, taskRecordId }, input);
+      result = await actionFor(operation)({ runId, taskRecordId }, { ...input, confirmedResume });
     } catch (error) {
+      local.busy = false;
+      if (error instanceof ResumeConfirmationRequiredError) {
+        // 拒否ではなく確認待ちである（仕様書7.1）。フォームを畳んで確認パネルへ
+        // 差し替え、承諾されたら同じ入力で呼び直す。
+        local.operation = null;
+        local.resumeConfirm = {
+          retry: () => runOperation(taskRecordId, operation, input, true),
+        };
+        if (isShowingRun(runId)) {
+          render();
+          resumePanel?.focus();
+        }
+        return;
+      }
       // 保存を拒否された。フォームは開いたままにし、送信元のフォームが自分で
       // エラーを出す。戻すのは行のボタンだけにする。
-      local.busy = false;
       applyBusy();
       throw error;
     }
@@ -209,6 +231,7 @@ export function createRunView({ container, store, actions, handlers, now }) {
     // 必ず行う。
     local.busy = false;
     local.operation = null;
+    local.resumeConfirm = null;
     local.warnings = result.warnings.map((warning) => warning.message);
     // 保存が成功するとストア購読の再描画が走るが、それはこの行より前、まだ
     // `local.operation` が残っている時点で起きる。閉じた状態を映すために、
@@ -220,6 +243,34 @@ export function createRunView({ container, store, actions, handlers, now }) {
 
   /** 直近に描いた操作フォーム。フォーカス移動のために持つ。 */
   let form = null;
+
+  /** 直近に描いた再開確認パネル。フォーカス移動のために持つ。 */
+  let resumePanel = null;
+
+  /**
+   * 集計済みからの作業再開の確認（仕様書7.1）。詳細は `taskDetailView.js` と同じ。
+   */
+  function renderResumeConfirm() {
+    resumePanel = null;
+    if (local.resumeConfirm === null) {
+      return null;
+    }
+    resumePanel = createConfirmPanel({
+      title: '集計済みを解除して作業を再開しますか',
+      description:
+        'この実施回は集計済みです。作業を再開すると未終了の区間ができるため、' +
+        '実施回を作業中へ戻します。',
+      note: '転記値は作業を終了するまで未確定になります（仕様書8.6.5）。',
+      confirmLabel: '再開する',
+      testidPrefix: 'resume',
+      onConfirm: () => local.resumeConfirm.retry(),
+      onCancel: () => {
+        local.resumeConfirm = null;
+        render();
+      },
+    });
+    return resumePanel.element;
+  }
 
   /**
    * 作業項目行に置く操作ボタン。
@@ -409,6 +460,7 @@ export function createRunView({ container, store, actions, handlers, now }) {
     // 同居して見えるのはそれ自体が矛盾した表示である。
     if (!editable) {
       local.operation = null;
+      local.resumeConfirm = null;
     }
 
     replaceChildren(container, [
@@ -456,6 +508,7 @@ export function createRunView({ container, store, actions, handlers, now }) {
           text: describeNotEditable(run),
         }),
       renderWarnings(),
+      renderResumeConfirm(),
       el('div', { class: 'field-row field-row--baseline' }, [
         el('label', { class: 'field__label', for: 'run-sort', text: '並び順' }),
         el(

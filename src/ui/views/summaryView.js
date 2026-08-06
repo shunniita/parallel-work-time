@@ -408,8 +408,25 @@ export function createSummaryView({ container, store, actions, handlers, copyTex
     ]);
   }
 
-  function renderNotices(aggregate) {
+  function renderNotices(aggregate, run) {
     const notes = [];
+    // 「集計済みなのに未終了区間がある」記録の修復導線（仕様書7.1）。
+    //
+    // 仕様書1.3 で集計済みからの作業再開に確認を挟むようにしたため、通常の操作で
+    // この状態にはならない。取り込んだJSONや旧版のデータでは起こりうるので、
+    // 気づけるようにしたうえで直し方を示す。転記済みへは進めないため、放置すると
+    // 行き止まりになる。
+    if (run.status === RUN_STATUS.AGGREGATED && aggregate.openCount > 0) {
+      notes.push(
+        el('p', {
+          class: 'note note--warn',
+          dataset: { testid: 'inconsistent-state-warning' },
+          text:
+            `集計済みですが未終了の作業区間が ${aggregate.openCount} 件あります。` +
+            '「作業中へ戻す」を押してから区間を終了してください（仕様書7.1）。',
+        }),
+      );
+    }
     if (aggregate.missingExternalCodeCount > 0) {
       notes.push(
         el('p', {
@@ -519,7 +536,7 @@ export function createSummaryView({ container, store, actions, handlers, copyTex
         }),
       ]),
 
-      renderNotices(aggregate),
+      renderNotices(aggregate, run),
 
       el('div', { class: 'field-row field-row--baseline' }, [
         field({ id: 'summary-sort-select', label: '並び順', input: sortSelect }),
