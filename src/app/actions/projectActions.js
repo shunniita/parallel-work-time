@@ -19,12 +19,12 @@
 
 import { toIsoSecond } from '../../domain/datetime.js';
 import { hasWarning } from '../../domain/problems.js';
+import { normalizeProjectId } from '../../domain/projectId.js';
 import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
 import {
   generatableTasks,
   instantiateProjectGroup,
   instantiateRun,
-  normalizeProjectId,
 } from '../../domain/templateInstantiate.js';
 import { activeTemplates } from '../../domain/templateOps.js';
 import {

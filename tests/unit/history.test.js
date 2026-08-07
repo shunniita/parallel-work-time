@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   HISTORY_ENTITY,
+  HISTORY_ENTITY_BY_OP,
   HISTORY_OP,
   buildHistoryEntry,
   describeInterval,
@@ -37,6 +38,52 @@ function deletionDraft(overrides = {}) {
     ...overrides,
   };
 }
+
+describe('操作と対象種別の組み合わせ（レビュー指摘 SOL-2）', () => {
+  // 仕様書11章は対象種別と操作をそれぞれ列挙するが、組み合わせの表は無い。
+  // 自由に組めると語義の通らない履歴が作れるため、契約として固定する。
+
+  it.each([
+    [HISTORY_OP.STATUS_REVERTED, HISTORY_ENTITY.WORK_RUN],
+    [HISTORY_OP.INTERVAL_DELETED, HISTORY_ENTITY.INTERVAL],
+    [HISTORY_OP.DIRECT_ENTRY_DELETED, HISTORY_ENTITY.DIRECT_ENTRY],
+    [HISTORY_OP.WORK_RUN_DELETED, HISTORY_ENTITY.WORK_RUN],
+    [HISTORY_OP.PROJECT_GROUP_DELETED, HISTORY_ENTITY.PROJECT_GROUP],
+  ])('%s の対象種別は %s である', (operation, entityType) => {
+    expect(HISTORY_ENTITY_BY_OP[operation]).toBe(entityType);
+
+    const result = buildHistoryEntry(deletionDraft({ operation, entityType }), META);
+    expect(result.ok).toBe(true);
+  });
+
+  it('対応しない組み合わせは組み立てない', () => {
+    const result = buildHistoryEntry(
+      deletionDraft({
+        entityType: HISTORY_ENTITY.PROJECT_GROUP,
+        operation: HISTORY_OP.INTERVAL_DELETED,
+      }),
+      META,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toContain('対象種別');
+    expect(result.entry).toBeNull();
+  });
+
+  it('操作が未知なら組み合わせの指摘は出さない', () => {
+    // 操作そのものの指摘だけで足りる。対応表を引いても意味がない。
+    const result = buildHistoryEntry(deletionDraft({ operation: 'unknown' }), META);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.filter((message) => message.startsWith('対象種別:'))).toEqual([]);
+  });
+
+  it('すべての操作に対応する対象種別がある', () => {
+    for (const operation of Object.values(HISTORY_OP)) {
+      expect(HISTORY_ENTITY_BY_OP[operation]).toBeTruthy();
+    }
+  });
+});
 
 describe('buildHistoryEntry（仕様書11章）', () => {
   it('仕様書11章の7項目を持つ履歴を作る', () => {
