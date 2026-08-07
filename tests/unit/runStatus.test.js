@@ -1,8 +1,9 @@
 /**
  * 実施回の状態と遷移の単体テスト（仕様書7.1、7.2）。
  *
- * Step 8 の範囲は集計済み・転記済みまわりの4遷移である。アーカイブと完全削除は
- * Step 10 で足す。
+ * 仕様書7.1 の遷移表のうち、状態どうしの辺をすべて持つ。「削除候補」は保存しない
+ * 派生状態なので含めず（`retention.js`）、完全削除はレコードごと消す操作であり
+ * 遷移ではない。
  */
 
 import { describe, expect, it } from 'vitest';
@@ -48,6 +49,7 @@ describe('canTransition()（仕様書7.1）', () => {
       [RUN_STATUS.AGGREGATED, RUN_STATUS.WORKING],
       [RUN_STATUS.AGGREGATED, RUN_STATUS.TRANSFERRED],
       [RUN_STATUS.TRANSFERRED, RUN_STATUS.AGGREGATED],
+      [RUN_STATUS.TRANSFERRED, RUN_STATUS.ARCHIVED],
     ])('%s → %s', (from, to) => {
       expect(canTransition(from, to)).toEqual({ ok: true, reason: null });
     });
@@ -67,14 +69,19 @@ describe('canTransition()（仕様書7.1）', () => {
       expect(canTransition(RUN_STATUS.TRANSFERRED, RUN_STATUS.WORKING).ok).toBe(false);
     });
 
-    it('アーカイブからはどこへも進めない（Step 10 で足す）', () => {
+    it('アーカイブからはどこへも戻せない（仕様書7.1 に辺が無い）', () => {
+      // 通常一覧から分離する操作であり、戻す必要があるなら分離していない。
       for (const to of Object.values(RUN_STATUS)) {
         expect(canTransition(RUN_STATUS.ARCHIVED, to).ok).toBe(false);
       }
     });
 
-    it('アーカイブへの遷移はまだ許していない（Step 10）', () => {
-      expect(canTransition(RUN_STATUS.TRANSFERRED, RUN_STATUS.ARCHIVED).ok).toBe(false);
+    it('集計済みからアーカイブへは飛べない（転記済みを経る）', () => {
+      expect(canTransition(RUN_STATUS.AGGREGATED, RUN_STATUS.ARCHIVED).ok).toBe(false);
+    });
+
+    it('作業中からアーカイブへは飛べない', () => {
+      expect(canTransition(RUN_STATUS.WORKING, RUN_STATUS.ARCHIVED).ok).toBe(false);
     });
 
     it('同じ状態への遷移は拒む', () => {
@@ -101,6 +108,13 @@ describe('nextStatuses()', () => {
     expect(nextStatuses({ status: RUN_STATUS.AGGREGATED })).toEqual([
       RUN_STATUS.WORKING,
       RUN_STATUS.TRANSFERRED,
+    ]);
+  });
+
+  it('転記済みからは集計済みとアーカイブへ進める', () => {
+    expect(nextStatuses({ status: RUN_STATUS.TRANSFERRED })).toEqual([
+      RUN_STATUS.AGGREGATED,
+      RUN_STATUS.ARCHIVED,
     ]);
   });
 

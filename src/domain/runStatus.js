@@ -77,13 +77,17 @@ export function describeNotEditable(run) {
 /**
  * 実施回の状態遷移（仕様書7.1）。
  *
- * `from` から進める先を列挙する。Step 8 の範囲は集計済み・転記済みまわりの4つで
- * ある。アーカイブと完全削除は Step 10 で足す。
+ * `from` から進める先を列挙する。仕様書7.1 の遷移表のうち、状態どうしの辺を
+ * すべて持つ。「削除候補」は保存しない派生状態なので含めない（6.5、10.3）。
+ * 完全削除はレコードごと消す操作であり、遷移ではない（10.4）。
+ *
+ * **アーカイブからは戻れない。** 仕様書7.1 にその辺が無い。アーカイブは通常
+ * 一覧から分離する操作であり（10.1）、戻す必要があるなら分離していない。
  */
 const TRANSITIONS = {
   [RUN_STATUS.WORKING]: [RUN_STATUS.AGGREGATED],
   [RUN_STATUS.AGGREGATED]: [RUN_STATUS.WORKING, RUN_STATUS.TRANSFERRED],
-  [RUN_STATUS.TRANSFERRED]: [RUN_STATUS.AGGREGATED],
+  [RUN_STATUS.TRANSFERRED]: [RUN_STATUS.AGGREGATED, RUN_STATUS.ARCHIVED],
   [RUN_STATUS.ARCHIVED]: [],
 };
 
