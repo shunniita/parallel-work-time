@@ -34,8 +34,13 @@ const NAV_ITEMS = [
   { view: VIEW.SETTINGS, label: '設定' },
 ];
 
-/** 中身のある画面。アーカイブは Step 10、設定は Step 9 で足す。 */
-const IMPLEMENTED_VIEWS = new Set([VIEW.PROJECTS, VIEW.SUMMARY, VIEW.TEMPLATES]);
+/** 中身のある画面。アーカイブは Step 10 で足す。 */
+const IMPLEMENTED_VIEWS = new Set([
+  VIEW.PROJECTS,
+  VIEW.SUMMARY,
+  VIEW.TEMPLATES,
+  VIEW.SETTINGS,
+]);
 
 /**
  * 骨格を組み立てて指定要素へ差し込む。

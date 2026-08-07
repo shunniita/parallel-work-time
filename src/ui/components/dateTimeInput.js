@@ -12,6 +12,33 @@
  *
  * 入力途中に再描画しない。この部品は自分の要素を作り直さず、値の読み出しだけを
  * 提供する（`src/app/store.js` の再描画の規約3）。
+ *
+ * ## 編集ではオフセットを保つ（レビュー指摘 FB-9）
+ *
+ * 入力欄は保存済みISOの**壁時計部分だけ**を表示する（`toDateTimeLocal`）。
+ * そのため、書き戻すときのオフセットを別に決める必要がある。
+ *
+ * 既定は「入力された日の端末ローカルオフセット」である。新規入力はこれでよい。
+ * しかし**編集**でこれを使うと、保存値のオフセットと端末のオフセットが違う区間
+ * （インポートしたJSONなど、仕様書9.3）で、値を何も変えずに保存しただけで指す
+ * 瞬間が変わってしまう。
+ *
+ * ```text
+ * 元の値:     2026-08-01T09:00:00Z
+ * 入力欄:     2026-08-01T09:00:00     ← 壁時計だけを出す
+ * 端末が JST なら書き戻し: 2026-08-01T09:00:00+09:00   ← 9時間ずれる
+ * ```
+ *
+ * そこで編集では、元の区間が持つオフセット（`offsetMinutesOf()`）を
+ * `offsetMinutes` として渡す。表示は元の壁時計のまま、書き戻しも元のオフセット
+ * のままになり、無変更保存で瞬間が変わらない。
+ *
+ * 壁時計を端末ローカルへ変換して見せる案は採らない。作業記録は「その場所の
+ * 何時に作業したか」であり、9時に作業した記録を18時と見せるほうが読み違えを招く。
+ *
+ * 夏時間は引き続き想定しない（`datetime.js` 冒頭、レビュー指摘 SOL-1）。ただし
+ * 元のオフセットを保つ規則は、切替日をまたぐ編集でも無変更保存が瞬間を変えない
+ * 側に働く。
  */
 
 import {
@@ -27,12 +54,14 @@ import { el, field } from '../dom.js';
  *
  * @param {{id: string, testid?: string, label?: string, hint?: string,
  *          value?: string, startEmpty?: boolean, optional?: boolean,
- *          now?: () => Date}} options
+ *          offsetMinutes?: number, now?: () => Date}} options
  *   `value` はオフセット付きISO 8601。省略すると現在日時（仕様書8.4.3）。
  *   `startEmpty` を渡すと `value` / `now` を無視して空欄から始める（区間編集で
  *   「もともと未終了」の場合に使う。設計メモ §4.2.2）。
  *   `optional` を渡すと、空欄のまま確定しても `ok: true, iso: null` を返す。
  *   これも未終了区間を未終了のまま保存する編集のためにある。
+ *   `offsetMinutes` は書き戻すときのオフセット。省略すると入力された日の端末
+ *   ローカル値を使う（新規入力はこちら）。詳細は下の「編集ではオフセットを保つ」。
  * @returns {{element: HTMLElement, input: HTMLElement,
  *            read: () => {ok: boolean, iso: string|null, error: string|null},
  *            setValue: (iso: string) => void, focus: () => void}}
@@ -45,6 +74,7 @@ export function createDateTimeInput({
   value,
   startEmpty = false,
   optional = false,
+  offsetMinutes,
   now = () => new Date(),
 }) {
   const input = el('input', {
@@ -80,7 +110,7 @@ export function createDateTimeInput({
           error: `${label}: 日付と時刻を入力してください（実在する日時、秒まで）`,
         };
       }
-      return { ok: true, iso: fromDateTimeLocal(input.value), error: null };
+      return { ok: true, iso: fromDateTimeLocal(input.value, offsetMinutes), error: null };
     },
 
     /**

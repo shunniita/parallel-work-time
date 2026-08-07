@@ -35,6 +35,7 @@ import {
   RUN_STATUS_LABEL,
   canTransition,
   isStatusRetreat,
+  timestampsForStatus,
 } from '../../domain/runStatus.js';
 import { RUN_STATUS } from '../../domain/schema.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
@@ -125,9 +126,9 @@ async function changeStatus(deps, runId, nextStatus, input = {}) {
     const workRun = {
       ...current,
       status: nextStatus,
-      // 転記完了日時は「いま転記済みであること」を表す（実装計画3.2）。戻したら
-      // 消す。転記した事実そのものは変更履歴が残すため、ここへ残す必要はない。
-      transferredAt: nextStatus === RUN_STATUS.TRANSFERRED ? nowIso : null,
+      // アーカイブは転記済みを内包するため転記日時を保ち、アーカイブ日時を足す。
+      // 作業中・集計済みへ戻す場合は両方を消す（PWT-DESIGN-009 §3.6）。
+      ...timestampsForStatus(current, nextStatus, nowIso),
       updatedAt: nowIso,
     };
 
