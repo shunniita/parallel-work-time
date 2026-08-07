@@ -34,9 +34,10 @@
 
 import { compareIso } from './datetime.js';
 import { isOpenInterval } from './effort.js';
+import { HISTORY_ENTITY_BY_OP } from './history.js';
 import { Problems } from './problems.js';
 import { RUN_STATUS, validateImportPayload } from './schema.js';
-import { normalizeProjectId } from './templateInstantiate.js';
+import { normalizeProjectId } from './projectId.js';
 
 /**
  * 取り込むJSONを構造と整合性の両面から確かめる（仕様書9.3）。
@@ -318,15 +319,10 @@ function checkRunReferences(problems, runs, groups, templates) {
  * 保持する記録として扱う（仕様書11章）。
  */
 function checkHistoryConsistency(problems, history) {
-  const entityByOperation = {
-    statusReverted: 'workRun',
-    intervalDeleted: 'interval',
-    directEntryDeleted: 'directEntry',
-    workRunDeleted: 'workRun',
-    projectGroupDeleted: 'projectGroup',
-  };
   history.forEach((entry, index) => {
-    const expected = entityByOperation[entry?.operation];
+    // 対応表は `history.js` が持つ。書き込みと取り込みで通る履歴が変わらない
+    // ようにするためである（レビュー指摘 SOL-2）。
+    const expected = HISTORY_ENTITY_BY_OP[entry?.operation];
     if (expected !== undefined && entry?.entityType !== expected) {
       problems.add(
         `changeHistory[${index}].entityType`,

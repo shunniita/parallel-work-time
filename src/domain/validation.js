@@ -14,7 +14,7 @@
  * 種別コードつきの `{code, path, message}` で返す（`problems.js`、D-15）。
  */
 
-import { normalizeProjectId } from './templateInstantiate.js';
+import { normalizeProjectId } from './projectId.js';
 import { isValidDateKey } from './datetime.js';
 import { Problems } from './problems.js';
 import { previewQuantity, previewTotalQuantity } from './quantity.js';

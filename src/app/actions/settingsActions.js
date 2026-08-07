@@ -1,23 +1,34 @@
 /** 設定・JSON入出力のアプリケーション操作（仕様書9.2〜9.5、12.2）。 */
 
-import { SCHEMA_VERSION, createDefaultSettings } from '../../config.js';
+import {
+  MAX_LONG_RUNNING_THRESHOLD_HOURS,
+  MAX_RETENTION_DAYS,
+  SCHEMA_VERSION,
+  createDefaultSettings,
+  isSettingInRange,
+} from '../../config.js';
 import { toIsoSecond } from '../../domain/datetime.js';
 import { downloadExport } from '../../io/exportJson.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
 import { AppError, ValidationError } from '../errors.js';
 
-function positiveInteger(value, label) {
-  if (!Number.isInteger(value) || value < 1) {
-    throw new ValidationError([`${label}: 1以上の整数で入力してください`]);
+function integerInRange(value, max, label) {
+  if (!isSettingInRange(value, max)) {
+    throw new ValidationError([`${label}: 1以上 ${max} 以下の整数で入力してください`]);
   }
   return value;
 }
 
 /** 保持期間と未終了しきい値を保存する。 */
 export async function updateSettings(deps, input) {
-  const retentionDays = positiveInteger(input.retentionDays, '保持期間（日）');
-  const longRunningThresholdHours = positiveInteger(
+  const retentionDays = integerInRange(
+    input.retentionDays,
+    MAX_RETENTION_DAYS,
+    '保持期間（日）',
+  );
+  const longRunningThresholdHours = integerInRange(
     input.longRunningThresholdHours,
+    MAX_LONG_RUNNING_THRESHOLD_HOURS,
     '未終了しきい値（時間）',
   );
 

@@ -12,7 +12,12 @@
  * エクスポート往復とエラー表示を組み込む際、必要になった項目を追加する。
  */
 
-import { SCHEMA_VERSION } from '../config.js';
+import {
+  MAX_LONG_RUNNING_THRESHOLD_HOURS,
+  MAX_RETENTION_DAYS,
+  SCHEMA_VERSION,
+  isSettingInRange,
+} from '../config.js';
 import { isValidDateKey, isValidIsoSecond } from './datetime.js';
 import { INTERVAL_TYPE } from './effort.js';
 
@@ -163,11 +168,14 @@ function validateSettings(settings, problems) {
   if (settings.schemaVersion !== SCHEMA_VERSION) {
     problems.add('settings.schemaVersion', `現行値 ${SCHEMA_VERSION} と一致しない`);
   }
-  if (!isPositiveInteger(settings.retentionDays)) {
-    problems.add('settings.retentionDays', '1以上の整数である必要がある');
+  if (!isSettingInRange(settings.retentionDays, MAX_RETENTION_DAYS)) {
+    problems.add('settings.retentionDays', `1以上 ${MAX_RETENTION_DAYS} 以下の整数である必要がある`);
   }
-  if (!isPositiveInteger(settings.longRunningThresholdHours)) {
-    problems.add('settings.longRunningThresholdHours', '1以上の整数である必要がある');
+  if (!isSettingInRange(settings.longRunningThresholdHours, MAX_LONG_RUNNING_THRESHOLD_HOURS)) {
+    problems.add(
+      'settings.longRunningThresholdHours',
+      `1以上 ${MAX_LONG_RUNNING_THRESHOLD_HOURS} 以下の整数である必要がある`,
+    );
   }
   if (settings.lastExportedAt !== null && !isValidIsoSecond(settings.lastExportedAt)) {
     problems.add(

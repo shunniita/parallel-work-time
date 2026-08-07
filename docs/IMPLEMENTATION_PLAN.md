@@ -472,7 +472,8 @@ parallel-work-time/
 │  ├─ STEP6_DESIGN.md             … PWT-DESIGN-006（時刻入力）
 │  ├─ STEP7_DESIGN.md             … PWT-DESIGN-007（工数直接入力）
 │  ├─ STEP8_DESIGN.md             … PWT-DESIGN-008（集計・転記）
-│  └─ STEP9_DESIGN.md             … PWT-DESIGN-009（JSON入出力）
+│  ├─ STEP9_DESIGN.md             … PWT-DESIGN-009（JSON入出力）
+│  └─ STEP10_DESIGN.md            … PWT-DESIGN-010（状態遷移・保持・削除）
 ├─ src/
 │  ├─ main.js                     … 起動・初期化・ビュー切替
 │  ├─ config.js                   … 既定値（schemaVersion の正、初期30日、初期12時間）
@@ -486,6 +487,8 @@ parallel-work-time/
 │  │  ├─ runStatus.js             … 実施回の状態遷移規則（7.1）と編集可否（7.2）
 │  │  ├─ intervalOps.js           … 開始/休憩/再開/終了/参加者変更/区間追加の純粋な変換（8.4）
 │  │  ├─ retention.js             … 削除候補判定（archivedAt 起算、10.2、10.3）
+│  │  ├─ runOrder.js              … 実施回の並びと「第n回」の採番（8.2.3、10.1）
+│  │  ├─ projectId.js             … 案件IDの正規化（8.2.6）
 │  │  ├─ validation.js            … 入力検証（8.9）
 │  │  ├─ overlap.js               … 同一作業項目内の区間重複検出（8.9.5）
 │  │  ├─ templateOps.js           … テンプレートの組み立てと改訂（8.1、6.3）
