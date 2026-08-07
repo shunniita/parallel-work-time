@@ -21,9 +21,15 @@
  * Step 10 で残る3操作を足すときも、入口はこのモジュールにする。
  */
 
-import { INTERVAL_TYPE_LABEL, intervalEffortSeconds, isOpenInterval } from './effort.js';
+import {
+  INTERVAL_TYPE_LABEL,
+  intervalEffortSeconds,
+  isOpenInterval,
+  summarizeRun,
+} from './effort.js';
 import { dateKeyOf, formatIsoForHuman, isValidIsoSecond } from './datetime.js';
 import { formatSeconds } from './directEntryOps.js';
+import { RUN_STATUS_LABEL } from './runStatus.js';
 import { HISTORY_ENTITY_TYPE, HISTORY_OPERATION } from './schema.js';
 
 /** 履歴の対象種別（仕様書11章）。`schema.js` の一覧へ名前を付けたもの。 */
@@ -233,5 +239,66 @@ export function summarizeDirectEntryDeletion(workRun, taskRecord, entry) {
   return (
     `実施回 ${workRun.workDate} / 作業項目「${taskRecord.name}」の直接入力を削除` +
     `（${describeDirectEntry(entry)}）`
+  );
+}
+
+/**
+ * 実施回1件の内容を1行で表す。
+ *
+ * 削除すると配下の作業項目・区間・直接入力がまとめて消える。何がどれだけ消えたか
+ * を件数と工数で残す。個々の区間まで書き出すと要約が長くなりすぎるため、規模が
+ * 分かる粒度に留める。
+ *
+ * @param {{workDate: string, runQuantity: number, status: string, tasks: object[]}} workRun
+ * @returns {string}
+ */
+export function describeWorkRun(workRun) {
+  const tasks = workRun.tasks ?? [];
+  const intervals = tasks.reduce((total, task) => total + (task.intervals ?? []).length, 0);
+  const entries = tasks.reduce((total, task) => total + (task.directEntries ?? []).length, 0);
+  const summary = summarizeRun(workRun);
+  const transfer =
+    summary.transferMinutesSum === null
+      ? '転記値: 未確定'
+      : `転記値合計: ${summary.transferMinutesSum}分`;
+  return (
+    `作業日 ${workRun.workDate} / 数量 ${workRun.runQuantity} / ` +
+    `状態 ${RUN_STATUS_LABEL[workRun.status] ?? workRun.status} / ` +
+    `作業項目 ${tasks.length}件・区間 ${intervals}件・直接入力 ${entries}件 / ${transfer}`
+  );
+}
+
+/**
+ * 実施回削除の要約文を作る（仕様書11章）。
+ *
+ * 案件IDを含める。実施回を消すと親の案件からたどれなくなるため、要約だけで
+ * どの案件の記録だったかが分かる必要がある。
+ *
+ * @param {{projectId: string}} projectGroup
+ * @param {object} workRun
+ * @returns {string}
+ */
+export function summarizeWorkRunDeletion(projectGroup, workRun) {
+  return `案件 ${projectGroup.projectId} の実施回を削除（${describeWorkRun(workRun)}）`;
+}
+
+/**
+ * 案件グループ削除の要約文を作る（仕様書11章）。
+ *
+ * 配下の実施回もすべて消える。実施回1件ずつの履歴は残さず、この1件へまとめる。
+ * 案件を消すという1つの操作であり、利用者から見て複数の削除ではない。件数と
+ * 数量で規模を残す。
+ *
+ * @param {{projectId: string, targetType: string, variant: string,
+ *          totalQuantity: number}} projectGroup
+ * @param {object[]} runs 配下の実施回
+ * @returns {string}
+ */
+export function summarizeProjectGroupDeletion(projectGroup, runs) {
+  const accumulated = runs.reduce((total, run) => total + run.runQuantity, 0);
+  return (
+    `案件 ${projectGroup.projectId} を削除` +
+    `（${projectGroup.targetType} / ${projectGroup.variant} / ` +
+    `総予定数 ${projectGroup.totalQuantity} / 実施回 ${runs.length}件・累計数量 ${accumulated}）`
   );
 }

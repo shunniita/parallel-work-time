@@ -34,11 +34,12 @@ const NAV_ITEMS = [
   { view: VIEW.SETTINGS, label: '設定' },
 ];
 
-/** 中身のある画面。アーカイブは Step 10 で足す。 */
+/** 中身のある画面。仕様書12.2 の7画面がすべて揃っている。 */
 const IMPLEMENTED_VIEWS = new Set([
   VIEW.PROJECTS,
   VIEW.SUMMARY,
   VIEW.TEMPLATES,
+  VIEW.ARCHIVE,
   VIEW.SETTINGS,
 ]);
 

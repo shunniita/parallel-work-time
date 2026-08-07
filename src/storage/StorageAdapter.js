@@ -185,8 +185,12 @@ export function entityKeyOf(type, entity) {
  * 書き込みを始める前にすべての主キーを取り出しておく。トランザクション開始後に
  * 例外を投げると、一部だけ書き込まれた状態で中断されうるためである。
  *
+ * `remove: true` を付けた要素は削除として扱う。削除でも `entity` を渡すのは、
+ * 主キーの取り出しを保存と同じ経路にするためと、呼び出し側が「何を消したか」を
+ * 手元に持っている状態で渡すためである（削除履歴の要約に要る、仕様書11章）。
+ *
  * @param {unknown} entries
- * @returns {{type: string, entity: object, key: string}[]}
+ * @returns {{type: string, entity: object, key: string, remove: boolean}[]}
  */
 export function normalizeSaveEntries(entries) {
   if (!Array.isArray(entries)) {
@@ -203,10 +207,20 @@ export function normalizeSaveEntries(entries) {
       );
     }
     assertKnownType(entry.type);
+    const remove = entry.remove === true;
+    if (remove && entry.type === ENTITY_TYPE.SETTINGS) {
+      // `deleteEntity()` が単体で拒むのと同じ理由である。設定は常に1件存在し、
+      // 値の変更は保存で行う。
+      throw new StorageError(
+        STORAGE_ERROR_KIND.VALIDATION,
+        '設定は削除できない。値の変更は saveEntity で行う。',
+      );
+    }
     return {
       type: entry.type,
       entity: entry.entity,
       key: entityKeyOf(entry.type, entry.entity),
+      remove,
     };
   });
 }
@@ -308,13 +322,20 @@ export class StorageAdapter {
   }
 
   /**
-   * 複数のエンティティをまとめて保存する。
+   * 複数のエンティティをまとめて書き換える。
    *
    * 一連の関連書き込みを同一トランザクションへまとめるための操作である
    * （仕様書9.1）。1件でも失敗すれば全件を反映しない。テンプレート改訂のように
    * 「新版の追加」と「旧版の無効化」が同時に成立しなければ整合しない場面で使う。
    *
-   * @param {{type: string, entity: object}[]} entries
+   * `remove: true` を付けた要素は削除になる。削除と保存を混ぜられるのは、
+   * 「レコードを消す」と「変更履歴を1件足す」が同時に成立しなければならないため
+   * である（仕様書11章）。片方だけが残ると、消えたのに履歴が無いか、履歴だけ
+   * あって記録が残る。どちらも後から機械的に直せない。
+   *
+   * 設定（`settings`）は削除できない。`deleteEntity()` と同じ扱いである。
+   *
+   * @param {{type: string, entity: object, remove?: boolean}[]} entries
    * @returns {Promise<void>}
    */
   async saveEntities(entries) {

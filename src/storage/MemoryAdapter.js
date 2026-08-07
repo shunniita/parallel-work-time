@@ -125,8 +125,12 @@ export class MemoryAdapter extends StorageAdapter {
         drafts.set(type, new Map(this.stores.get(type)));
       }
     }
-    for (const { type, entity, key } of normalized) {
-      drafts.get(type).set(key, clone(entity));
+    for (const { type, entity, key, remove } of normalized) {
+      if (remove) {
+        drafts.get(type).delete(key);
+      } else {
+        drafts.get(type).set(key, clone(entity));
+      }
     }
 
     // 案件IDの一意性は一括適用後の状態に対して見る。同じ案件グループの更新や、

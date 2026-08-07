@@ -228,6 +228,77 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
     });
   });
 
+  describe('saveEntities() の削除（仕様書9.1、11章）', () => {
+    // 「レコードを消す」と「変更履歴を1件足す」が同時に成立しなければならない。
+    // 片方だけが残ると、消えたのに履歴が無いか、履歴だけあって記録が残る。
+
+    it('削除と保存を1回でまとめて適用する', async () => {
+      const group = projectGroup();
+      const run = workRun({ projectGroupId: group.projectGroupId });
+      await adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, group);
+      await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, run);
+      const history = historyEntry();
+
+      await adapter.saveEntities([
+        { type: ENTITY_TYPE.WORK_RUNS, entity: run, remove: true },
+        { type: ENTITY_TYPE.CHANGE_HISTORY, entity: history },
+      ]);
+
+      const dataset = await adapter.loadAll();
+      expect(dataset.workRuns).toEqual([]);
+      expect(dataset.changeHistory).toEqual([history]);
+    });
+
+    it('複数件の削除をまとめられる', async () => {
+      const group = projectGroup();
+      const runs = [
+        workRun({ projectGroupId: group.projectGroupId }),
+        workRun({ projectGroupId: group.projectGroupId }),
+      ];
+      await adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, group);
+      for (const run of runs) {
+        await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, run);
+      }
+
+      await adapter.saveEntities([
+        ...runs.map((run) => ({ type: ENTITY_TYPE.WORK_RUNS, entity: run, remove: true })),
+        { type: ENTITY_TYPE.PROJECT_GROUPS, entity: group, remove: true },
+      ]);
+
+      const dataset = await adapter.loadAll();
+      expect(dataset.workRuns).toEqual([]);
+      expect(dataset.projectGroups).toEqual([]);
+    });
+
+    it('存在しないキーの削除でも失敗しない', async () => {
+      await expect(
+        adapter.saveEntities([
+          { type: ENTITY_TYPE.WORK_RUNS, entity: workRun(), remove: true },
+        ]),
+      ).resolves.toBeUndefined();
+    });
+
+    it('設定は削除できない', async () => {
+      const error = await adapter
+        .saveEntities([
+          { type: ENTITY_TYPE.SETTINGS, entity: createDefaultSettings(), remove: true },
+        ])
+        .catch((caught) => caught);
+
+      expect(error).toBeInstanceOf(StorageError);
+      expect((await adapter.loadAll()).settings).toEqual(createDefaultSettings());
+    });
+
+    it('削除の対象を明示しなければ保存として扱う', async () => {
+      // `remove` が無い要素は従来どおり保存である。
+      const group = projectGroup();
+
+      await adapter.saveEntities([{ type: ENTITY_TYPE.PROJECT_GROUPS, entity: group }]);
+
+      expect((await adapter.loadAll()).projectGroups).toEqual([group]);
+    });
+  });
+
   describe('saveEntities()', () => {
     it('複数種別をまとめて保存する（仕様書9.1）', async () => {
       const group = projectGroup();
