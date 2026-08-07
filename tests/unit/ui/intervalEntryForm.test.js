@@ -53,6 +53,75 @@ function mount(options) {
   };
 }
 
+describe('異なるオフセットの区間を編集する（レビュー指摘 FB-9）', () => {
+  // インポートしたJSON（仕様書9.3）は、端末とは違うオフセットの区間を含みうる。
+  // 実行環境のタイムゾーンに依存しないよう、瞬間の一致だけを見る。
+
+  /** `+00:00` で記録された終了済みの区間。 */
+  function foreignInterval() {
+    return {
+      ...workInterval('2026-08-01T09:00:00+00:00', '2026-08-01T10:00:00+00:00', ['甲']),
+    };
+  }
+
+  it('何も変えずに保存すると開始も終了も同じ瞬間のままになる', async () => {
+    const interval = foreignInterval();
+    const view = mount({ mode: 'edit', interval });
+
+    view.submit();
+    await vi.waitFor(() => expect(view.onSubmit).toHaveBeenCalled());
+
+    const input = view.onSubmit.mock.calls[0][0];
+    expect(Date.parse(input.startAt)).toBe(Date.parse(interval.startAt));
+    expect(Date.parse(input.endAt)).toBe(Date.parse(interval.endAt));
+  });
+
+  it('元のオフセット表記のまま書き戻す', async () => {
+    const view = mount({ mode: 'edit', interval: foreignInterval() });
+
+    view.submit();
+    await vi.waitFor(() => expect(view.onSubmit).toHaveBeenCalled());
+
+    const input = view.onSubmit.mock.calls[0][0];
+    expect(input.startAt).toBe('2026-08-01T09:00:00+00:00');
+    expect(input.endAt).toBe('2026-08-01T10:00:00+00:00');
+  });
+
+  it('時刻を変えても元のオフセットを保つ', async () => {
+    const view = mount({ mode: 'edit', interval: foreignInterval() });
+    view.end.value = '2026-08-01T11:00:00';
+
+    view.submit();
+    await vi.waitFor(() => expect(view.onSubmit).toHaveBeenCalled());
+
+    expect(view.onSubmit.mock.calls[0][0].endAt).toBe('2026-08-01T11:00:00+00:00');
+  });
+
+  it('未終了区間へ終了時刻を補う場合も開始側のオフセットを使う（仕様書8.8.4）', async () => {
+    const interval = workInterval('2026-08-01T09:00:00+00:00', null, ['甲']);
+    const view = mount({ mode: 'edit', interval });
+    view.end.value = '2026-08-01T10:00:00';
+
+    view.submit();
+    await vi.waitFor(() => expect(view.onSubmit).toHaveBeenCalled());
+
+    expect(view.onSubmit.mock.calls[0][0].endAt).toBe('2026-08-01T10:00:00+00:00');
+  });
+
+  it('追加では端末のオフセットを使う（元の区間が無い）', async () => {
+    const view = mount({ mode: 'add' });
+    view.start.value = '2026-08-01T09:00:00';
+    view.end.value = '2026-08-01T10:00:00';
+
+    view.submit();
+    await vi.waitFor(() => expect(view.onSubmit).toHaveBeenCalled());
+
+    const input = view.onSubmit.mock.calls[0][0];
+    expect(input.startAt).toBe(toIsoSecond(new Date(2026, 7, 1, 9, 0, 0)));
+    expect(input.endAt).toBe(toIsoSecond(new Date(2026, 7, 1, 10, 0, 0)));
+  });
+});
+
 describe('createIntervalEntryForm', () => {
   beforeEach(resetIds);
 

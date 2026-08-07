@@ -471,7 +471,8 @@ parallel-work-time/
 │  ├─ IMPLEMENTATION_PLAN.md      … 本書
 │  ├─ STEP6_DESIGN.md             … PWT-DESIGN-006（時刻入力）
 │  ├─ STEP7_DESIGN.md             … PWT-DESIGN-007（工数直接入力）
-│  └─ STEP8_DESIGN.md             … PWT-DESIGN-008（集計・転記）
+│  ├─ STEP8_DESIGN.md             … PWT-DESIGN-008（集計・転記）
+│  └─ STEP9_DESIGN.md             … PWT-DESIGN-009（JSON入出力）
 ├─ src/
 │  ├─ main.js                     … 起動・初期化・ビュー切替
 │  ├─ config.js                   … 既定値（schemaVersion の正、初期30日、初期12時間）
@@ -493,7 +494,8 @@ parallel-work-time/
 │  │  ├─ aggregate.js             … 実施回集計・並べ替え・転記テキスト（8.6.5、8.7、8.9.6）
 │  │  ├─ naturalSort.js           … 外部項目コードの自然順比較（8.7.3）
 │  │  ├─ participants.js          … 参加者候補の抽出（8.4.7）
-│  │  └─ schema.js                … エクスポート/インポートJSONの検証（9.3）
+│  │  ├─ schema.js                … エクスポート/インポートJSONの構造検証（9.3）
+│  │  └─ integrity.js             … インポートJSONの業務整合性検証（9.3）
 │  ├─ storage/
 │  │  ├─ StorageAdapter.js        … インターフェース定義とJSDoc（5.3の6操作＋検索・一括保存）
 │  │  ├─ IndexedDbAdapter.js      … 初版実装（5.2、9.1のトランザクション/Quota対応）
@@ -508,6 +510,7 @@ parallel-work-time/
 │  │  │  ├─ directEntryActions.js … 直接入力（8.5、8.9.8、11章）
 │  │  │  ├─ transferActions.js    … 転記済み・状態遷移（8.7、7.1）
 │  │  │  ├─ templateActions.js    … テンプレート登録・改訂（8.1）
+│  │  │  ├─ settingsActions.js    … 設定保存・JSON入出力（9.2〜9.5、12.2）
 │  │  │  └─ retentionActions.js   … アーカイブ・完全削除（10章）
 │  │  ├─ history.js               … 簡易変更履歴の記録（11章、3操作のみ）
 │  │  ├─ persistence.js           … 保存の一元化・成否通知・Quota対応（9.1）
@@ -540,7 +543,7 @@ parallel-work-time/
 │  │     ├─ durationInput.js      … 分・秒入力（8.5.1）
 │  │     ├─ directEntryForm.js    … 直接入力の追加・編集（8.5）
 │  │     ├─ reasonConfirm.js      … 理由必須の確認（11章。削除と転記取り消しで共有）
-│  │     ├─ confirmDialog.js      … 確認・理由入力（9.3、10.4）
+│  │     ├─ confirmPanel.js       … 理由不要の確認（7.1、9.3、9.4）
 │  │     └─ table.js              … 一覧表の共通描画
 │  └─ styles/
 │     ├─ base.css                 … リセット・トークン

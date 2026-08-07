@@ -14,7 +14,7 @@
 
 import { DB_NAME, DB_VERSION, createDefaultSettings } from '../config.js';
 import { toIsoSecond } from '../domain/datetime.js';
-import { validateImportPayload } from '../domain/schema.js';
+import { validateImport } from '../domain/integrity.js';
 import {
   COLLECTION_TYPES,
   ENTITY_TYPE,
@@ -235,7 +235,7 @@ export class IndexedDbAdapter extends StorageAdapter {
 
   async importAll(data) {
     const db = this.assertOpen();
-    const result = validateImportPayload(data);
+    const result = validateImport(data);
     if (!result.ok) {
       // 検証は書き込みの前に済ませる。ここで投げれば既存データは触っていない
       // （仕様書9.3）。

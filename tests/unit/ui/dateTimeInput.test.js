@@ -57,6 +57,59 @@ describe('createDateTimeInput', () => {
     expect(component.read().iso).toBe(toIsoSecond(FIXED_NOW));
   });
 
+  describe('オフセットの保持（レビュー指摘 FB-9）', () => {
+    // 実行環境のタイムゾーンに依存しないよう、明示したオフセットとの往復だけを
+    // 見る。インポートしたJSON（仕様書9.3）は別のオフセットの区間を含みうる。
+
+    it('渡したオフセットで書き戻す', () => {
+      const { component } = mount({ value: '2026-08-01T09:00:00Z', offsetMinutes: 0 });
+
+      expect(component.read().iso).toBe('2026-08-01T09:00:00+00:00');
+    });
+
+    it('値を変えずに読むと元の瞬間のままになる', () => {
+      // 端末のオフセットで書き戻すと、ここが9時間ずれていた。
+      const original = '2026-08-01T09:00:00+00:00';
+      const { component } = mount({ value: original, offsetMinutes: 0 });
+
+      expect(Date.parse(component.read().iso)).toBe(Date.parse(original));
+    });
+
+    it('壁時計はそのまま見せる（端末時刻へ換算しない）', () => {
+      // 作業記録は「その場所の何時に作業したか」である。9時の記録を18時と
+      // 見せるほうが読み違えを招く。
+      const { input } = mount({ value: '2026-08-01T09:00:00Z' });
+
+      expect(input.value).toBe('2026-08-01T09:00:00');
+    });
+
+    it('東側のオフセットも保つ', () => {
+      const { component } = mount({ value: '2026-08-01T09:00:00+05:30', offsetMinutes: 330 });
+
+      expect(component.read().iso).toBe('2026-08-01T09:00:00+05:30');
+    });
+
+    it('西側のオフセットも保つ', () => {
+      const { component } = mount({ value: '2026-08-01T09:00:00-08:00', offsetMinutes: -480 });
+
+      expect(component.read().iso).toBe('2026-08-01T09:00:00-08:00');
+    });
+
+    it('時刻を変えた場合も渡したオフセットのままにする', () => {
+      const { component, input } = mount({ value: '2026-08-01T09:00:00Z', offsetMinutes: 0 });
+      input.value = '2026-08-01T11:30:00';
+
+      expect(component.read().iso).toBe('2026-08-01T11:30:00+00:00');
+    });
+
+    it('省略すると入力日の端末ローカル値を使う（新規入力）', () => {
+      const { component, input } = mount();
+      input.value = '2026-08-01T10:00:00';
+
+      expect(component.read().iso).toBe(toIsoSecond(new Date(2026, 7, 1, 10, 0, 0)));
+    });
+  });
+
   it('秒を省いた値は0秒として読む', () => {
     const { component, input } = mount();
     input.value = '2026-08-01T10:00';

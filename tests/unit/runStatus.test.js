@@ -14,6 +14,7 @@ import {
   isRunEditable,
   isStatusRetreat,
   nextStatuses,
+  timestampsForStatus,
 } from '../../src/domain/runStatus.js';
 import { RUN_STATUS } from '../../src/domain/schema.js';
 
@@ -127,6 +128,35 @@ describe('isStatusRetreat()（仕様書11章）', () => {
   ])('%s → %s は後退ではない', (from, to) => {
     expect(isStatusRetreat(from, to)).toBe(false);
   });
+});
+
+describe('timestampsForStatus()（仕様書6.5、7.1、10.1）', () => {
+  const transferredAt = '2026-08-07T10:00:00+09:00';
+  const now = '2026-08-07T12:00:00+09:00';
+
+  it('転記済みへ進むと転記完了日時を記録し、アーカイブ日時は空にする', () => {
+    expect(timestampsForStatus({}, RUN_STATUS.TRANSFERRED, now)).toEqual({
+      transferredAt: now,
+      archivedAt: null,
+    });
+  });
+
+  it('アーカイブへ進むと転記完了日時を保ち、アーカイブ日時を記録する', () => {
+    expect(timestampsForStatus({ transferredAt }, RUN_STATUS.ARCHIVED, now)).toEqual({
+      transferredAt,
+      archivedAt: now,
+    });
+  });
+
+  it.each([RUN_STATUS.WORKING, RUN_STATUS.AGGREGATED])(
+    '%s へ戻ると転記・アーカイブ日時を消す',
+    (status) => {
+      expect(timestampsForStatus({ transferredAt }, status, now)).toEqual({
+        transferredAt: null,
+        archivedAt: null,
+      });
+    },
+  );
 });
 
 describe('RUN_STATUS_LABEL', () => {

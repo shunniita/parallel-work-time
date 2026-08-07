@@ -422,12 +422,17 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
     /** エクスポート往復で使う、全ストアに1件ずつ入ったデータ。 */
     async function seedAll() {
       const group = projectGroup();
-      await adapter.saveEntity(ENTITY_TYPE.TASK_TEMPLATES, taskTemplate());
+      const template = taskTemplate();
+      const run = workRun({ projectGroupId: group.projectGroupId, withTaskDetail: true });
+      run.templateId = template.templateId;
+      run.templateVersion = template.version;
+      run.tasks = run.tasks.map((task, index) => ({
+        ...task,
+        taskDefinitionId: template.tasks[index % template.tasks.length].taskDefinitionId,
+      }));
+      await adapter.saveEntity(ENTITY_TYPE.TASK_TEMPLATES, template);
       await adapter.saveEntity(ENTITY_TYPE.PROJECT_GROUPS, group);
-      await adapter.saveEntity(
-        ENTITY_TYPE.WORK_RUNS,
-        workRun({ projectGroupId: group.projectGroupId, withTaskDetail: true }),
-      );
+      await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, run);
       await adapter.saveEntity(ENTITY_TYPE.CHANGE_HISTORY, historyEntry());
     }
 
@@ -513,6 +518,21 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
 
       expect(error.kind).toBe(STORAGE_ERROR_KIND.VALIDATION);
       expect(error.details.join('\n')).toContain('runQuantity');
+      expect(await adapter.loadAll()).toEqual(before);
+    });
+
+    it('案件IDが重複していると実装共通のvalidationで拒否し既存データを変えない', async () => {
+      await seedAll();
+      const before = await adapter.loadAll();
+      const exported = await adapter.exportAll({ exportedAt: '2026-07-30T12:34:56+09:00' });
+      exported.projectGroups.push({
+        ...exported.projectGroups[0],
+        projectGroupId: 'another-group',
+      });
+
+      await expect(adapter.importAll(exported)).rejects.toMatchObject({
+        kind: STORAGE_ERROR_KIND.VALIDATION,
+      });
       expect(await adapter.loadAll()).toEqual(before);
     });
 
