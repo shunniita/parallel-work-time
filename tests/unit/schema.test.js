@@ -4,7 +4,12 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { SCHEMA_VERSION, createDefaultSettings } from '../../src/config.js';
+import {
+  MAX_LONG_RUNNING_THRESHOLD_HOURS,
+  MAX_RETENTION_DAYS,
+  SCHEMA_VERSION,
+  createDefaultSettings,
+} from '../../src/config.js';
 import { validateImportPayload } from '../../src/domain/schema.js';
 import {
   historyEntry,
@@ -119,6 +124,39 @@ describe('validateImportPayload()', () => {
       );
 
       expect(result.errors.join('\n')).toContain('settings.retentionDays');
+    });
+
+    it('retentionDays が上限を超えると失敗する（レビュー指摘 S10-5）', () => {
+      // 取り込みも保存の入口と同じ範囲を課す。ここを通ると、画面が開けない
+      // 設定を外部ファイルから流し込めてしまう。
+      const result = validateImportPayload(
+        validPayload({ settings: { ...createDefaultSettings(), retentionDays: 1e20 } }),
+      );
+
+      expect(result.errors.join('\n')).toContain('settings.retentionDays');
+    });
+
+    it('longRunningThresholdHours が上限を超えると失敗する', () => {
+      const result = validateImportPayload(
+        validPayload({
+          settings: {
+            ...createDefaultSettings(),
+            longRunningThresholdHours: MAX_LONG_RUNNING_THRESHOLD_HOURS + 1,
+          },
+        }),
+      );
+
+      expect(result.errors.join('\n')).toContain('settings.longRunningThresholdHours');
+    });
+
+    it('上限ちょうどは通る', () => {
+      expect(
+        validateImportPayload(
+          validPayload({
+            settings: { ...createDefaultSettings(), retentionDays: MAX_RETENTION_DAYS },
+          }),
+        ).ok,
+      ).toBe(true);
     });
 
     it('lastExportedAt は null を許す', () => {

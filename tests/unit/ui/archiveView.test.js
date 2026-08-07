@@ -27,6 +27,7 @@ beforeEach(resetIds);
  */
 function mount(options = {}) {
   const group = options.group ?? projectGroup({ projectId: 'PJ-0001' });
+  const groups = options.groups ?? [group];
   const runs = options.runs ?? [];
   const container = document.createElement('div');
   document.body.replaceChildren(container);
@@ -35,7 +36,7 @@ function mount(options = {}) {
     dataset: {
       settings: { ...createDefaultSettings(), retentionDays: options.retentionDays ?? 30 },
       taskTemplates: [],
-      projectGroups: [group],
+      projectGroups: groups,
       workRuns: runs,
       changeHistory: [],
     },
@@ -76,15 +77,19 @@ function archived(archivedAt, overrides = {}) {
 }
 
 describe('createArchiveView', () => {
-  it('アーカイブが無ければ案内を出す', () => {
-    const view = mount();
+  it('案件が1つも無ければ案内を出す', () => {
+    const view = mount({ groups: [] });
 
     expect(view.query('archive-empty')).not.toBeNull();
     expect(view.query('archive-list')).toBeNull();
   });
 
-  it('通常の実施回は出さない', () => {
-    const view = mount({ runs: [workRun({ status: RUN_STATUS.TRANSFERRED })] });
+  it('通常の実施回だけを持つ案件は出さない', () => {
+    const group = projectGroup({ projectId: 'PJ-0001' });
+    const view = mount({
+      group,
+      runs: [workRun({ status: RUN_STATUS.TRANSFERRED, projectGroupId: group.projectGroupId })],
+    });
 
     expect(view.query('archive-empty')).not.toBeNull();
   });
@@ -251,9 +256,8 @@ describe('createArchiveView', () => {
       expect(view.actions.deleteRun).not.toHaveBeenCalled();
     });
 
-    it('保持期間内でも削除できる', () => {
-      // 仕様書10.3 が定めるのは「候補として表示する」ことであり、削除の条件では
-      // ない。
+    it('保持期間内は押せず、理由を添える（レビュー指摘 S10-1）', () => {
+      // 仕様書7.1 の遷移表は アーカイブ → 削除候補 → 完全削除 である。
       const group = projectGroup({ projectId: 'PJ-0001' });
       const view = mount({
         group,
@@ -262,6 +266,23 @@ describe('createArchiveView', () => {
         ],
       });
 
+      const button = view.query('delete-run');
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute('title')).toContain('あと20日');
+    });
+
+    it('保持期限ちょうどは押せて、削除候補と出る（レビュー指摘 S10-4）', () => {
+      // 表示と可否を別の述語から導くと、この1点だけ食い違う。
+      const group = projectGroup({ projectId: 'PJ-0001' });
+      const view = mount({
+        group,
+        // 30日前ちょうど。FIXED_NOW は 2026-08-01T10:00:00+09:00。
+        runs: [
+          archived('2026-07-02T10:00:00+09:00', { projectGroupId: group.projectGroupId }),
+        ],
+      });
+
+      expect(view.query('archive-remaining').textContent).toBe('削除候補');
       expect(view.query('delete-run').disabled).toBe(false);
     });
   });
@@ -295,6 +316,49 @@ describe('createArchiveView', () => {
       const button = view.query('delete-group');
       expect(button.disabled).toBe(true);
       expect(button.getAttribute('title')).toContain('1 件');
+    });
+
+    it('保持期間内の実施回が残っていれば押せない（レビュー指摘 S10-1）', () => {
+      const group = projectGroup({ projectId: 'PJ-0001' });
+      const view = mount({
+        group,
+        runs: [
+          archived('2026-07-22T10:00:00+09:00', { projectGroupId: group.projectGroupId }),
+        ],
+      });
+
+      const button = view.query('delete-group');
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute('title')).toContain('保持期間が残っている実施回が 1 件');
+    });
+
+    describe('実施回が0件の案件（レビュー指摘 S10-2）', () => {
+      it('一覧へ出て削除できる', () => {
+        // ここが案件削除を呼べる唯一の画面なので、出さないと通常操作では
+        // 二度と消せなくなる。
+        const view = mount({ group: projectGroup({ projectId: 'PJ-EMPTY' }) });
+
+        expect(view.query('archive-empty')).toBeNull();
+        expect(view.query('archive-group-title').textContent).toBe('PJ-EMPTY');
+        expect(view.query('delete-group').disabled).toBe(false);
+      });
+
+      it('表がわりに案内を出す', () => {
+        const view = mount();
+
+        expect(view.query('archive-list')).toBeNull();
+        expect(view.query('archive-group-empty').textContent).toContain('実施回がありません');
+      });
+
+      it('確認の文面に実施回の件数を書かない', async () => {
+        const view = mount({ group: projectGroup({ projectId: 'PJ-EMPTY' }) });
+
+        view.query('delete-group').click();
+
+        expect(view.query('archive-delete-confirm-panel').textContent).toContain(
+          '案件 PJ-EMPTY を完全に削除します',
+        );
+      });
     });
 
     it('案件削除も理由と退避の2段を通る', async () => {

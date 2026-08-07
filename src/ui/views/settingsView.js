@@ -1,7 +1,11 @@
 /** 設定・バックアップ画面（仕様書9.2〜9.5、12.2）。 */
 
 import { toErrorMessages } from '../../app/errors.js';
-import { createDefaultSettings } from '../../config.js';
+import {
+  MAX_LONG_RUNNING_THRESHOLD_HOURS,
+  MAX_RETENTION_DAYS,
+  createDefaultSettings,
+} from '../../config.js';
 import { readImportFile } from '../../io/importJson.js';
 import { runDestructiveAction } from '../../io/safetyExport.js';
 import { el, field, replaceChildren } from '../dom.js';
@@ -185,6 +189,7 @@ export function createSettingsView({
       class: 'input input--num',
       type: 'number',
       min: 1,
+      max: MAX_RETENTION_DAYS,
       step: 1,
       value: settings.retentionDays,
       dataset: { testid: 'retention-days' },
@@ -193,6 +198,7 @@ export function createSettingsView({
       class: 'input input--num',
       type: 'number',
       min: 1,
+      max: MAX_LONG_RUNNING_THRESHOLD_HOURS,
       step: 1,
       value: settings.longRunningThresholdHours,
       dataset: { testid: 'long-running-threshold' },

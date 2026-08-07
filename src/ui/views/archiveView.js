@@ -4,11 +4,15 @@
  * アーカイブ済みの実施回を一覧し、保持期間を過ぎたものを削除候補として示す。
  * 完全削除はここからのみ行う。
  *
- * ## 削除候補は「消してよい候補」でしかない
+ * ## 削除できるのは削除候補だけ
  *
- * 自動削除はしない（仕様書10.6）。候補として色を変え、残り日数を出すだけである。
- * 消すかどうかは利用者が決める。保持期間内のものも削除できる。仕様書10.3 が
- * 定めるのは「候補として表示する」ことであって、削除できる条件ではない。
+ * 仕様書7.1 の遷移表は `アーカイブ → 削除候補 → 完全削除` であり、アーカイブ済み
+ * から直接消す辺は無い。保持期間内の実施回は削除ボタンを押せない状態で出し、
+ * 残り日数を添える。判定は `retention.js` の `canDeleteRun()` を画面とアクションで
+ * 共有する。押せるかどうかと保存が通るかどうかが別の条件になると、押せたのに
+ * 失敗する（または逆）ことになる。
+ *
+ * 自動削除はしない（仕様書10.6）。候補になっても消すかどうかは利用者が決める。
  *
  * ## 削除の前に退避を挟む
  *
@@ -19,15 +23,14 @@
  *
  * ## 案件グループの削除
  *
- * 配下の実施回がすべてアーカイブ済みの案件だけを消せる。1つでも運用中の記録が
- * 残っていれば早い。判断はアクション層が行い、ここは理由を集めて渡すだけである。
+ * 配下の実施回がすべて削除候補の案件だけを消せる。実施回が0件の案件も対象で、
+ * これが登録しただけの案件を消す唯一の経路である。一覧の組み立てと可否の判断は
+ * `summarizeArchive()` が行い、ここは理由を集めて渡すだけである。
  */
 
 import { toErrorMessages } from '../../app/errors.js';
 import { formatIsoForHuman, toIsoSecond } from '../../domain/datetime.js';
-import { daysUntilDeletable } from '../../domain/retention.js';
-import { numberRuns } from '../../domain/runOrder.js';
-import { RUN_STATUS } from '../../domain/schema.js';
+import { canDeleteRun, daysUntilDeletable } from '../../domain/retention.js';
 import { runDestructiveAction } from '../../io/safetyExport.js';
 import { createReasonConfirm } from '../components/reasonConfirm.js';
 import { el, replaceChildren } from '../dom.js';
@@ -240,13 +243,15 @@ export function createArchiveView({
   function renderRunRow(item, options) {
     const { run, number } = item;
     const remaining = daysUntilDeletable(run, options);
-    const deletable = remaining === 0;
+    // 表示も可否も同じ述語から導く。別々に持つと、保持期限ちょうどの1点で
+    // 「削除候補と出ているのに押せない」ような食い違いが生じる。
+    const allowed = canDeleteRun(run, options);
     const group = groupOf(run.projectGroupId);
 
     return el(
       'tr',
       {
-        class: deletable ? 'table__row--warn' : '',
+        class: allowed.ok ? 'table__row--warn' : '',
         dataset: { testid: 'archive-row', runId: run.runId },
       },
       [
@@ -258,8 +263,8 @@ export function createArchiveView({
         }),
         el('td', {
           dataset: { testid: 'archive-remaining' },
-          class: deletable ? 'cell--warn' : '',
-          text: deletable ? '削除候補' : `あと${remaining}日`,
+          class: allowed.ok ? 'cell--warn' : '',
+          text: allowed.ok ? '削除候補' : `あと${remaining}日`,
         }),
         el('td', {}, [
           el('button', {
@@ -267,7 +272,8 @@ export function createArchiveView({
             class: 'button button--compact button--danger',
             text: '完全削除',
             dataset: { testid: 'delete-run' },
-            disabled: local.busy,
+            disabled: local.busy || !allowed.ok,
+            title: allowed.ok ? undefined : allowed.reason,
             on: {
               click: () => {
                 local.deleting = {
@@ -293,56 +299,39 @@ export function createArchiveView({
    * 案件ごとにまとめた一覧。
    *
    * 実施回は案件をまたいで並ぶため、案件で束ねてから出す。案件の削除ボタンは
-   * 束の見出しへ置く。
+   * 束の見出しへ置く。束ね方と削除の可否は `summarizeArchive()` が決めており、
+   * ここは描くだけである。
    *
-   * @param {object[]} archived
+   * @param {{group: object, runs: {run: object, number: number}[],
+   *          deletion: {ok: boolean, reason: string|null}}[]} groups
    * @param {{retentionDays: number, now: string}} options
    */
-  function renderGroups(archived, options) {
-    const { dataset } = store.getState();
-    const byGroup = new Map();
-    for (const run of archived) {
-      const list = byGroup.get(run.projectGroupId) ?? [];
-      list.push(run);
-      byGroup.set(run.projectGroupId, list);
-    }
-
-    return [...byGroup.entries()].map(([projectGroupId, runs]) => {
-      const group = groupOf(projectGroupId);
-      // 番号は案件の全実施回を通して振る（レビュー指摘 D-14）。アーカイブ済み
-      // だけで数えると、通常一覧と番号が食い違う。
-      const numbered = numberRuns(
-        dataset.workRuns.filter((run) => run.projectGroupId === projectGroupId),
-      ).filter((item) => runs.some((run) => run.runId === item.run.runId));
-      const activeCount = dataset.workRuns.filter(
-        (run) => run.projectGroupId === projectGroupId && run.status !== RUN_STATUS.ARCHIVED,
-      ).length;
-
-      return el('section', { class: 'card', dataset: { testid: 'archive-group' } }, [
+  function renderGroups(groups, options) {
+    return groups.map(({ group, runs, deletion }) =>
+      el('section', { class: 'card', dataset: { testid: 'archive-group' } }, [
         el('div', { class: 'view__head' }, [
           el('h3', {
             class: 'card__title',
             dataset: { testid: 'archive-group-title' },
-            text: group?.projectId ?? '（案件が見つかりません）',
+            text: group.projectId,
           }),
           el('button', {
             type: 'button',
             class: 'button button--danger',
             text: '案件ごと削除',
             dataset: { testid: 'delete-group' },
-            disabled: local.busy || activeCount > 0,
-            title:
-              activeCount > 0
-                ? `アーカイブ済みでない実施回が ${activeCount} 件あります（仕様書10.4）。`
-                : undefined,
+            disabled: local.busy || !deletion.ok,
+            title: deletion.ok ? undefined : deletion.reason,
             on: {
               click: () => {
                 local.deleting = {
                   kind: TARGET.GROUP,
-                  id: projectGroupId,
+                  id: group.projectGroupId,
                   description:
-                    `案件 ${group?.projectId ?? ''} と配下の実施回 ${runs.length}件を` +
-                    '完全に削除します。',
+                    runs.length === 0
+                      ? `案件 ${group.projectId} を完全に削除します。`
+                      : `案件 ${group.projectId} と配下の実施回 ${runs.length}件を` +
+                        '完全に削除します。',
                 };
                 local.backupChoice = null;
                 local.errors = [];
@@ -352,31 +341,35 @@ export function createArchiveView({
             },
           }),
         ]),
-        el('table', { class: 'table', dataset: { testid: 'archive-list' } }, [
-          el('thead', {}, [
-            el('tr', {}, [
-              el('th', { scope: 'col', text: '案件' }),
-              el('th', { scope: 'col', text: '実施回' }),
-              el('th', { scope: 'col', text: 'アーカイブ日時' }),
-              el('th', { scope: 'col', text: '保持期間' }),
-              el('th', { scope: 'col' }),
+        runs.length === 0
+          ? el('p', {
+              class: 'placeholder',
+              dataset: { testid: 'archive-group-empty' },
+              text: 'この案件には実施回がありません。案件ごと削除できます。',
+            })
+          : el('table', { class: 'table', dataset: { testid: 'archive-list' } }, [
+              el('thead', {}, [
+                el('tr', {}, [
+                  el('th', { scope: 'col', text: '案件' }),
+                  el('th', { scope: 'col', text: '実施回' }),
+                  el('th', { scope: 'col', text: 'アーカイブ日時' }),
+                  el('th', { scope: 'col', text: '保持期間' }),
+                  el('th', { scope: 'col' }),
+                ]),
+              ]),
+              el('tbody', {}, runs.map((item) => renderRunRow(item, options))),
             ]),
-          ]),
-          el('tbody', {}, numbered.map((item) => renderRunRow(item, options))),
-        ]),
-      ]);
-    });
+      ]),
+    );
   }
 
   function render() {
     panel = null;
     const { dataset } = store.getState();
-    const options = {
-      retentionDays: dataset.settings?.retentionDays ?? 30,
-      // 削除候補は保存しない派生値なので、描くたびに現在日時から求める（10.3）。
-      now: toIsoSecond(now()),
-    };
-    const summary = actions.summarizeArchive(dataset, options);
+    // 削除候補は保存しない派生値なので、描くたびに現在日時から求める（10.3）。
+    const nowIso = toIsoSecond(now());
+    const summary = actions.summarizeArchive(dataset, { now: nowIso });
+    const options = { retentionDays: summary.retentionDays, now: nowIso };
 
     replaceChildren(container, [
       el('div', { class: 'view__head' }, [
@@ -409,7 +402,7 @@ export function createArchiveView({
       renderReasonConfirm(),
       renderBackupChoice(),
 
-      summary.archived.length === 0
+      summary.groups.length === 0
         ? el('p', {
             class: 'placeholder',
             dataset: { testid: 'archive-empty' },
@@ -417,7 +410,7 @@ export function createArchiveView({
               'アーカイブ済みの実施回はありません。転記済みの実施回を' +
               '集計・転記画面から移せます。',
           })
-        : renderGroups(summary.archived, options),
+        : renderGroups(summary.groups, options),
 
       el('p', {
         class: 'note',

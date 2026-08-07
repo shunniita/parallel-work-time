@@ -106,6 +106,22 @@ describe('retentionActions', () => {
     await archiveRun(deps, target.runId);
   }
 
+  /**
+   * 削除候補まで進める。
+   *
+   * 完全削除の事前条件は削除候補であることなので（仕様書7.1）、削除の試験は
+   * ここから始める。時間を進める代わりにアーカイブ日時を過去へ書き換える。
+   * 保持期間30日、現在 2026-08-01 に対して 2026-06-01 は経過済みである。
+   */
+  async function toDeletable(target = run) {
+    await toArchived(target);
+    const saved = await reloadRun(target.runId);
+    await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, {
+      ...saved,
+      archivedAt: '2026-06-01T10:00:00+09:00',
+    });
+  }
+
   describe('アーカイブへ移す（仕様書10.1）', () => {
     it('転記済みから移せて、アーカイブ日時を記録する', async () => {
       await toTransferred();
@@ -163,7 +179,7 @@ describe('retentionActions', () => {
 
   describe('実施回の完全削除（仕様書10.4、11章）', () => {
     it('レコードを消し、履歴を1件残す', async () => {
-      await toArchived();
+      await toDeletable();
 
       const { historyEntry } = await deleteRun(deps, run.runId, {
         reason: '誤って作成した実施回のため',
@@ -183,7 +199,7 @@ describe('retentionActions', () => {
     });
 
     it('要約に案件IDと消えた規模を残す', async () => {
-      await toArchived();
+      await toDeletable();
 
       const { historyEntry } = await deleteRun(deps, run.runId, { reason: '誤り' });
 
@@ -202,7 +218,7 @@ describe('retentionActions', () => {
     });
 
     it('理由が無ければレコードも履歴も変えない（仕様書11章）', async () => {
-      await toArchived();
+      await toDeletable();
 
       await expect(
         deleteRun(deps, run.runId, { reason: '  ' }),
@@ -212,16 +228,46 @@ describe('retentionActions', () => {
       expect((await adapter.loadAll()).changeHistory).toEqual([]);
     });
 
-    it('保持期間内でも削除できる（候補であることは条件ではない）', async () => {
-      // 仕様書10.3 が定めるのは「候補として表示する」ことであり、削除の条件では
-      // ない。誤って作った実施回をすぐ消せる必要がある。
-      await toArchived();
+    describe('削除候補であることを要求する（仕様書7.1、レビュー指摘 S10-1）', () => {
+      it('保持期間内は削除できない', async () => {
+        // 仕様書7.1 の遷移表は アーカイブ → 削除候補 → 完全削除 であり、
+        // アーカイブ済みから直接消す辺は無い。
+        await toArchived();
 
-      await expect(deleteRun(deps, run.runId, { reason: '誤り' })).resolves.toBeDefined();
+        const error = await deleteRun(deps, run.runId, { reason: '誤り' }).catch((caught) => caught);
+
+        expect(error).toBeInstanceOf(ValidationError);
+        expect(error.message).toContain('保持期間');
+        expect(await reloadRun()).not.toBeNull();
+      });
+
+      it('拒否したときは履歴も残さない', async () => {
+        await toArchived();
+
+        await deleteRun(deps, run.runId, { reason: '誤り' }).catch(() => {});
+
+        expect((await adapter.loadAll()).changeHistory).toEqual([]);
+      });
+
+      it('保持期間の設定を短くすれば削除できる（仕様書10.2）', async () => {
+        // 誤って作った実施回をすぐ消したい場合の逃げ道は、仕様の枠内にある。
+        await toArchived();
+        await adapter.saveEntity(ENTITY_TYPE.SETTINGS, {
+          ...createDefaultSettings(),
+          retentionDays: 1,
+        });
+        const saved = await reloadRun();
+        await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, {
+          ...saved,
+          archivedAt: '2026-07-20T10:00:00+09:00',
+        });
+
+        await expect(deleteRun(deps, run.runId, { reason: '誤り' })).resolves.toBeDefined();
+      });
     });
 
     it('案件グループは残る', async () => {
-      await toArchived();
+      await toDeletable();
 
       await deleteRun(deps, run.runId, { reason: '誤り' });
 
@@ -231,7 +277,7 @@ describe('retentionActions', () => {
 
   describe('案件グループの完全削除（仕様書10.4、11章）', () => {
     it('配下の実施回ごと消し、履歴を1件だけ残す', async () => {
-      await toArchived();
+      await toDeletable();
 
       const { historyEntry, removedRuns } = await deleteProjectGroup(
         deps,
@@ -254,7 +300,7 @@ describe('retentionActions', () => {
     });
 
     it('要約に案件の内容と規模を残す', async () => {
-      await toArchived();
+      await toDeletable();
 
       const { historyEntry } = await deleteProjectGroup(deps, group.projectGroupId, {
         reason: '中止',
@@ -294,8 +340,21 @@ describe('retentionActions', () => {
       expect(projectGroups.map((item) => item.projectId)).toEqual(['PJ-0001']);
     });
 
-    it('理由が無ければ何も変えない', async () => {
+    it('保持期間内の実施回があれば拒否する（レビュー指摘 S10-1）', async () => {
+      // 1件ずつ消せない記録を、案件ごとならまとめて消せる抜け道を作らない。
       await toArchived();
+
+      const error = await deleteProjectGroup(deps, group.projectGroupId, {
+        reason: '中止',
+      }).catch((caught) => caught);
+
+      expect(error).toBeInstanceOf(ValidationError);
+      expect(error.message).toContain('保持期間が残っている実施回が 1 件');
+      expect((await adapter.loadAll()).projectGroups).toHaveLength(1);
+    });
+
+    it('理由が無ければ何も変えない', async () => {
+      await toDeletable();
 
       await expect(
         deleteProjectGroup(deps, group.projectGroupId, { reason: '' }),
@@ -308,7 +367,7 @@ describe('retentionActions', () => {
     });
 
     it('他の案件には影響しない', async () => {
-      await toArchived();
+      await toDeletable();
       const other = (
         await createProjectGroup(deps, {
           projectId: 'PJ-0002',
@@ -332,7 +391,7 @@ describe('retentionActions', () => {
     });
 
     it('削除後のデータは取り込み検証を通る（親を失った実施回が残らない）', async () => {
-      await toArchived();
+      await toDeletable();
 
       await deleteProjectGroup(deps, group.projectGroupId, { reason: '中止' });
 
@@ -392,12 +451,24 @@ describe('retentionActions', () => {
     it('保持期間の設定を短くすると候補が増える（仕様書10.2）', async () => {
       await toArchived();
       const dataset = await adapter.loadAll();
-      dataset.settings = { ...dataset.settings, retentionDays: 0 };
+      dataset.settings = { ...dataset.settings, retentionDays: 1 };
 
-      const result = summarizeArchive(dataset, { now: '2026-08-02T01:00:00Z' });
+      const result = summarizeArchive(dataset, { now: '2026-08-03T01:00:00Z' });
 
       expect(result.deletable).toHaveLength(1);
-      expect(result.retentionDays).toBe(0);
+      expect(result.retentionDays).toBe(1);
+    });
+
+    it('範囲外の保持期間が保存されていても既定値で動く（レビュー指摘 S10-5）', async () => {
+      // 保存の入口は弾くが、読み取りは画面が開けなくなるより既定値で動く方がよい。
+      await toArchived();
+      const dataset = await adapter.loadAll();
+      dataset.settings = { ...dataset.settings, retentionDays: 1e20 };
+
+      const result = summarizeArchive(dataset, { now: NOW_ISO });
+
+      expect(result.retentionDays).toBe(30);
+      expect(result.archived).toHaveLength(1);
     });
 
     it('アーカイブしていなければ何も出ない', async () => {
@@ -405,6 +476,89 @@ describe('retentionActions', () => {
       const dataset = await adapter.loadAll();
 
       expect(summarizeArchive(dataset, { now: NOW_ISO }).archived).toEqual([]);
+    });
+
+    describe('案件の束ね（レビュー指摘 S10-2）', () => {
+      /** 実施回を持たない案件を作る。 */
+      async function createEmptyGroup(projectId = 'PJ-0002') {
+        return (
+          await createProjectGroup(deps, {
+            projectId,
+            targetType: '対象種別A',
+            variant: '標準',
+            totalQuantity: 10,
+          })
+        ).projectGroup;
+      }
+
+      it('アーカイブ済みを持つ案件を出す', async () => {
+        await toArchived();
+        const dataset = await adapter.loadAll();
+
+        const result = summarizeArchive(dataset, { now: NOW_ISO });
+
+        expect(result.groups).toHaveLength(1);
+        expect(result.groups[0].group.projectId).toBe('PJ-0001');
+        expect(result.groups[0].runs).toHaveLength(1);
+      });
+
+      it('実施回が0件の案件も出す', async () => {
+        // ここが案件削除を呼べる唯一の画面なので、出さないと通常操作では
+        // 二度と消せなくなる。
+        await createEmptyGroup();
+        const dataset = await adapter.loadAll();
+
+        const result = summarizeArchive(dataset, { now: NOW_ISO });
+
+        expect(result.groups.map((entry) => entry.group.projectId)).toEqual(['PJ-0002']);
+        expect(result.groups[0].runs).toEqual([]);
+        expect(result.groups[0].deletion.ok).toBe(true);
+      });
+
+      it('最後の実施回を消した案件が残り続けない', async () => {
+        await toDeletable();
+        await deleteRun(deps, run.runId, { reason: '誤り' });
+        const dataset = await adapter.loadAll();
+
+        const result = summarizeArchive(dataset, { now: NOW_ISO });
+
+        expect(result.groups.map((entry) => entry.group.projectId)).toEqual(['PJ-0001']);
+        expect(result.groups[0].deletion.ok).toBe(true);
+      });
+
+      it('運用中の実施回だけを持つ案件は出さない', async () => {
+        await toTransferred();
+        const dataset = await adapter.loadAll();
+
+        expect(summarizeArchive(dataset, { now: NOW_ISO }).groups).toEqual([]);
+      });
+
+      it('削除できない案件には理由を添える', async () => {
+        await toArchived();
+        const dataset = await adapter.loadAll();
+
+        const result = summarizeArchive(dataset, { now: NOW_ISO });
+
+        expect(result.groups[0].deletion.ok).toBe(false);
+        expect(result.groups[0].deletion.reason).toContain('保持期間');
+      });
+
+      it('番号は案件の全実施回を通して振る（レビュー指摘 D-14）', async () => {
+        const second = (
+          await createWorkRun(deps, group.projectGroupId, {
+            workDate: '2026-08-02',
+            runQuantity: 10,
+          })
+        ).workRun;
+        await toArchived(second);
+        const dataset = await adapter.loadAll();
+
+        const result = summarizeArchive(dataset, { now: NOW_ISO });
+
+        // 第1回は作業中のまま。アーカイブ済みだけで数えると「第1回」になる。
+        expect(result.groups[0].runs).toHaveLength(1);
+        expect(result.groups[0].runs[0].number).toBe(2);
+      });
     });
   });
 });

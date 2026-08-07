@@ -8,6 +8,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  canDeleteProjectGroup,
+  canDeleteRun,
   classifyArchived,
   daysUntilDeletable,
   deletableFrom,
@@ -57,13 +59,13 @@ describe('isDeletable()（仕様書10.3、A-10）', () => {
       expect(isDeletable(archivedRun(), { ...OPTIONS, now: daysAfter(29) })).toBe(false);
     });
 
-    it('ちょうど30日後はまだ候補にならない', () => {
-      // 「30日間は保つ」という意味であり、30日目のうちはまだ保つ。
-      expect(isDeletable(archivedRun(), { ...OPTIONS, now: daysAfter(30) })).toBe(false);
+    it('30日に1秒足りなければ候補にならない', () => {
+      expect(isDeletable(archivedRun(), { ...OPTIONS, now: daysAfter(30, -1) })).toBe(false);
     });
 
-    it('30日を1秒でも過ぎれば候補になる', () => {
-      expect(isDeletable(archivedRun(), { ...OPTIONS, now: daysAfter(30, 1) })).toBe(true);
+    it('ちょうど30日後は候補になる', () => {
+      // 「30日間保つ」であり、30日が満了した瞬間に保つ義務は終わる。
+      expect(isDeletable(archivedRun(), { ...OPTIONS, now: daysAfter(30) })).toBe(true);
     });
 
     it('31日後は候補になる', () => {
@@ -101,8 +103,26 @@ describe('isDeletable()（仕様書10.3、A-10）', () => {
     const run = archivedRun({ archivedAt: '2026-08-01T01:00:00+00:00' });
 
     // +00:00 の 01:00 は +09:00 の 10:00 と同じ瞬間。
-    expect(isDeletable(run, { ...OPTIONS, now: daysAfter(30) })).toBe(false);
-    expect(isDeletable(run, { ...OPTIONS, now: daysAfter(30, 1) })).toBe(true);
+    expect(isDeletable(run, { ...OPTIONS, now: daysAfter(30, -1) })).toBe(false);
+    expect(isDeletable(run, { ...OPTIONS, now: daysAfter(30) })).toBe(true);
+  });
+
+  describe('残り日数と判定が食い違わない（レビュー指摘 S10-4）', () => {
+    // 別々の比較を持つと、境界のちょうど1点で「残り0日と出ているのに候補では
+    // ない」という説明できない状態ができる。
+    it.each([
+      ['期限の1秒前', daysAfter(30, -1)],
+      ['期限ちょうど', daysAfter(30)],
+      ['期限の1秒後', daysAfter(30, 1)],
+      ['アーカイブ直後', ARCHIVED_AT],
+      ['大幅に経過', daysAfter(999)],
+    ])('%s：残り0日であることと候補であることが一致する', (_label, now) => {
+      const options = { ...OPTIONS, now };
+
+      expect(daysUntilDeletable(archivedRun(), options) === 0).toBe(
+        isDeletable(archivedRun(), options),
+      );
+    });
   });
 });
 
@@ -124,6 +144,10 @@ describe('daysUntilDeletable()', () => {
 
   it('既に候補なら0を返す', () => {
     expect(daysUntilDeletable(archivedRun(), { ...OPTIONS, now: daysAfter(31) })).toBe(0);
+  });
+
+  it('期限ちょうども0を返す', () => {
+    expect(daysUntilDeletable(archivedRun(), { ...OPTIONS, now: daysAfter(30) })).toBe(0);
   });
 
   it('アーカイブ済みでなければ null を返す', () => {
@@ -168,5 +192,91 @@ describe('classifyArchived()', () => {
     const result = classifyArchived(runs, { ...OPTIONS, now: daysAfter(10) });
 
     expect(result.deletable.length + result.keeping.length).toBe(result.archived.length);
+  });
+});
+
+describe('canDeleteRun()（仕様書7.1、10.3、10.4）', () => {
+  it('削除候補なら削除できる', () => {
+    const result = canDeleteRun(archivedRun(), { ...OPTIONS, now: daysAfter(31) });
+
+    expect(result).toEqual({ ok: true, reason: null });
+  });
+
+  it('保持期間内は削除できない', () => {
+    // 仕様書7.1 の遷移表は アーカイブ → 削除候補 → 完全削除 であり、
+    // アーカイブ済みから直接消す辺は無い。
+    const result = canDeleteRun(archivedRun(), { ...OPTIONS, now: daysAfter(10) });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('保持期間');
+  });
+
+  it('拒否の理由に残り日数を添える', () => {
+    const result = canDeleteRun(archivedRun(), { ...OPTIONS, now: daysAfter(10) });
+
+    expect(result.reason).toContain('あと20日');
+  });
+
+  it('保持期限ちょうどは削除できる（レビュー指摘 S10-4）', () => {
+    expect(canDeleteRun(archivedRun(), { ...OPTIONS, now: daysAfter(30) }).ok).toBe(true);
+  });
+
+  it.each([RUN_STATUS.WORKING, RUN_STATUS.AGGREGATED, RUN_STATUS.TRANSFERRED])(
+    '%s は削除できない',
+    (status) => {
+      const result = canDeleteRun(workRun({ status }), { ...OPTIONS, now: daysAfter(999) });
+
+      expect(result.ok).toBe(false);
+      expect(result.reason).toContain('アーカイブ済み');
+    },
+  );
+
+  it('保持期間を短くすれば削除できるようになる（仕様書10.2）', () => {
+    const run = archivedRun();
+    const now = daysAfter(10);
+
+    expect(canDeleteRun(run, { retentionDays: 30, now }).ok).toBe(false);
+    expect(canDeleteRun(run, { retentionDays: 7, now }).ok).toBe(true);
+  });
+});
+
+describe('canDeleteProjectGroup()（仕様書10.4）', () => {
+  const LATE = { ...OPTIONS, now: daysAfter(31) };
+
+  it('配下がすべて削除候補なら削除できる', () => {
+    const result = canDeleteProjectGroup([archivedRun(), archivedRun()], LATE);
+
+    expect(result).toEqual({ ok: true, reason: null });
+  });
+
+  it('実施回が0件の案件は削除できる（レビュー指摘 S10-2）', () => {
+    // 消える記録が無いので、保持期間が守る対象も無い。登録しただけの案件を
+    // 消す唯一の経路である。
+    expect(canDeleteProjectGroup([], LATE)).toEqual({ ok: true, reason: null });
+  });
+
+  it('アーカイブ済みでない実施回があれば削除できない', () => {
+    const result = canDeleteProjectGroup(
+      [archivedRun(), workRun({ status: RUN_STATUS.TRANSFERRED })],
+      LATE,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('1 件');
+  });
+
+  it('保持期間内の実施回があれば削除できない', () => {
+    // 1件ずつ消せない記録を、案件ごとならまとめて消せる抜け道を作らない。
+    const result = canDeleteProjectGroup([archivedRun()], { ...OPTIONS, now: daysAfter(10) });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('保持期間が残っている実施回が 1 件');
+  });
+
+  it('アーカイブ済みでないことを保持期間より先に伝える', () => {
+    // 先に案内すべきなのは「アーカイブしてください」の方である。
+    const result = canDeleteProjectGroup([workRun({ status: RUN_STATUS.WORKING })], LATE);
+
+    expect(result.reason).toContain('アーカイブ済みでない');
   });
 });
