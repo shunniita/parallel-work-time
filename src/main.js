@@ -64,6 +64,11 @@ import {
   reopenRun,
   revertTransfer,
 } from './app/actions/transferActions.js';
+import {
+  exportData,
+  importData,
+  updateSettings,
+} from './app/actions/settingsActions.js';
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
 import { VIEW, renderShell } from './ui/shell.js';
 import { renderStatusBar } from './ui/statusBar.js';
@@ -74,6 +79,7 @@ import { createProjectView } from './ui/views/projectView.js';
 import { createRunView } from './ui/views/runView.js';
 import { createTaskDetailView } from './ui/views/taskDetailView.js';
 import { createSummaryView } from './ui/views/summaryView.js';
+import { createSettingsView } from './ui/views/settingsView.js';
 import { createPlaceholderView } from './ui/views/placeholderView.js';
 import { el, replaceChildren } from './ui/dom.js';
 
@@ -306,6 +312,17 @@ async function main() {
     },
   });
 
+  /** 設定とJSONバックアップ（仕様書9.2〜9.5）。 */
+  const settingsView = createSettingsView({
+    container: shell.detailPane,
+    store,
+    actions: {
+      updateSettings: wrap(updateSettings),
+      exportData: wrap(exportData),
+      importData: wrap(importData),
+    },
+  });
+
   /**
    * 案件画面の中身を描く。
    *
@@ -351,14 +368,7 @@ async function main() {
         note: '転記済み・削除候補の一覧は実装計画 Step 10 で作ります。',
       }),
     ],
-    [
-      VIEW.SETTINGS,
-      createPlaceholderView({
-        container: shell.detailPane,
-        title: '設定・バックアップ',
-        note: '保持期間・しきい値・JSON入出力は実装計画 Step 9 で作ります。',
-      }),
-    ],
+    [VIEW.SETTINGS, settingsView],
   ]);
 
   /** 登録の無いビュー名が来た場合の受け皿。案件詳細へは落とさない。 */

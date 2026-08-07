@@ -103,6 +103,28 @@ export function isStatusRetreat(from, to) {
 }
 
 /**
+ * 遷移後の状態日時を組み立てる（仕様書6.5、7.1、10.1）。
+ *
+ * アーカイブは「転記済みとして通常一覧から分離されている」状態なので、転記完了
+ * 日時を保持したままアーカイブ日時を足す。作業中・集計済みへ戻る場合は、転記済み
+ * ではなくなるため両方を消す。
+ *
+ * @param {{transferredAt?: string|null}} run 遷移前の実施回
+ * @param {string} nextStatus
+ * @param {string} nowIso 遷移日時
+ * @returns {{transferredAt: string|null, archivedAt: string|null}}
+ */
+export function timestampsForStatus(run, nextStatus, nowIso) {
+  if (nextStatus === RUN_STATUS.TRANSFERRED) {
+    return { transferredAt: nowIso, archivedAt: null };
+  }
+  if (nextStatus === RUN_STATUS.ARCHIVED) {
+    return { transferredAt: run?.transferredAt ?? null, archivedAt: nowIso };
+  }
+  return { transferredAt: null, archivedAt: null };
+}
+
+/**
  * 状態遷移が許されるかを判定する（仕様書7.1）。
  *
  * 記録の中身が揃っているか（未終了区間の有無、仕様書8.9.6）はここでは見ない。

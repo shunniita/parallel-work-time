@@ -16,6 +16,7 @@
  */
 
 import { toErrorMessages } from '../../app/errors.js';
+import { offsetMinutesOf } from '../../domain/datetime.js';
 import { INTERVAL_TYPE, INTERVAL_TYPE_LABEL } from '../../domain/effort.js';
 import { el, field, replaceChildren } from '../dom.js';
 import { createDateTimeInput } from './dateTimeInput.js';
@@ -58,11 +59,18 @@ export function createIntervalEntryForm({
     ),
   );
 
+  // 編集では元の区間のオフセットで書き戻す（レビュー指摘 FB-9）。端末のオフセット
+  // を使うと、インポートしたJSONのように別のオフセットで記録された区間を無変更で
+  // 保存しただけで、指す瞬間が変わってしまう。追加では `undefined` にして、入力
+  // された日の端末ローカル値へ委ねる。
+  const baseOffset = isEdit ? offsetMinutesOf(interval.startAt) : undefined;
+
   const startInput = createDateTimeInput({
     id: `${idPrefix}-start`,
     testid: 'entry-start',
     label: '開始日時',
     value: interval?.startAt,
+    offsetMinutes: baseOffset,
     now,
   });
 
@@ -73,6 +81,9 @@ export function createIntervalEntryForm({
     value: isEdit && !wasOpen ? interval.endAt : undefined,
     startEmpty: wasOpen,
     optional: wasOpen,
+    // 未終了区間へ終了時刻を補う場合（仕様書8.8.4）も開始側のオフセットを使う。
+    // 同じ作業の終わりであり、開始と別のオフセットで記録する理由が無い。
+    offsetMinutes: baseOffset,
     hint: wasOpen ? '空欄のままにすると未終了のまま保存します。' : undefined,
     now,
   });

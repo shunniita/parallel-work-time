@@ -10,7 +10,7 @@
  */
 
 import { createDefaultSettings } from '../config.js';
-import { validateImportPayload } from '../domain/schema.js';
+import { validateImport } from '../domain/integrity.js';
 import { toIsoSecond } from '../domain/datetime.js';
 import {
   COLLECTION_TYPES,
@@ -182,7 +182,7 @@ export class MemoryAdapter extends StorageAdapter {
 
   async importAll(data) {
     this.assertInitialized();
-    const result = validateImportPayload(data);
+    const result = validateImport(data);
     if (!result.ok) {
       // 検証失敗時は既存データを一切変更しない（仕様書9.3）。
       throw new StorageError(
