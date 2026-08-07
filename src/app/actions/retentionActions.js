@@ -18,7 +18,7 @@
  * 直接入力削除（Step 7）・転記済みからの後退（Step 8）と同じ形である。
  *
  * 消えるレコードそのものは復元できないので、履歴の要約に何がどれだけ消えたかを
- * 残す（`history.js` の `describeWorkRun` / `summarizeProjectGroupDeletion`）。
+ * 残す（`history.js` の `summarizeWorkRunDeletion` / `summarizeProjectGroupDeletion`）。
  *
  * ## 退避は画面が担う
  *
@@ -27,16 +27,21 @@
  * このモジュールで結ぶと、退避せずに削除する選択肢を画面から作れなくなる。
  */
 
+import { resolveRetentionDays } from '../../config.js';
 import { toIsoSecond } from '../../domain/datetime.js';
 import {
   HISTORY_ENTITY,
   HISTORY_OP,
   buildHistoryEntry,
-  describeWorkRun,
   summarizeProjectGroupDeletion,
   summarizeWorkRunDeletion,
 } from '../../domain/history.js';
-import { classifyArchived, daysUntilDeletable, isDeletable } from '../../domain/retention.js';
+import {
+  canDeleteProjectGroup,
+  canDeleteRun,
+  classifyArchived,
+} from '../../domain/retention.js';
+import { numberRuns } from '../../domain/runOrder.js';
 import { canTransition, timestampsForStatus } from '../../domain/runStatus.js';
 import { RUN_STATUS } from '../../domain/schema.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
@@ -116,12 +121,10 @@ export async function archiveRun(deps, runId) {
 /**
  * 実施回を完全に削除し、変更履歴を1件残す（仕様書10.4、11章）。
  *
- * 削除候補であることは要求しない。仕様書10.3 が定めるのは「候補として表示する」
- * ことであり、削除できる条件ではない。誤って作った実施回をすぐ消せる必要がある。
- *
- * ただしアーカイブ済みであることは要求する。通常運用から外していない記録を消す
- * 操作は、アーカイブ画面という文脈から外れる。作業中の実施回を消したい場合は、
- * 先にアーカイブまで進めてもらう。
+ * 削除候補であることを要求する。判定は `retention.js` の `canDeleteRun()` が持つ
+ * （仕様書7.1 の遷移表）。画面もボタンの活殺に同じ関数を使うが、ここでも改めて
+ * 検査する。保持期間の経過は時間で変わるため、画面を描いた時点で候補でも、
+ * 押した時点で候補とは限らない——逆もある。
  *
  * @param {object} deps
  * @param {string} runId
@@ -131,17 +134,18 @@ export async function archiveRun(deps, runId) {
 export async function deleteRun(deps, runId, input = {}) {
   const { adapter, persistence, now, newId } = resolveDeps(deps);
 
-  const { dataset, value } = await persistence.run(async ({ workRuns, projectGroups }) => {
+  const { dataset, value } = await persistence.run(async ({ workRuns, projectGroups, settings }) => {
     const current = locateRun(workRuns, runId);
-    if (current.status !== RUN_STATUS.ARCHIVED) {
-      throw new ValidationError([
-        '実施回: アーカイブ済みのものだけ削除できる（仕様書10.4）。' +
-          '先に転記済みからアーカイブへ移す。',
-      ]);
+    const nowIso = toIsoSecond(now());
+    const allowed = canDeleteRun(current, {
+      retentionDays: resolveRetentionDays(settings),
+      now: nowIso,
+    });
+    if (!allowed.ok) {
+      throw new ValidationError([allowed.reason]);
     }
     const group = locateGroup(projectGroups, current.projectGroupId);
 
-    const nowIso = toIsoSecond(now());
     const history = buildHistoryEntry(
       {
         entityType: HISTORY_ENTITY.WORK_RUN,
@@ -179,8 +183,9 @@ export async function deleteRun(deps, runId, input = {}) {
  * 見て「案件を消す」という1つの操作であり、複数の削除ではない。消えた規模は要約に
  * 件数と累計数量で残す。
  *
- * 配下の実施回がすべてアーカイブ済みであることを要求する。1つでも運用中の記録が
- * 残っていれば、案件ごと消すのは早い。
+ * 配下の実施回がすべて削除候補であることを要求する。判定は `retention.js` の
+ * `canDeleteProjectGroup()` が持つ。1件ずつ消せない記録を案件ごとならまとめて
+ * 消せる、という抜け道を作らないためである。
  *
  * @param {object} deps
  * @param {string} projectGroupId
@@ -191,18 +196,18 @@ export async function deleteRun(deps, runId, input = {}) {
 export async function deleteProjectGroup(deps, projectGroupId, input = {}) {
   const { adapter, persistence, now, newId } = resolveDeps(deps);
 
-  const { dataset, value } = await persistence.run(async ({ workRuns, projectGroups }) => {
+  const { dataset, value } = await persistence.run(async ({ workRuns, projectGroups, settings }) => {
     const group = locateGroup(projectGroups, projectGroupId);
     const runs = workRuns.filter((run) => run.projectGroupId === projectGroupId);
-    const active = runs.filter((run) => run.status !== RUN_STATUS.ARCHIVED);
-    if (active.length > 0) {
-      throw new ValidationError([
-        `案件: アーカイブ済みでない実施回が ${active.length} 件ある。` +
-          'すべてアーカイブしてから案件を削除する（仕様書10.4）。',
-      ]);
+    const nowIso = toIsoSecond(now());
+    const allowed = canDeleteProjectGroup(runs, {
+      retentionDays: resolveRetentionDays(settings),
+      now: nowIso,
+    });
+    if (!allowed.ok) {
+      throw new ValidationError([allowed.reason]);
     }
 
-    const nowIso = toIsoSecond(now());
     const history = buildHistoryEntry(
       {
         entityType: HISTORY_ENTITY.PROJECT_GROUP,
@@ -239,15 +244,46 @@ export async function deleteProjectGroup(deps, projectGroupId, input = {}) {
  *
  * 削除候補は保存しない派生値なので（仕様書10.3）、描くたびに現在日時から求める。
  *
+ * ## 実施回が0件の案件も含める
+ *
+ * アーカイブ済みの実施回から案件を逆引きすると、実施回が1件も無い案件が一覧へ
+ * 出ない。ところが案件削除を呼べる画面はここしかないため、最後の実施回を消した
+ * 案件や、登録しただけで使わなかった案件が、通常操作では二度と消せなくなる。
+ * 実施回を新たに作ってアーカイブまで進める、という不自然な迂回を強いることに
+ * なるので、消せる案件は消せる場所へ出す。
+ *
+ * 逆に、アーカイブ済みが0件で運用中の実施回だけを持つ案件は出さない。アーカイブ
+ * 画面に出す意味が無く、削除もできない。
+ *
  * @param {{workRuns: object[], projectGroups: object[], settings: object}} dataset
  * @param {{now: string}} options
  * @returns {{archived: object[], deletable: object[], keeping: object[],
- *            retentionDays: number}}
+ *            retentionDays: number,
+ *            groups: {group: object, runs: {run: object, number: number}[],
+ *                     deletion: {ok: boolean, reason: string|null}}[]}}
  */
 export function summarizeArchive(dataset, { now }) {
-  const retentionDays = dataset.settings?.retentionDays ?? 30;
-  const classified = classifyArchived(dataset.workRuns, { retentionDays, now });
-  return { ...classified, retentionDays };
-}
+  const retentionDays = resolveRetentionDays(dataset.settings);
+  const options = { retentionDays, now };
+  const classified = classifyArchived(dataset.workRuns, options);
 
-export { daysUntilDeletable, isDeletable };
+  const groups = dataset.projectGroups
+    .map((group) => {
+      const runs = dataset.workRuns.filter(
+        (run) => run.projectGroupId === group.projectGroupId,
+      );
+      const archived = runs.filter((run) => run.status === RUN_STATUS.ARCHIVED);
+      return {
+        group,
+        // 番号は案件の全実施回を通して振る。アーカイブ済みだけで数えると通常一覧と
+        // 食い違う（`runOrder.js`）。
+        runs: numberRuns(runs).filter((item) => item.run.status === RUN_STATUS.ARCHIVED),
+        archivedCount: archived.length,
+        totalCount: runs.length,
+        deletion: canDeleteProjectGroup(runs, options),
+      };
+    })
+    .filter((entry) => entry.archivedCount > 0 || entry.totalCount === 0);
+
+  return { ...classified, retentionDays, groups };
+}
