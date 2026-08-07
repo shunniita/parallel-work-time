@@ -14,6 +14,7 @@
  */
 
 import { summarizeQuantity } from '../domain/quantity.js';
+import { activeRuns } from '../domain/runOrder.js';
 import { RUN_STATUS_LABEL } from '../domain/runStatus.js';
 import { TASK_STATE, TASK_STATE_LABEL, taskState } from '../domain/taskState.js';
 import { el, replaceChildren } from './dom.js';
@@ -101,7 +102,7 @@ export function createTree({ container, store, handlers }) {
     ]);
   }
 
-  function renderRunNode(run, index, selection) {
+  function renderRunNode(run, number, selection) {
     const key = `run:${run.runId}`;
     const hasTasks = run.tasks.length > 0;
     const current = selection.runId === run.runId;
@@ -116,7 +117,7 @@ export function createTree({ container, store, handlers }) {
           'aria-current': current ? 'true' : 'false',
           on: { click: () => handlers.onSelectRun(run.runId) },
         }, [
-          el('span', { class: 'tree__text', text: `第${index + 1}回 ${run.workDate}` }),
+          el('span', { class: 'tree__text', text: `第${number}回 ${run.workDate}` }),
           el('span', {
             class: `badge badge--${run.status}`,
             text: RUN_STATUS_LABEL[run.status] ?? run.status,
@@ -136,13 +137,15 @@ export function createTree({ container, store, handlers }) {
   function renderProjectNode(group, runs, selection) {
     const key = `group:${group.projectGroupId}`;
     // アーカイブ済みはツリーへ出さないが、数量の累計には含める（仕様書8.2.5）。
-    const visibleRuns = runs.filter((run) => run.status !== 'archived');
+    // 番号は全件を通して振ってから絞る。表示中だけで数えると、第1回をアーカイブ
+    // した瞬間に第2回が繰り上がる（レビュー指摘 D-14）。
+    const visible = activeRuns(runs);
     const summary = summarizeQuantity(group, runs);
     const current = selection.projectGroupId === group.projectGroupId;
 
     return el('li', { class: 'tree__item' }, [
       el('div', { class: 'tree__row' }, [
-        renderToggle(key, visibleRuns.length > 0),
+        renderToggle(key, visible.length > 0),
         el('button', {
           type: 'button',
           class: `tree__label${current ? ' tree__label--selected' : ''}`,
@@ -158,12 +161,12 @@ export function createTree({ container, store, handlers }) {
           }),
         ]),
       ]),
-      visibleRuns.length > 0 &&
+      visible.length > 0 &&
         expanded.has(key) &&
         el(
           'ul',
           { class: 'tree__children' },
-          visibleRuns.map((run, index) => renderRunNode(run, index, selection)),
+          visible.map(({ run, number }) => renderRunNode(run, number, selection)),
         ),
     ]);
   }
@@ -174,20 +177,13 @@ export function createTree({ container, store, handlers }) {
       left.projectId.localeCompare(right.projectId, 'ja'),
     );
 
-    // 実施回は作業日、次に作成日時の順に並べる。同日複数回（仕様書8.2.3）でも
-    // 作成した順に「第n回」が付く。
+    // 案件ごとに束ねるだけにする。並べ替えと採番は `runOrder.js` が持つ
+    // （レビュー指摘 D-14）。
     const runsByProject = new Map();
     for (const run of dataset.workRuns) {
       const list = runsByProject.get(run.projectGroupId) ?? [];
       list.push(run);
       runsByProject.set(run.projectGroupId, list);
-    }
-    for (const list of runsByProject.values()) {
-      list.sort(
-        (left, right) =>
-          left.workDate.localeCompare(right.workDate) ||
-          left.createdAt.localeCompare(right.createdAt),
-      );
     }
 
     replaceChildren(container, [

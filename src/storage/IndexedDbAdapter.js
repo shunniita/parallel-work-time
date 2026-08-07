@@ -196,8 +196,12 @@ export class IndexedDbAdapter extends StorageAdapter {
     const sink = createErrorSink();
     try {
       const tx = db.transaction(stores, 'readwrite');
-      for (const { type, entity, key } of normalized) {
+      for (const { type, entity, key, remove } of normalized) {
         const store = tx.objectStore(type);
+        if (remove) {
+          sink.watch(store.delete(key));
+          continue;
+        }
         sink.watch(type === ENTITY_TYPE.SETTINGS ? store.put(entity, key) : store.put(entity));
       }
       await transactionDone(tx);

@@ -234,6 +234,14 @@ export function createSummaryView({ container, store, actions, handlers, copyTex
     }
     if (run.status === RUN_STATUS.TRANSFERRED) {
       buttons.push(
+        // アーカイブは利用者の操作によってのみ行う（仕様書10.1）。転記済みに
+        // したことによる自動アーカイブはしない。
+        statusButton(run, {
+          to: RUN_STATUS.ARCHIVED,
+          action: 'archiveRun',
+          label: 'アーカイブへ移す',
+          testid: 'archive-run',
+        }),
         el('button', {
           type: 'button',
           class: 'button button--danger',

@@ -69,6 +69,12 @@ import {
   importData,
   updateSettings,
 } from './app/actions/settingsActions.js';
+import {
+  archiveRun,
+  deleteProjectGroup,
+  deleteRun,
+  summarizeArchive,
+} from './app/actions/retentionActions.js';
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
 import { VIEW, renderShell } from './ui/shell.js';
 import { renderStatusBar } from './ui/statusBar.js';
@@ -80,6 +86,7 @@ import { createRunView } from './ui/views/runView.js';
 import { createTaskDetailView } from './ui/views/taskDetailView.js';
 import { createSummaryView } from './ui/views/summaryView.js';
 import { createSettingsView } from './ui/views/settingsView.js';
+import { createArchiveView } from './ui/views/archiveView.js';
 import { createPlaceholderView } from './ui/views/placeholderView.js';
 import { el, replaceChildren } from './ui/dom.js';
 
@@ -304,6 +311,7 @@ async function main() {
       reopenRun: wrap(reopenRun),
       markTransferred: wrap(markTransferred),
       revertTransfer: wrap(revertTransfer),
+      archiveRun: wrap(archiveRun),
       previewStatusChange,
     },
     handlers: {
@@ -313,6 +321,17 @@ async function main() {
   });
 
   /** 設定とJSONバックアップ（仕様書9.2〜9.5）。 */
+  const archiveView = createArchiveView({
+    container: shell.detailPane,
+    store,
+    actions: {
+      summarizeArchive,
+      deleteRun: wrap(deleteRun),
+      deleteProjectGroup: wrap(deleteProjectGroup),
+      exportData: wrap(exportData),
+    },
+  });
+
   const settingsView = createSettingsView({
     container: shell.detailPane,
     store,
@@ -360,14 +379,7 @@ async function main() {
     [VIEW.PROJECT_FORM, projectFormView],
     [VIEW.PROJECTS, { render: renderProjectsView, reset: resetProjectsView }],
     [VIEW.SUMMARY, summaryView],
-    [
-      VIEW.ARCHIVE,
-      createPlaceholderView({
-        container: shell.detailPane,
-        title: 'アーカイブ',
-        note: '転記済み・削除候補の一覧は実装計画 Step 10 で作ります。',
-      }),
-    ],
+    [VIEW.ARCHIVE, archiveView],
     [VIEW.SETTINGS, settingsView],
   ]);
 
