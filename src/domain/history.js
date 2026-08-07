@@ -43,6 +43,25 @@ export const HISTORY_OP = {
   PROJECT_GROUP_DELETED: 'projectGroupDeleted',
 };
 
+/**
+ * 操作と対象種別の対応（レビュー指摘 SOL-2）。
+ *
+ * 仕様書11章は対象種別と操作をそれぞれ列挙するが、**組み合わせの表は無い**。
+ * 列挙値どうしを自由に組めると、`projectGroup` を対象にした `intervalDeleted`
+ * のような、語義の通らない履歴を作れてしまう。現行の語義では対応は一意に決まる
+ * ため、ここで契約として固定する。
+ *
+ * 書き込み（{@link buildHistoryEntry}）と取り込み（`integrity.js`）の両方が
+ * この表を見る。片方だけに置くと、経路によって通る履歴が変わる。
+ */
+export const HISTORY_ENTITY_BY_OP = {
+  [HISTORY_OP.STATUS_REVERTED]: HISTORY_ENTITY.WORK_RUN,
+  [HISTORY_OP.INTERVAL_DELETED]: HISTORY_ENTITY.INTERVAL,
+  [HISTORY_OP.DIRECT_ENTRY_DELETED]: HISTORY_ENTITY.DIRECT_ENTRY,
+  [HISTORY_OP.WORK_RUN_DELETED]: HISTORY_ENTITY.WORK_RUN,
+  [HISTORY_OP.PROJECT_GROUP_DELETED]: HISTORY_ENTITY.PROJECT_GROUP,
+};
+
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim() !== '';
 }
@@ -73,6 +92,13 @@ export function buildHistoryEntry(draft, meta) {
   }
   if (!HISTORY_OPERATION.includes(draft.operation)) {
     errors.push(`操作: ${HISTORY_OPERATION.join(' / ')} のいずれかである`);
+  } else {
+    // 操作が既知なら、対象種別との組み合わせも確かめる（レビュー指摘 SOL-2）。
+    // 操作が未知の場合は上の指摘だけで足り、対応表を引いても意味がない。
+    const expected = HISTORY_ENTITY_BY_OP[draft.operation];
+    if (draft.entityType !== expected) {
+      errors.push(`対象種別: ${draft.operation} の対象種別は ${expected} である`);
+    }
   }
   if (typeof draft.summary !== 'string') {
     errors.push('要約: 文字列である');

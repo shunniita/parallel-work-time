@@ -16,6 +16,7 @@
  */
 
 import { previewQuantity, summarizeQuantity } from '../../domain/quantity.js';
+import { activeRuns, sortRuns } from '../../domain/runOrder.js';
 import { RUN_STATUS_LABEL } from '../../domain/runStatus.js';
 import { generatableTasks } from '../../domain/templateInstantiate.js';
 import { toDateKey } from '../../domain/datetime.js';
@@ -81,15 +82,19 @@ export function createProjectView({ container, store, actions, handlers, now }) 
   }
 
   /** 当該案件の実施回。アーカイブ済みも含む（数量の累計に必要）。 */
+  /**
+   * 案件の実施回すべて（アーカイブ済みを含む）を表示順で返す。
+   *
+   * 数量の累計はアーカイブ済みも数える（仕様書8.2.5）。一覧へ出すのは
+   * `activeRuns()` で絞った分だけである（10.1）。並べ替えと採番は
+   * `runOrder.js` が持つ（レビュー指摘 D-14）。
+   */
   function runsOf(group) {
-    return store
-      .getState()
-      .dataset.workRuns.filter((run) => run.projectGroupId === group.projectGroupId)
-      .sort(
-        (left, right) =>
-          left.workDate.localeCompare(right.workDate) ||
-          left.createdAt.localeCompare(right.createdAt),
-      );
+    return sortRuns(
+      store
+        .getState()
+        .dataset.workRuns.filter((run) => run.projectGroupId === group.projectGroupId),
+    );
   }
 
   /** 案件の対象種別×バリエーションに対応する有効版テンプレート。 */
@@ -307,11 +312,19 @@ export function createProjectView({ container, store, actions, handlers, now }) 
    * 実施回一覧（仕様書8.2.4）。
    */
   function renderRunList(group, runs) {
-    if (runs.length === 0) {
+    // アーカイブ済みは通常一覧から分離する（仕様書10.1）。番号は全件を通して
+    // 振ってから絞るので、アーカイブしても他の回の番号は動かない（D-14）。
+    const visible = activeRuns(runs);
+    const archivedCount = runs.length - visible.length;
+
+    if (visible.length === 0) {
       return el('p', {
         class: 'placeholder',
         dataset: { testid: 'run-list-empty' },
-        text: '実施回がありません。「実施回を追加」から作成してください。',
+        text:
+          archivedCount === 0
+            ? '実施回がありません。「実施回を追加」から作成してください。'
+            : `表示できる実施回がありません（アーカイブ済み${archivedCount}件はアーカイブ画面で確認できます）。`,
       });
     }
 
@@ -329,10 +342,10 @@ export function createProjectView({ container, store, actions, handlers, now }) 
       el(
         'tbody',
         {},
-        runs.map((run, index) => {
+        visible.map(({ run, number }) => {
           const editing = local.editingRunId === run.runId;
           return el('tr', { dataset: { testid: 'run-row', runId: run.runId } }, [
-            el('td', { text: `第${index + 1}回` }),
+            el('td', { text: `第${number}回` }),
             el('td', { dataset: { testid: 'run-date' }, text: run.workDate }),
             el('td', { class: 'table__num' }, [
               editing

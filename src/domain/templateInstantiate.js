@@ -12,10 +12,17 @@
  * 純関数のみ。現在時刻と識別子は引数で受け取る。
  */
 
+import { normalizeProjectId } from './projectId.js';
+import { RUN_STATUS } from './schema.js';
 import { activeTaskDefinitions } from './templateOps.js';
 
-/** 実施回の初期状態（仕様書7.1「新規 → 作業中」）。 */
-export const INITIAL_RUN_STATUS = 'working';
+/**
+ * 実施回の初期状態（仕様書7.1「新規 → 作業中」）。
+ *
+ * 文字列を書かず `RUN_STATUS` から取る。「初期状態」という意味は残しつつ、
+ * `'working'` の正を1か所に保つ（レビュー指摘 F-26）。
+ */
+export const INITIAL_RUN_STATUS = RUN_STATUS.WORKING;
 
 /**
  * 実施回へ生成する候補の作業項目を返す（仕様書8.3.1）。
@@ -122,19 +129,4 @@ export function instantiateProjectGroup(draft, context) {
     createdAt: context.createdAt,
     updatedAt: context.createdAt,
   };
-}
-
-/**
- * 案件IDを一意性判定のために正規化する。
- *
- * 前後空白の除去のみ行う。全角半角の統一や大文字小文字の畳み込みはしない。
- * 参加者名の表記ゆれを警告しない方針（仕様書8.9.9）と揃え、利用者が入力した
- * 文字は保つ。前後空白だけは打ち間違いとして扱い、一意制約が空白の有無で
- * すり抜けないようにする（実装計画6.4）。
- *
- * @param {string} projectId
- * @returns {string}
- */
-export function normalizeProjectId(projectId) {
-  return String(projectId ?? '').trim();
 }

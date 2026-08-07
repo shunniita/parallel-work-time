@@ -166,6 +166,7 @@
 - 内容: 表示位置由来の採番が2箇所に別ロジックで存在する。Step 10 でアーカイブを実装した瞬間、同じ実施回がツリーと詳細で異なる番号になる。採番関数を1箇所へ切り出すか、WorkRun に連番を持たせる。
 - アーカイブの表示範囲自体も不一致。ツリーは `status === "archived"` を除外する一方、案件詳細の実施回一覧は累計用の全件配列をそのまま描画するため、「通常一覧から分離する」という仕様に反してアーカイブ済みが残る。数量集計用の全件と、画面表示用の非アーカイブ一覧を明示的に分ける。
 - 推奨対応時期: Step 10 前
+- 状況: **対応済み（2026-08-07、Step 10 準備）**。`src/domain/runOrder.js` を新設し、並べ替え（作業日→作成日時）と採番を1か所へ集約した。**採番はアーカイブ済みも含めた全件で行い、絞り込みは採番の後に行う**。表示中だけで数えると第1回をアーカイブした瞬間に第2回が繰り上がり、利用者が番号で指した記録と突き合わせられなくなるためである。案件詳細の実施回一覧も `activeRuns()` を通してアーカイブ済みを分離し、件数を案内文へ出す。数量の累計は従来どおり全件を数える（8.2.5）。単体テスト12件で「アーカイブしても他の回の番号が動かない」を固定した。
 
 ### D-15 `validateRunDraft` の warnings と「数量超過」が1対1に癒着
 
@@ -259,6 +260,7 @@
 - 対象: `src/domain/templateInstantiate.js:18,138`、`src/domain/schema.js:20-25`、`src/domain/validation.js:16`
 - 内容: `INITIAL_RUN_STATUS` と `RUN_STATUS.WORKING` で `'working'` の正が二重定義。Step 10 の `runState.js` 実装前に `RUN_STATUS` へ寄せる。汎用の `normalizeProjectId` が「インスタンス化」モジュールに置かれ `validation.js` がそこへ依存している配置も見直し対象。
 - 推奨対応時期: Step 10 前
+- 状況: **対応済み（2026-08-07、Step 10 準備）**。`INITIAL_RUN_STATUS` は `RUN_STATUS.WORKING` から導出し、`'working'` の正を1か所にした（「初期状態」という意味は残す）。`normalizeProjectId` は `src/domain/projectId.js` へ移し、登録・重複判定・取り込み検証の3経路が同じ入口を通る形にした。単体テストも新モジュール側へ移した。
 
 ### F-27 例外クラスの定義場所と階層の不揃い
 
@@ -325,7 +327,7 @@
 - 内容: `entityType`と`operation`をそれぞれ既知の列挙値か検証するだけで、組み合わせを検証しない。例えば`entityType: "projectGroup"`と`operation: "intervalDeleted"`の履歴を`buildHistoryEntry()`とインポート検証の双方が受け入れる。現行の区間削除アクションは正しい組み合わせを固定しているため、現在のUI経路での実害はない。
 - Evidence状態: **inferred**。仕様11章は対象と操作を列挙しているが、対応表を明文では定義していない。少なくとも現行語義では、`statusReverted`/`workRunDeleted`→`workRun`、`intervalDeleted`→`interval`、`directEntryDeleted`→`directEntry`、`projectGroupDeleted`→`projectGroup`の対応が自然である。対応を契約として確定する場合は仕様または設計メモへ明記する。
 - 推奨対応時期: Step 10 の状態遷移・削除操作を追加する前
-- 状況: 未対応
+- 状況: **対応済み（2026-08-07、Step 10 準備）**。Evidence の対応表を `history.js` の `HISTORY_ENTITY_BY_OP` として契約に定めた。`buildHistoryEntry()`（書き込み）と `integrity.js`（取り込み）の両方がこの表を見るため、経路によって通る履歴が変わらない。Step 9 で `integrity.js` へ直書きしていた対応表もここへ寄せた。操作が未知の場合は組み合わせの指摘を出さない（操作そのものの指摘で足りるため）。単体テスト4件を追加した。
 
 ### SOL-3 `isValidDateTimeLocal`と変換処理の妥当性判定が一致しない
 
