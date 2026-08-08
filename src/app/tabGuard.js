@@ -9,7 +9,20 @@
  * 1. 起動時に `hello` を送る。
  * 2. `hello` を受けたタブは相手を覚え、`ack` を返す。後から開いたタブは
  *    この `ack` で先行タブの存在を知る。
- * 3. タブを閉じるとき（`pagehide`）に `bye` を送り、受けた側は相手を忘れる。
+ * 3. タブを離れるとき（`pagehide`）に `bye` を送り、受けた側は相手を忘れる。
+ * 4. BFCache から戻ったとき（`pageshow` の `persisted`）に `hello` を送り直す。
+ *
+ * ## 退避と復帰を「終了と起動」と同じに扱う（レビュー指摘 S11-1）
+ *
+ * `pagehide` はタブを閉じたときだけでなく、ブラウザがページを BFCache へ退避
+ * するときにも起きる。退避中のページは操作できないので、相手の一覧から外すのは
+ * 正しい。ところが復帰時には `pageshow` が起きるだけで、`hello` を送り直さないと
+ * **相手からは消えたままになる**。両方のタブが操作可能なのに、片側だけ警告が
+ * 出ない状態が残る。
+ *
+ * 退避時には自分が覚えている相手も忘れる。止まっているあいだに相手が閉じても
+ * `bye` を受け取れないため、復帰直後の記憶は当てにならない。復帰したら名乗り
+ * 直して、`ack` が返ってきた相手だけを数える。
  *
  * クラッシュしたタブは `bye` を送れないため、警告が残ることがある。過剰に
  * 警告する方向の誤りであり、同時操作を見逃す方向ではないので許容する。
@@ -27,12 +40,15 @@ import { TAB_CHANNEL_NAME } from '../config.js';
  * @param {{onChange: (hasPeers: boolean) => void,
  *          channel?: {postMessage: Function, close: Function,
  *                     addEventListener: Function}|null,
- *          tabId?: string}} options
- *   `channel` はテストで差し替えるために受け取る。省略時は
- *   `TAB_CHANNEL_NAME` の `BroadcastChannel` を作る。
+ *          tabId?: string,
+ *          lifecycle?: EventTarget}} options
+ *   `channel` と `lifecycle` はテストで差し替えるために受け取る。`channel` の
+ *   省略時は `TAB_CHANNEL_NAME` の `BroadcastChannel` を作る。`lifecycle` は
+ *   `pagehide` / `pageshow` の発生源で、既定は `globalThis`。単体テストでは
+ *   タブごとに別の発生源を渡し、片方だけを退避させる。
  * @returns {{peerCount: () => number, dispose: () => void}}
  */
-export function startTabGuard({ onChange, channel, tabId }) {
+export function startTabGuard({ onChange, channel, tabId, lifecycle = globalThis }) {
   const resolved =
     channel !== undefined
       ? channel
@@ -69,12 +85,35 @@ export function startTabGuard({ onChange, channel, tabId }) {
     }
   }
 
-  function handlePageHide() {
+  /**
+   * 離脱時。BFCache への退避でも起きる。
+   *
+   * @param {{persisted?: boolean}} [event]
+   */
+  function handlePageHide(event) {
     resolved.postMessage({ type: 'bye', sender: id });
+    if (event?.persisted === true && peers.size > 0) {
+      // 止まっているあいだに相手が閉じても `bye` を受け取れない。復帰したら
+      // 名乗り直して数え直す。
+      peers.clear();
+      notify();
+    }
+  }
+
+  /**
+   * 復帰時。BFCache から戻った場合だけ名乗り直す。
+   *
+   * @param {{persisted?: boolean}} [event]
+   */
+  function handlePageShow(event) {
+    if (event?.persisted === true) {
+      resolved.postMessage({ type: 'hello', sender: id });
+    }
   }
 
   resolved.addEventListener('message', handleMessage);
-  globalThis.addEventListener?.('pagehide', handlePageHide);
+  lifecycle?.addEventListener?.('pagehide', handlePageHide);
+  lifecycle?.addEventListener?.('pageshow', handlePageShow);
   resolved.postMessage({ type: 'hello', sender: id });
 
   return {
@@ -82,7 +121,8 @@ export function startTabGuard({ onChange, channel, tabId }) {
     dispose: () => {
       resolved.postMessage({ type: 'bye', sender: id });
       resolved.removeEventListener('message', handleMessage);
-      globalThis.removeEventListener?.('pagehide', handlePageHide);
+      lifecycle?.removeEventListener?.('pagehide', handlePageHide);
+      lifecycle?.removeEventListener?.('pageshow', handlePageShow);
       resolved.close?.();
     },
   };
