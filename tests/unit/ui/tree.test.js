@@ -520,4 +520,130 @@ describe('キーボード操作（仕様書13章、レビュー指摘 D-18）', 
     expect(container.querySelectorAll('[role="group"]').length).toBeGreaterThan(0);
     expect(container.querySelectorAll('[role="treeitem"]').length).toBeGreaterThan(2);
   });
+
+  describe('親子の所有関係（レビュー指摘 S11-2）', () => {
+    it('すべての group が親 treeitem に所有される', () => {
+      // treeitem は button なので子の ul を内側へ置けない。DOM では兄弟に
+      // なるため、`aria-owns` が無いと階層として読まれない。
+      const { container, tree } = renderAttached(fixture());
+      tree.expand({ projectGroupId: 'g-a', runId: 'r1' });
+      tree.render();
+
+      const groups = [...container.querySelectorAll('[role="group"]')];
+      expect(groups.length).toBe(2);
+      for (const group of groups) {
+        expect(group.id).not.toBe('');
+        const owner = container.querySelector(`[role="treeitem"][aria-owns="${group.id}"]`);
+        expect(owner).not.toBeNull();
+      }
+    });
+
+    it('案件の group は案件ノードが、実施回の group は実施回ノードが所有する', () => {
+      const { container, tree } = renderAttached(fixture());
+      tree.expand({ projectGroupId: 'g-a', runId: 'r1' });
+      tree.render();
+
+      const project = container.querySelector('[data-testid="tree-project"]');
+      const run = container.querySelector('[data-testid="tree-run"]');
+
+      expect(document.getElementById(project.getAttribute('aria-owns'))).toContain(run);
+      expect(
+        document.getElementById(run.getAttribute('aria-owns')).querySelector('[data-testid="tree-task"]'),
+      ).not.toBeNull();
+    });
+
+    it('畳んでいるノードは参照先の無い ID を指さない', () => {
+      const { container } = renderAttached(fixture());
+
+      const project = container.querySelector('[data-testid="tree-project"]');
+      expect(project.getAttribute('aria-expanded')).toBe('false');
+      expect(project.hasAttribute('aria-owns')).toBe(false);
+    });
+  });
+
+  describe('現在地は1つだけ（レビュー指摘 S11-3）', () => {
+    /** 作業項目まで選択した状態のツリー。 */
+    function selectedTask() {
+      const rendered = renderAttached({
+        ...fixture(),
+        selection: { projectGroupId: 'g-a', runId: 'r1', taskRecordId: 't1' },
+      });
+      rendered.tree.expand({ projectGroupId: 'g-a', runId: 'r1' });
+      rendered.tree.render();
+      return rendered;
+    }
+
+    it('作業項目を選ぶと current はその1件になる', () => {
+      // 経路上の3つすべてが current になると、roving tabindex の停留所が
+      // 最初に見つかる案件になり、表示中の詳細と食い違う。
+      const { container } = selectedTask();
+
+      const currents = [...container.querySelectorAll('[aria-current="true"]')];
+      expect(currents).toHaveLength(1);
+      expect(currents[0].dataset.testid).toBe('tree-task');
+    });
+
+    it('選択中の作業項目が Tab の停留所になる', () => {
+      const { container } = selectedTask();
+
+      const stops = [...container.querySelectorAll('[role="treeitem"]')].filter(
+        (item) => item.tabIndex === 0,
+      );
+      expect(stops).toHaveLength(1);
+      expect(stops[0].dataset.testid).toBe('tree-task');
+    });
+
+    it('実施回まで選んだ状態では実施回が current になる', () => {
+      const rendered = renderAttached({
+        ...fixture(),
+        selection: { projectGroupId: 'g-a', runId: 'r1', taskRecordId: null },
+      });
+      rendered.tree.expand({ projectGroupId: 'g-a', runId: 'r1' });
+      rendered.tree.render();
+
+      const currents = [...rendered.container.querySelectorAll('[aria-current="true"]')];
+      expect(currents).toHaveLength(1);
+      expect(currents[0].dataset.testid).toBe('tree-run');
+    });
+  });
+
+  describe('マウスで折りたたんだ後のフォーカス（レビュー指摘 S11-5）', () => {
+    it('折りたたみボタンを押してもフォーカスがツリーに残る', () => {
+      // ボタンは treeitem の兄弟なので focusin の経路に乗らず、再描画で自身も
+      // 消える。放っておくとフォーカスが body へ落ち、矢印キーへ移れない。
+      const { container } = renderAttached(fixture());
+      const toggleButton = all(container, 'tree-toggle')[0];
+      toggleButton.focus();
+
+      toggleButton.click();
+
+      expect(document.activeElement).toBe(
+        container.querySelector('[data-testid="tree-project"]'),
+      );
+    });
+
+    it('押した案件が Tab の停留所になる', () => {
+      const { container } = renderAttached(fixture());
+      const toggles = all(container, 'tree-toggle');
+      toggles[toggles.length - 1].focus();
+
+      toggles[toggles.length - 1].click();
+
+      const stops = [...container.querySelectorAll('[role="treeitem"]')].filter(
+        (item) => item.tabIndex === 0,
+      );
+      expect(stops).toHaveLength(1);
+    });
+
+    it('ツリー外にフォーカスがあるときは奪わない', () => {
+      const { container } = renderAttached(fixture());
+      const outside = document.createElement('button');
+      document.body.append(outside);
+      outside.focus();
+
+      all(container, 'tree-toggle')[0].click();
+
+      expect(document.activeElement).toBe(outside);
+    });
+  });
 });

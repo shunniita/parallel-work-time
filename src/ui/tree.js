@@ -26,7 +26,11 @@
  * - Enter / Space: 選択（button の既定動作）
  *
  * 展開・折りたたみは再描画を伴うため、直前に触っていたノードへフォーカスを
- * 戻す。戻さないと矢印キーを1回押すたびにフォーカスが body へ飛ぶ。
+ * 戻す。戻さないと矢印キーを1回押すたびにフォーカスが body へ飛ぶ。マウスで
+ * 折りたたみボタンを押した場合も同じ（レビュー指摘 S11-5）。
+ *
+ * 「現在地」は経路上の最深ノード1つだけに置く（{@link currentKeyOf}）。子ノードを
+ * 束ねる `ul` は `aria-owns` で親 treeitem に結ぶ（{@link childrenId}）。
  */
 
 import { summarizeQuantity } from '../domain/quantity.js';
@@ -50,6 +54,48 @@ const TASK_STATE_MARK = {
   [TASK_STATE.ON_BREAK]: '◐',
   [TASK_STATE.DONE]: '✓',
 };
+
+/**
+ * 子ノードの入れ物（`role="group"`）に振る ID（レビュー指摘 S11-2）。
+ *
+ * treeitem は `button` なので、その内側へ子の `ul` を入れられない（対話要素の
+ * 入れ子になる）。DOM では兄弟に置き、所有関係だけ `aria-owns` で示す。これが
+ * 無いと、支援技術からは「どの group がどの treeitem の子か」が分からず、
+ * 見た目が3階層でも階層として読まれない。
+ *
+ * @param {string} key ノードのキー（`group:...` / `run:...`）
+ * @returns {string}
+ */
+function childrenId(key) {
+  return `tree-children-${key.replace(/[^\w-]/g, '-')}`;
+}
+
+/**
+ * いま選択している最深のノードのキーを求める（レビュー指摘 S11-3）。
+ *
+ * 選択は案件→実施回→作業項目と積み上がるため、各段が自分の ID だけを見て
+ * 「現在地」を決めると、経路上の3つすべてに `aria-current` が立つ。そうなると
+ * roving tabindex の停留所も最初に見つかった案件になり、警告領域から作業項目を
+ * 開いた直後に Tab でツリーへ入ると、表示中の詳細と停留所が食い違う。
+ *
+ * 現在地は最深の1つだけとする。
+ *
+ * @param {{projectGroupId?: string|null, runId?: string|null,
+ *          taskRecordId?: string|null}} selection
+ * @returns {string|null}
+ */
+function currentKeyOf(selection) {
+  if (selection.taskRecordId) {
+    return `task:${selection.taskRecordId}`;
+  }
+  if (selection.runId) {
+    return `run:${selection.runId}`;
+  }
+  if (selection.projectGroupId) {
+    return `group:${selection.projectGroupId}`;
+  }
+  return null;
+}
 
 /**
  * ツリーを作る。
@@ -96,7 +142,20 @@ export function createTree({ container, store, handlers }) {
       'aria-expanded': String(open),
       'aria-label': open ? '折りたたむ' : '展開する',
       dataset: { testid: 'tree-toggle' },
-      on: { click: () => toggle(key) },
+      on: {
+        click: () => {
+          // このボタンは `treeitem` の子ではなく兄弟なので、押しても `focusin` の
+          // 経路に乗らず `focusedKey` が動かない。加えて `toggle()` の再描画で
+          // ボタン自身が消えるため、そのままではフォーカスが body へ落ちて、
+          // マウスで展開した直後に矢印キーへ移れない（レビュー指摘 S11-5）。
+          const restore = container.contains(document.activeElement);
+          focusedKey = key;
+          toggle(key);
+          if (restore) {
+            focusItem(key);
+          }
+        },
+      },
     });
   }
 
@@ -199,9 +258,10 @@ export function createTree({ container, store, handlers }) {
     }
   });
 
-  function renderTaskNode(run, task, selection) {
+  function renderTaskNode(run, task, currentKey) {
     const state = taskState(task);
-    const current = selection.taskRecordId === task.taskRecordId;
+    const key = `task:${task.taskRecordId}`;
+    const current = key === currentKey;
 
     return el('li', { class: 'tree__item tree__item--task', role: 'none' }, [
       el('span', { class: 'tree__toggle tree__toggle--empty', 'aria-hidden': 'true' }),
@@ -213,7 +273,7 @@ export function createTree({ container, store, handlers }) {
         dataset: {
           testid: 'tree-task',
           taskRecordId: task.taskRecordId,
-          treeKey: `task:${task.taskRecordId}`,
+          treeKey: key,
           state,
         },
         'aria-current': current ? 'true' : 'false',
@@ -233,10 +293,11 @@ export function createTree({ container, store, handlers }) {
     ]);
   }
 
-  function renderRunNode(run, number, selection) {
+  function renderRunNode(run, number, currentKey) {
     const key = `run:${run.runId}`;
     const hasTasks = run.tasks.length > 0;
-    const current = selection.runId === run.runId;
+    const open = hasTasks && expanded.has(key);
+    const current = key === currentKey;
 
     return el('li', { class: 'tree__item', role: 'none' }, [
       el('div', { class: 'tree__row' }, [
@@ -249,6 +310,8 @@ export function createTree({ container, store, handlers }) {
           dataset: { testid: 'tree-run', runId: run.runId, treeKey: key },
           'aria-current': current ? 'true' : 'false',
           'aria-expanded': hasTasks ? String(expanded.has(key)) : undefined,
+          // 畳んでいるあいだ `ul` は存在しないため、参照先の無い ID を指さない。
+          'aria-owns': open ? childrenId(key) : undefined,
           on: { click: () => handlers.onSelectRun(run.runId) },
         }, [
           el('span', { class: 'tree__text', text: `第${number}回 ${run.workDate}` }),
@@ -258,24 +321,24 @@ export function createTree({ container, store, handlers }) {
           }),
         ]),
       ]),
-      hasTasks &&
-        expanded.has(key) &&
+      open &&
         el(
           'ul',
-          { class: 'tree__children', role: 'group' },
-          run.tasks.map((task) => renderTaskNode(run, task, selection)),
+          { class: 'tree__children', role: 'group', id: childrenId(key) },
+          run.tasks.map((task) => renderTaskNode(run, task, currentKey)),
         ),
     ]);
   }
 
-  function renderProjectNode(group, runs, selection) {
+  function renderProjectNode(group, runs, currentKey) {
     const key = `group:${group.projectGroupId}`;
     // アーカイブ済みはツリーへ出さないが、数量の累計には含める（仕様書8.2.5）。
     // 番号は全件を通して振ってから絞る。表示中だけで数えると、第1回をアーカイブ
     // した瞬間に第2回が繰り上がる（レビュー指摘 D-14）。
     const visible = activeRuns(runs);
     const summary = summarizeQuantity(group, runs);
-    const current = selection.projectGroupId === group.projectGroupId;
+    const open = visible.length > 0 && expanded.has(key);
+    const current = key === currentKey;
 
     return el('li', { class: 'tree__item', role: 'none' }, [
       el('div', { class: 'tree__row' }, [
@@ -292,6 +355,7 @@ export function createTree({ container, store, handlers }) {
           },
           'aria-current': current ? 'true' : 'false',
           'aria-expanded': visible.length > 0 ? String(expanded.has(key)) : undefined,
+          'aria-owns': open ? childrenId(key) : undefined,
           on: { click: () => handlers.onSelectProject(group.projectGroupId) },
         }, [
           el('span', { class: 'tree__text', text: group.projectId }),
@@ -302,18 +366,18 @@ export function createTree({ container, store, handlers }) {
           }),
         ]),
       ]),
-      visible.length > 0 &&
-        expanded.has(key) &&
+      open &&
         el(
           'ul',
-          { class: 'tree__children', role: 'group' },
-          visible.map(({ run, number }) => renderRunNode(run, number, selection)),
+          { class: 'tree__children', role: 'group', id: childrenId(key) },
+          visible.map(({ run, number }) => renderRunNode(run, number, currentKey)),
         ),
     ]);
   }
 
   function render() {
     const { dataset, selection = {} } = store.getState();
+    const currentKey = currentKeyOf(selection);
     const groups = [...dataset.projectGroups].sort((left, right) =>
       left.projectId.localeCompare(right.projectId, 'ja'),
     );
@@ -351,7 +415,7 @@ export function createTree({ container, store, handlers }) {
               renderProjectNode(
                 group,
                 runsByProject.get(group.projectGroupId) ?? [],
-                selection,
+                currentKey,
               ),
             ),
           ),

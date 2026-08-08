@@ -54,6 +54,31 @@ test('T-14 同一ブラウザで2タブ開くと警告が出る（A-13）', asyn
   await expect(page.getByTestId('multi-tab-warning')).toBeHidden();
 });
 
+test('別ページへ移って戻ったタブも再び検知される（レビュー指摘 S11-1）', async ({
+  page,
+  context,
+}) => {
+  // 「閉じる」と「離れて戻る」は寿命が違う。離脱時の `bye` だけを実装すると、
+  // 戻ってきたタブが相手から消えたままになる。
+  await openFresh(page);
+
+  const second = await context.newPage();
+  await second.goto('/');
+  await expect(page.getByTestId('multi-tab-warning')).toBeVisible();
+
+  // 2つ目のタブを別ページへ移す（pagehide）。1つ目の警告は畳まれる。
+  await second.goto('about:blank');
+  await expect(page.getByTestId('multi-tab-warning')).toBeHidden();
+
+  // 戻すと両方で再び警告が出る。
+  await second.goBack();
+  await expect(second.getByTestId('status-bar')).toBeVisible();
+  await expect(page.getByTestId('multi-tab-warning')).toBeVisible();
+  await expect(second.getByTestId('multi-tab-warning')).toBeVisible();
+
+  await second.close();
+});
+
 test('未終了区間が警告領域に出て、リンクで作業項目へ移れる（仕様書8.8.1、12.2）', async ({
   page,
 }) => {
