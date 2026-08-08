@@ -155,6 +155,7 @@
 - 対象: `src/storage/IndexedDbAdapter.js:96-131`
 - 内容: (a) `db.onversionchange` ハンドラがなく、将来 DB 版を上げる改訂時に、開きっぱなしの他タブが upgrade を永久にブロックする。(b) `initialize()` は `this.db === null` チェックと `await` の間に隙間があり、並行呼び出しで DB を2つ開く。
 - 推奨対応時期: Step 11（多重タブ対応）まで
+- 状況: **対応済み（2026-08-08、Step 11）**。(a) `onversionchange` で自分の接続を閉じ、以後の操作は「別のタブが更新したため再読み込みを」の文言で拒む。修正前は契約テストが実際にタイムアウトで再現した（版2の open が `onsuccess` へ進めない）。(b) 開きかけの Promise を持ち、並行 initialize はそこへ合流させる。`openDatabase` の呼び出し回数を数える契約テストで固定した。
 
 ---
 
@@ -195,6 +196,7 @@
 - 対象: `src/ui/views/*.js` のエラー表示、`src/ui/statusBar.js:19-39`、`src/ui/tree.js`、`src/ui/shell.js:63-64`
 - 内容: (a) 保存失敗時、`render()` で押したボタンごと消えるためフォーカスが body へ戻る。(b) 保存状態表示に `aria-live` がない（警告領域にはある）。(c) ツリーに `role="tree"` 系・矢印キー移動がなく、状態記号 `●/○/◐/✓` が AT へ伝わらない。(d) 未実装ナビが `disabled` でフォーカス不能、`title` はキーボード利用者に届かない。仕様13章のキーボード操作要件に関わる。
 - 推奨対応時期: Step 11（横断要件）でまとめて
+- 状況: **対応済み（2026-08-08、Step 11）**。(a) は Step 7 PR-A の `applyBusy()`（保存中は描き直さない）と `rowForm?.focus()` で対応済みだったため、Step 11 の追加は無い。(b) 保存成否表示へ `role="status"` と `aria-live="polite"` を付けた。(c) ツリーへ tree / group / treeitem の役割、roving tabindex、矢印キー移動（↑↓→←、Home/End）を実装し、状態記号は `aria-hidden` にして語を `aria-label` へ含めた。(d) 7画面がすべて実装済みになったため、`disabled` の分岐ごと削除した。単体10件と E2E で固定。
 
 ### D-19 viewport 固定とレスポンシブ CSS の矛盾
 
@@ -286,8 +288,8 @@
 - ~~`src/ui/dom.js:14`: JSDoc に `html` の記述が残っているが実装に存在しない。~~ 対応済み（2026-08-02。同モジュールを触ったついでに1行修正）。
 - `src/ui/tree.js:45-55,173-175`: 展開状態 Set が削除時に掃除されない。`localeCompare` を比較のたびに呼ぶ（`Intl.Collator` の使い回しが定石）。いずれも現行データ量では実害なし。
 - `src/ui/views/templateView.js:199` / `src/ui/views/runView.js:101`: 同じ `data-testid="task-row"` を使用。現状は画面が排他だが、素の `getByTestId` はスコープが曖昧。
-- `src/main.js:52-62`: サンプル JSON 取得失敗が無言。配布物で `data/` を欠いたとき原因が分からないため、Step 11 の警告領域へ1行出す余地。
-- `src/main.js`: `window.onerror` / `unhandledrejection` のハンドラがなく、ブート後の例外が無言で失敗する。
+- ~~`src/main.js:52-62`: サンプル JSON 取得失敗が無言。配布物で `data/` を欠いたとき原因が分からないため、Step 11 の警告領域へ1行出す余地。~~ 対応済み（2026-08-08、Step 11。テンプレートが1件も無い場合に限り警告領域へ出す。既にデータのある環境では初期投入自体が走らないため、毎回の警告は雑音になる）。
+- ~~`src/main.js`: `window.onerror` / `unhandledrejection` のハンドラがなく、ブート後の例外が無言で失敗する。~~ 対応済み（2026-08-08、Step 11。警告領域へ1行で出し、同文は重ねない。ブート前の失敗は従来どおり `renderBootFailure` が受ける）。
 - `tests/integration/templateActions.test.js:323,335`: そこだけ固定 dbName で他は連番方式。揃える。
 
 ---

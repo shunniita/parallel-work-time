@@ -11,6 +11,22 @@
  * アーカイブ済みの実施回は既定で表示しない（実装計画2.2(1)）。アーカイブ画面が
  * 扱う対象であり、通常一覧から分離するのがアーカイブの目的である（仕様書10.1）。
  * 数量の累計には含める（仕様書8.2.5）ため、非表示と集計対象は別物である。
+ *
+ * ## キーボード操作（仕様書13章、レビュー指摘 D-18）
+ *
+ * ARIA の tree パターンに従い、ノード間は矢印キーで移動する。Tab はツリー全体を
+ * 1つの停留所として扱い（roving tabindex）、ツリー内の全ノードを Tab で辿らせ
+ * ない。案件20件・実施回100件の規模では、Tab 移動だと詳細ペインへ抜けるまでに
+ * 百回押すことになる。
+ *
+ * - ↑↓: 表示中のノード間を移動
+ * - →: 折りたたまれていれば展開。展開済みなら最初の子へ
+ * - ←: 展開されていれば折りたたむ。子ノードなら親へ
+ * - Home / End: 先頭・末尾
+ * - Enter / Space: 選択（button の既定動作）
+ *
+ * 展開・折りたたみは再描画を伴うため、直前に触っていたノードへフォーカスを
+ * 戻す。戻さないと矢印キーを1回押すたびにフォーカスが body へ飛ぶ。
  */
 
 import { summarizeQuantity } from '../domain/quantity.js';
@@ -47,6 +63,9 @@ export function createTree({ container, store, handlers }) {
   /** 展開しているノードの識別子。既定はすべて折りたたむ。 */
   const expanded = new Set();
 
+  /** 最後にフォーカスしていたノードのキー。roving tabindex の停留所になる。 */
+  let focusedKey = null;
+
   function toggle(key) {
     if (expanded.has(key)) {
       expanded.delete(key);
@@ -58,6 +77,8 @@ export function createTree({ container, store, handlers }) {
 
   /**
    * 折りたたみボタン。子を持たないノードでは場所だけ確保する。
+   *
+   * キーボードでは矢印キー（←→）が同じ役割を持つため、Tab の停留所にしない。
    *
    * @param {string} key
    * @param {boolean} hasChildren
@@ -71,6 +92,7 @@ export function createTree({ container, store, handlers }) {
       type: 'button',
       class: 'tree__toggle',
       text: open ? '▼' : '▶',
+      tabindex: '-1',
       'aria-expanded': String(open),
       'aria-label': open ? '折りたたむ' : '展開する',
       dataset: { testid: 'tree-toggle' },
@@ -78,25 +100,134 @@ export function createTree({ container, store, handlers }) {
     });
   }
 
+  /** ツリー内のノード（treeitem）を表示順で返す。 */
+  function visibleItems() {
+    return [...container.querySelectorAll('[role="treeitem"]')];
+  }
+
+  /**
+   * キーで指したノードへフォーカスを移す。
+   *
+   * @param {string|null} key
+   */
+  function focusItem(key) {
+    if (key === null) {
+      return;
+    }
+    const item = container.querySelector(`[data-tree-key="${key}"]`);
+    item?.focus();
+  }
+
+  /**
+   * 矢印キーによるノード移動（仕様書13章、レビュー指摘 D-18）。
+   *
+   * 展開・折りたたみは `toggle()` が再描画するため、その後に同じノードへ
+   * フォーカスを戻す。
+   *
+   * @param {KeyboardEvent} event
+   */
+  function handleKeydown(event) {
+    const target = event.target.closest?.('[role="treeitem"]');
+    if (!target) {
+      return;
+    }
+    const items = visibleItems();
+    const index = items.indexOf(target);
+    const key = target.dataset.treeKey;
+    const expandable = target.getAttribute('aria-expanded') !== null;
+    const open = target.getAttribute('aria-expanded') === 'true';
+
+    if (event.key === 'ArrowDown') {
+      items[index + 1]?.focus();
+    } else if (event.key === 'ArrowUp') {
+      items[index - 1]?.focus();
+    } else if (event.key === 'Home') {
+      items[0]?.focus();
+    } else if (event.key === 'End') {
+      items[items.length - 1]?.focus();
+    } else if (event.key === 'ArrowRight') {
+      if (expandable && !open) {
+        toggle(key);
+        focusItem(key);
+      } else if (expandable && open) {
+        // 展開済みなら最初の子へ。直後のノードが必ず子である（表示順のため）。
+        items[index + 1]?.focus();
+      }
+    } else if (event.key === 'ArrowLeft') {
+      if (expandable && open) {
+        toggle(key);
+        focusItem(key);
+      } else {
+        // 親ノードへ。li の入れ子を1段さかのぼる。
+        const parent = target
+          .closest('li')
+          ?.parentElement?.closest('li')
+          ?.querySelector('[role="treeitem"]');
+        parent?.focus();
+      }
+    } else {
+      return;
+    }
+    event.preventDefault();
+  }
+
+  /**
+   * Tab の停留所を1つにする（roving tabindex）。
+   *
+   * 直前に触っていたノードがあればそこへ、無ければ先頭へ置く。
+   */
+  function applyRovingTabindex() {
+    const items = visibleItems();
+    if (items.length === 0) {
+      return;
+    }
+    let anchor = focusedKey === null
+      ? null
+      : items.find((item) => item.dataset.treeKey === focusedKey) ?? null;
+    anchor ??= items.find((item) => item.getAttribute('aria-current') === 'true') ?? items[0];
+    for (const item of items) {
+      item.tabIndex = item === anchor ? 0 : -1;
+    }
+  }
+
+  container.addEventListener('keydown', handleKeydown);
+  container.addEventListener('focusin', (event) => {
+    const key = event.target.closest?.('[role="treeitem"]')?.dataset.treeKey;
+    if (key !== undefined) {
+      focusedKey = key;
+      applyRovingTabindex();
+    }
+  });
+
   function renderTaskNode(run, task, selection) {
     const state = taskState(task);
     const current = selection.taskRecordId === task.taskRecordId;
 
-    return el('li', { class: 'tree__item tree__item--task' }, [
+    return el('li', { class: 'tree__item tree__item--task', role: 'none' }, [
       el('span', { class: 'tree__toggle tree__toggle--empty', 'aria-hidden': 'true' }),
       el('button', {
         type: 'button',
         class: `tree__label${current ? ' tree__label--selected' : ''}`,
+        role: 'treeitem',
+        tabindex: '-1',
         dataset: {
           testid: 'tree-task',
           taskRecordId: task.taskRecordId,
+          treeKey: `task:${task.taskRecordId}`,
           state,
         },
         'aria-current': current ? 'true' : 'false',
+        // 状態記号（●/○/◐/✓）は支援技術へ渡らないため、語を名前に含める
+        // （レビュー指摘 D-18）。
+        'aria-label': `${task.name}（${TASK_STATE_LABEL[state]}）`,
         title: `${task.name}（${TASK_STATE_LABEL[state]}）`,
         on: { click: () => handlers.onSelectTask(run.runId, task.taskRecordId) },
       }, [
-        el('span', { class: `tree__mark tree__mark--${state}`, text: TASK_STATE_MARK[state] }),
+        el('span', {
+          class: `tree__mark tree__mark--${state}`,
+          'aria-hidden': 'true',
+          text: TASK_STATE_MARK[state],
+        }),
         el('span', { class: 'tree__text', text: task.name }),
       ]),
     ]);
@@ -107,14 +238,17 @@ export function createTree({ container, store, handlers }) {
     const hasTasks = run.tasks.length > 0;
     const current = selection.runId === run.runId;
 
-    return el('li', { class: 'tree__item' }, [
+    return el('li', { class: 'tree__item', role: 'none' }, [
       el('div', { class: 'tree__row' }, [
         renderToggle(key, hasTasks),
         el('button', {
           type: 'button',
           class: `tree__label${current ? ' tree__label--selected' : ''}`,
-          dataset: { testid: 'tree-run', runId: run.runId },
+          role: 'treeitem',
+          tabindex: '-1',
+          dataset: { testid: 'tree-run', runId: run.runId, treeKey: key },
           'aria-current': current ? 'true' : 'false',
+          'aria-expanded': hasTasks ? String(expanded.has(key)) : undefined,
           on: { click: () => handlers.onSelectRun(run.runId) },
         }, [
           el('span', { class: 'tree__text', text: `第${number}回 ${run.workDate}` }),
@@ -128,7 +262,7 @@ export function createTree({ container, store, handlers }) {
         expanded.has(key) &&
         el(
           'ul',
-          { class: 'tree__children' },
+          { class: 'tree__children', role: 'group' },
           run.tasks.map((task) => renderTaskNode(run, task, selection)),
         ),
     ]);
@@ -143,14 +277,21 @@ export function createTree({ container, store, handlers }) {
     const summary = summarizeQuantity(group, runs);
     const current = selection.projectGroupId === group.projectGroupId;
 
-    return el('li', { class: 'tree__item' }, [
+    return el('li', { class: 'tree__item', role: 'none' }, [
       el('div', { class: 'tree__row' }, [
         renderToggle(key, visible.length > 0),
         el('button', {
           type: 'button',
           class: `tree__label${current ? ' tree__label--selected' : ''}`,
-          dataset: { testid: 'tree-project', projectGroupId: group.projectGroupId },
+          role: 'treeitem',
+          tabindex: '-1',
+          dataset: {
+            testid: 'tree-project',
+            projectGroupId: group.projectGroupId,
+            treeKey: key,
+          },
           'aria-current': current ? 'true' : 'false',
+          'aria-expanded': visible.length > 0 ? String(expanded.has(key)) : undefined,
           on: { click: () => handlers.onSelectProject(group.projectGroupId) },
         }, [
           el('span', { class: 'tree__text', text: group.projectId }),
@@ -165,7 +306,7 @@ export function createTree({ container, store, handlers }) {
         expanded.has(key) &&
         el(
           'ul',
-          { class: 'tree__children' },
+          { class: 'tree__children', role: 'group' },
           visible.map(({ run, number }) => renderRunNode(run, number, selection)),
         ),
     ]);
@@ -205,7 +346,7 @@ export function createTree({ container, store, handlers }) {
           })
         : el(
             'ul',
-            { class: 'tree', dataset: { testid: 'tree' } },
+            { class: 'tree', role: 'tree', 'aria-label': '案件・実施回・作業項目', dataset: { testid: 'tree' } },
             groups.map((group) =>
               renderProjectNode(
                 group,
@@ -215,6 +356,8 @@ export function createTree({ container, store, handlers }) {
             ),
           ),
     ]);
+
+    applyRovingTabindex();
   }
 
   /**

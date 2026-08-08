@@ -91,11 +91,20 @@ export class IndexedDbAdapter extends StorageAdapter {
     this.factory = options.indexedDB ?? globalThis.indexedDB;
     /** @type {IDBDatabase|null} */
     this.db = null;
+    /** @type {Promise<IDBDatabase>|null} 開きかけの接続。並行 initialize の合流先。 */
+    this.opening = null;
   }
 
   async initialize() {
     if (this.db === null) {
-      this.db = await this.openDatabase();
+      // 並行して呼ばれても接続は1つにする（レビュー指摘 C-13）。null 確認と
+      // await の間に別の呼び出しが入ると、データベースを二重に開いてしまう。
+      this.opening ??= this.openDatabase();
+      try {
+        this.db = await this.opening;
+      } finally {
+        this.opening = null;
+      }
     }
     await this.ensureSettings();
   }
@@ -115,7 +124,20 @@ export class IndexedDbAdapter extends StorageAdapter {
     return new Promise((resolve, reject) => {
       const request = this.factory.open(this.dbName, this.dbVersion);
       request.onupgradeneeded = () => upgradeSchema(request.result);
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        // 別タブが新しい版で開こうとしたら、こちらの接続を手放す（レビュー指摘
+        // C-13）。放置すると相手の upgrade が永久にブロックされる。閉じた後の
+        // 操作は assertOpen() が明確な文言で拒む。
+        db.onversionchange = () => {
+          db.close();
+          if (this.db === db) {
+            this.db = null;
+            this.closedByVersionChange = true;
+          }
+        };
+        resolve(db);
+      };
       request.onerror = () =>
         reject(toStorageError(request.error, 'データベースを開く処理'));
       // 別タブが旧版のまま開いていると upgrade がブロックされる。多重タブ警告
@@ -375,7 +397,9 @@ export class IndexedDbAdapter extends StorageAdapter {
     if (this.db === null) {
       throw new StorageError(
         STORAGE_ERROR_KIND.UNAVAILABLE,
-        'initialize() を先に呼ぶ必要がある',
+        this.closedByVersionChange
+          ? '別のタブがデータベースを更新したため、この接続は閉じられました。再読み込みしてください。'
+          : 'initialize() を先に呼ぶ必要がある',
       );
     }
     return this.db;
