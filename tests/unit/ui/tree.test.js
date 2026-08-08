@@ -388,3 +388,136 @@ describe('操作の通知', () => {
     expect(handlers.onSelectTask).toHaveBeenCalledWith('run-1', 'task-1');
   });
 });
+
+describe('キーボード操作（仕様書13章、レビュー指摘 D-18）', () => {
+  /** フォーカスを扱うため、document.body へ実際に取り付けて描く。 */
+  function renderAttached(state) {
+    const rendered = renderTree(state);
+    document.body.replaceChildren(rendered.container);
+    return rendered;
+  }
+
+  /** 2案件・実施回・作業項目のあるツリー。 */
+  function fixture() {
+    return {
+      projectGroups: [
+        projectGroup({ projectGroupId: 'g-a', projectId: 'PJ-0001' }),
+        projectGroup({ projectGroupId: 'g-b', projectId: 'PJ-0002' }),
+      ],
+      workRuns: [
+        workRun({
+          runId: 'r1',
+          projectGroupId: 'g-a',
+          tasks: [taskRecord({ taskRecordId: 't1' })],
+        }),
+      ],
+    };
+  }
+
+  function press(target, key) {
+    target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  }
+
+  it('Tab の停留所は1つだけである（roving tabindex）', () => {
+    const { container } = renderAttached(fixture());
+
+    const items = [...container.querySelectorAll('[role="treeitem"]')];
+    expect(items.filter((item) => item.tabIndex === 0)).toHaveLength(1);
+    expect(items[0].tabIndex).toBe(0);
+  });
+
+  it('↑↓で表示中のノード間を移動する', () => {
+    const { container } = renderAttached(fixture());
+    const items = [...container.querySelectorAll('[role="treeitem"]')];
+    items[0].focus();
+
+    press(items[0], 'ArrowDown');
+    expect(document.activeElement).toBe(items[1]);
+
+    press(items[1], 'ArrowUp');
+    expect(document.activeElement).toBe(items[0]);
+  });
+
+  it('→で展開し、フォーカスを保つ', () => {
+    const { container } = renderAttached(fixture());
+    const project = container.querySelector('[data-testid="tree-project"]');
+    project.focus();
+    expect(project.getAttribute('aria-expanded')).toBe('false');
+
+    press(project, 'ArrowRight');
+
+    // 再描画で要素は作り直されるため、同じキーのノードで確かめる。
+    const reopened = container.querySelector('[data-testid="tree-project"]');
+    expect(reopened.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(reopened);
+  });
+
+  it('展開済みの→は最初の子へ移る', () => {
+    const { container } = renderAttached(fixture());
+    const project = container.querySelector('[data-testid="tree-project"]');
+    project.focus();
+    press(project, 'ArrowRight');
+
+    press(document.activeElement, 'ArrowRight');
+
+    expect(document.activeElement.dataset.testid).toBe('tree-run');
+  });
+
+  it('←で親ノードへ戻り、親の←は折りたたむ', () => {
+    const { container } = renderAttached(fixture());
+    const project = container.querySelector('[data-testid="tree-project"]');
+    project.focus();
+    press(project, 'ArrowRight');
+    press(document.activeElement, 'ArrowRight');
+    expect(document.activeElement.dataset.testid).toBe('tree-run');
+
+    press(document.activeElement, 'ArrowLeft');
+    expect(document.activeElement.dataset.testid).toBe('tree-project');
+
+    press(document.activeElement, 'ArrowLeft');
+    expect(
+      container.querySelector('[data-testid="tree-project"]').getAttribute('aria-expanded'),
+    ).toBe('false');
+  });
+
+  it('Home / End で先頭・末尾へ移る', () => {
+    const { container } = renderAttached(fixture());
+    const items = [...container.querySelectorAll('[role="treeitem"]')];
+    items[0].focus();
+
+    press(items[0], 'End');
+    expect(document.activeElement).toBe(items[items.length - 1]);
+
+    press(document.activeElement, 'Home');
+    expect(document.activeElement).toBe(items[0]);
+  });
+
+  it('折りたたみボタンは Tab の停留所にしない', () => {
+    const { container } = renderAttached(fixture());
+
+    for (const toggleButton of all(container, 'tree-toggle')) {
+      expect(toggleButton.tabIndex).toBe(-1);
+    }
+  });
+
+  it('作業項目の状態は読み上げ名に含める', () => {
+    const { container, tree } = renderAttached(fixture());
+    tree.expand({ projectGroupId: 'g-a', runId: 'r1' });
+    tree.render();
+
+    const task = container.querySelector('[data-testid="tree-task"]');
+    expect(task.getAttribute('aria-label')).toBe('受入確認（未着手）');
+    // 記号そのものは支援技術へ渡さない。
+    expect(task.querySelector('.tree__mark').getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('tree / group / treeitem の役割が付く', () => {
+    const { container, tree } = renderAttached(fixture());
+    tree.expand({ projectGroupId: 'g-a', runId: 'r1' });
+    tree.render();
+
+    expect(container.querySelector('[role="tree"]')).not.toBeNull();
+    expect(container.querySelectorAll('[role="group"]').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('[role="treeitem"]').length).toBeGreaterThan(2);
+  });
+});

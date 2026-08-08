@@ -734,3 +734,50 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
     });
   });
 });
+
+describe('IndexedDbAdapter の接続管理（レビュー指摘 C-13）', () => {
+  function freshName() {
+    dbSequence += 1;
+    return `pwt-connection-${dbSequence}`;
+  }
+
+  it('並行して initialize() しても接続は1つになる', async () => {
+    // null 確認と await の間に別の呼び出しが入っても、データベースを二重に
+    // 開かない。二重に開くと、片方の接続が閉じられずに残る。
+    const adapter = new IndexedDbAdapter({ dbName: freshName() });
+    let opens = 0;
+    const original = adapter.openDatabase.bind(adapter);
+    adapter.openDatabase = () => {
+      opens += 1;
+      return original();
+    };
+
+    await Promise.all([adapter.initialize(), adapter.initialize()]);
+
+    expect(opens).toBe(1);
+    expect(adapter.db).not.toBeNull();
+    await adapter.close();
+  });
+
+  it('別接続が版を上げようとしたら、自分の接続を手放す', async () => {
+    // onversionchange を放置すると、将来 DB 版を上げる改訂時に、開きっぱなしの
+    // タブが新しい版の open を永久にブロックする。
+    const dbName = freshName();
+    const adapter = new IndexedDbAdapter({ dbName });
+    await adapter.initialize();
+
+    // 2つ目の接続として版を上げる。旧接続が閉じない限り onsuccess へ進めない。
+    const upgraded = await new Promise((resolve, reject) => {
+      const request = globalThis.indexedDB.open(dbName, 2);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    upgraded.close();
+
+    expect(adapter.db).toBeNull();
+    await expect(adapter.loadAll()).rejects.toMatchObject({
+      kind: STORAGE_ERROR_KIND.UNAVAILABLE,
+      message: expect.stringContaining('再読み込み'),
+    });
+  });
+});
