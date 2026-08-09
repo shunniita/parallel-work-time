@@ -93,7 +93,10 @@ A-15 の後半「サンプル以外のデータがリポジトリへ保存され
 | 保存の排他区間（退避＋全置換） | 9.1、9.4 | `persistence.test.js` |
 | 破壊的操作の二重実行防止 | 9.3、9.4 | `settingsBackup.spec.js`、`settingsView.test.js` |
 | 時計巻き戻し下での往復保証 | 9.2、9.3（A-11） | `writeClockRoundTrip.test.js` |
-| 取り込みの値・規模の上限 | 9.3 | `schema.test.js`、`integrity.test.js` |
+| 取り込みの値・規模の上限 | 9.3、8.9.10〜8.9.11 | `schema.test.js`、`integrity.test.js` |
+| 派生する合計工数の安全範囲 | 8.6、8.9.12 | `integrity.test.js`、`intervalOps.test.js` |
+| 通常経路で作れない構造の拒否 | 9.3 | `integrity.test.js` |
+| 選び直したファイルの採用順 | 9.3 | `settingsView.test.js` |
 | 保存失敗の表示 | 9.1 | `statusBar.test.js` |
 | アダプター契約 | 5.3 | `storageAdapter.contract.test.js` |
 

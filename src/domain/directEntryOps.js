@@ -38,7 +38,12 @@
  * `intervalOps.js` / `validation.js` と共有する。
  */
 
-import { MAX_DIRECT_ENTRY_SECONDS, MAX_PARTICIPANTS } from '../config.js';
+import {
+  MAX_DIRECT_ENTRY_SECONDS,
+  MAX_EFFORT_SECONDS,
+  MAX_PARTICIPANTS,
+} from '../config.js';
+import { isEffortWithinRange, taskTotalSeconds } from './effort.js';
 import { normalizeParticipants } from './participants.js';
 import { Problems } from './problems.js';
 
@@ -63,13 +68,24 @@ function rejected(problems) {
 }
 
 /**
- * 変換に成功した結果を返す。
+ * 変換結果を返す。合計工数が範囲外なら拒否へ倒す。
  *
  * @param {Problems} problems
+ * @param {{intervals?: object[]}} taskRecord 変換前の作業項目実績
  * @param {object[]} directEntries 変換後の直接入力一覧
  * @param {object} [extra] `created` / `updated` などの補足
  */
-function accepted(problems, directEntries, extra = {}) {
+function accepted(problems, taskRecord, directEntries, extra = {}) {
+  // 合計工数の範囲は、変換後の一覧が揃ってからでないと判定できない
+  // （仕様書8.9.12、`intervalOps.js` と同じ扱い）。
+  const total = taskTotalSeconds({ ...taskRecord, directEntries });
+  if (!isEffortWithinRange(total)) {
+    problems.add(
+      '追加工数',
+      `作業項目の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える（仕様書8.9.12）。`,
+    );
+    return rejected(problems);
+  }
   return { ok: true, errors: [], warnings: problems.warnings, directEntries, ...extra };
 }
 
@@ -269,7 +285,7 @@ export function addDirectEntry(taskRecord, input, context) {
     { seconds: input.seconds, participants, note: input.note },
     context,
   );
-  return accepted(problems, [...taskRecord.directEntries, created], { created });
+  return accepted(problems, taskRecord, [...taskRecord.directEntries, created], { created });
 }
 
 /**
@@ -326,7 +342,7 @@ export function editDirectEntry(taskRecord, entryId, changes, context) {
   const directEntries = taskRecord.directEntries.map((entry) =>
     entry.entryId === entryId ? updated : entry,
   );
-  return accepted(problems, directEntries, { updated });
+  return accepted(problems, taskRecord, directEntries, { updated });
 }
 
 /**

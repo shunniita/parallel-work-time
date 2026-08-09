@@ -94,16 +94,39 @@ export function createSettingsView({
     }
   }
 
+  /**
+   * ファイルを選び直したときに、古い読込の結果を捨てるための通し番号。
+   *
+   * 読込は非同期であり、完了の順序は選択の順序と一致しない。大きいファイルを
+   * 選んだ直後に小さいファイルを選ぶと、先に選んだ方が後から完了して、確認画面の
+   * 内容とファイル名を上書きする。利用者の最新の操作と食い違う（F12-30）。
+   */
+  let selectionToken = 0;
+
   async function selectFile(file) {
     resetImport();
+    selectionToken += 1;
+    const token = selectionToken;
     local.phase = 'reading';
     render();
+
+    let result;
     try {
-      local.importPayload = await readFile(file);
+      result = { payload: await readFile(file), error: null };
+    } catch (error) {
+      result = { payload: null, error };
+    }
+
+    // 待っている間に選び直されていれば、この結果は採用しない。
+    if (token !== selectionToken) {
+      return;
+    }
+    if (result.error === null) {
+      local.importPayload = result.payload;
       local.importFileName = file?.name ?? '選択したファイル';
       local.phase = 'ready';
-    } catch (error) {
-      local.errors = toErrorMessages(error);
+    } else {
+      local.errors = toErrorMessages(result.error);
       local.phase = 'idle';
     }
     render();

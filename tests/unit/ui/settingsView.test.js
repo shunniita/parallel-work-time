@@ -207,6 +207,53 @@ describe('createSettingsView', () => {
     });
   });
 
+  /**
+   * ファイルを選び直したときは、最後の選択だけを採用する（レビュー指摘 F12-30）。
+   *
+   * 読込は非同期であり、完了の順序は選択の順序と一致しない。
+   */
+  describe('選び直したファイルの読込順が逆転しても最後の選択を採る（F12-30）', () => {
+    /** ファイル名ごとに完了を握れる `readFile` を作る。 */
+    function controlledReader() {
+      const pending = new Map();
+      const readFile = (file) =>
+        new Promise((resolve, reject) => {
+          pending.set(file.name, { resolve, reject });
+        });
+      return { readFile, settle: (name) => pending.get(name) };
+    }
+
+    it('先に選んだファイルが後から完了しても採用しない', async () => {
+      const reader = controlledReader();
+      const mounted = mount({ readFile: reader.readFile });
+
+      const slow = mounted.view.selectFile({ name: 'old.json' });
+      const fast = mounted.view.selectFile({ name: 'new.json' });
+      reader.settle('new.json').resolve({ schemaVersion: 1, marker: 'new' });
+      await fast;
+      reader.settle('old.json').resolve({ schemaVersion: 1, marker: 'old' });
+      await slow;
+
+      expect(mounted.query('import-choice').textContent).toContain('new.json');
+      expect(mounted.query('import-choice').textContent).not.toContain('old.json');
+    });
+
+    it('先に選んだファイルの失敗も、後の選択の表示を壊さない', async () => {
+      const reader = controlledReader();
+      const mounted = mount({ readFile: reader.readFile });
+
+      const slow = mounted.view.selectFile({ name: 'broken.json' });
+      const fast = mounted.view.selectFile({ name: 'good.json' });
+      reader.settle('good.json').resolve({ schemaVersion: 1 });
+      await fast;
+      reader.settle('broken.json').reject(new ValidationError(['ファイル: 壊れています']));
+      await slow;
+
+      expect(mounted.query('settings-errors')).toBeNull();
+      expect(mounted.query('import-choice').textContent).toContain('good.json');
+    });
+  });
+
   it('壊れたファイルは置換確認を出さずエラーを表示する', async () => {
     const mounted = mount({
       readFile: vi.fn(async () => { throw new ValidationError(['ファイル: 壊れています']); }),

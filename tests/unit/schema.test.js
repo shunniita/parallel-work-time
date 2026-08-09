@@ -10,6 +10,7 @@ import {
   MAX_PARTICIPANTS,
   MAX_QUANTITY,
   MAX_RETENTION_DAYS,
+  MAX_TEXT_LENGTH,
   SCHEMA_VERSION,
   createDefaultSettings,
 } from '../../src/config.js';
@@ -569,9 +570,40 @@ describe('validateImportPayload()', () => {
 
     it('極端に長い文字列を拒否する', () => {
       const payload = validPayload();
-      payload.projectGroups[0].projectId = 'A'.repeat(1001);
+      payload.projectGroups[0].projectId = 'A'.repeat(MAX_TEXT_LENGTH + 1);
 
       expect(validateImportPayload(payload).ok).toBe(false);
+    });
+
+    it('内部識別子にも同じ長さの上限を適用する（F12-32）', () => {
+      // 識別子はDOMのid属性や変更履歴の `targetId` として使い回される。
+      // 形は問わないが、長さは他の文字列と同じ上限に収める。
+      const overLong = 'A'.repeat(MAX_TEXT_LENGTH + 1);
+      const cases = [
+        ['taskTemplates[0].templateId', (p) => { p.taskTemplates[0].templateId = overLong; }],
+        ['projectGroups[0].projectGroupId', (p) => { p.projectGroups[0].projectGroupId = overLong; }],
+        ['workRuns[0].runId', (p) => { p.workRuns[0].runId = overLong; }],
+        ['workRuns[0].tasks[0].taskRecordId', (p) => { p.workRuns[0].tasks[0].taskRecordId = overLong; }],
+        [
+          'workRuns[0].tasks[0].intervals[0].intervalId',
+          (p) => { p.workRuns[0].tasks[0].intervals[0].intervalId = overLong; },
+        ],
+        ['changeHistory[0].historyId', (p) => { p.changeHistory[0].historyId = overLong; }],
+      ];
+
+      for (const [path, mutate] of cases) {
+        const payload = validPayload();
+        mutate(payload);
+        const errors = validateImportPayload(payload).errors;
+        expect(errors.some((message) => message.startsWith(`${path}:`)), path).toBe(true);
+      }
+    });
+
+    it('上限ちょうどの識別子は通す', () => {
+      const payload = validPayload();
+      payload.workRuns[0].runId = 'A'.repeat(MAX_TEXT_LENGTH);
+
+      expect(validateImportPayload(payload).ok).toBe(true);
     });
   });
 });

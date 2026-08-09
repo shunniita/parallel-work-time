@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { createDefaultSettings, SCHEMA_VERSION } from '../../src/config.js';
+import {
+  MAX_EFFORT_SECONDS,
+  MAX_PARTICIPANTS,
+  SCHEMA_VERSION,
+  createDefaultSettings,
+} from '../../src/config.js';
+import { addSeconds } from '../../src/domain/datetime.js';
+import { isEffortWithinRange, toTransferMinutes } from '../../src/domain/effort.js';
 import { validateImport, validateImportIntegrity } from '../../src/domain/integrity.js';
 import {
   historyEntry,
@@ -78,6 +85,37 @@ describe('validateImport（構造＋業務整合性）', () => {
     });
 
     expect(validateImportIntegrity(payload).errors.join('\n')).toContain('案件IDが重複');
+  });
+
+  it('同一実施回に同じ作業項目定義が2行あると拒否する（F12-28）', () => {
+    // 実施回はテンプレート1版の定義を1件ずつ複製して作る。同じ定義が2行並ぶ
+    // 実施回は通常の生成経路では作れず、取り込むと集計・転記へ同じ作業項目が
+    // 2行現れる。`taskRecordId` を別にすれば主キー検査では通ってしまう。
+    expect(errorsOf((p) => {
+      p.workRuns[0].tasks.push({
+        ...structuredClone(p.workRuns[0].tasks[0]),
+        taskRecordId: 'task-duplicate',
+      });
+    })).toContain('作業項目定義の識別子が重複している');
+  });
+
+  it('別の実施回であれば同じ作業項目定義を持てる', () => {
+    // 同じテンプレートから作った実施回は、当然どれも同じ定義を持つ。
+    const payload = validPayload();
+    payload.workRuns.push({
+      ...structuredClone(payload.workRuns[0]),
+      runId: 'run-2',
+      tasks: payload.workRuns[0].tasks.map((task) => ({
+        ...structuredClone(task),
+        taskRecordId: `${task.taskRecordId}-2`,
+        intervals: task.intervals.map((interval) => ({
+          ...interval,
+          intervalId: `${interval.intervalId}-2`,
+        })),
+      })),
+    });
+
+    expect(validateImport(payload).errors).toEqual([]);
   });
 
   it('対象種別とバリエーションに有効版が2つあると拒否する', () => {
@@ -314,5 +352,88 @@ describe('状態日時の前後関係（GAR-3）', () => {
     archived(payload);
 
     expect(validateImport(payload).ok).toBe(true);
+  });
+});
+
+/**
+ * 派生する合計工数の安全範囲（仕様書8.9.12、レビュー指摘 F12-29）。
+ *
+ * 1件ずつの値に上限を置いても合計には効かない。区間数・作業項目数・参加者数が
+ * それぞれ上限内でも、積と和を重ねれば安全整数を超え、そこから先の加算は静かに
+ * 丸められる。
+ */
+describe('合計工数の安全範囲（F12-29）', () => {
+  const START = '2000-01-01T00:00:00+00:00';
+  const PARTICIPANTS = Array.from({ length: MAX_PARTICIPANTS }, (_, index) => `参加者${index}`);
+  /** 参加者数を掛けて上限ちょうどになる経過秒。 */
+  const SECONDS_AT_LIMIT = MAX_EFFORT_SECONDS / MAX_PARTICIPANTS;
+
+  /** 経過秒と参加者数から、狙った工数になる区間を1件作る。 */
+  function interval(elapsedSeconds, intervalId = 'interval-huge') {
+    return {
+      intervalId,
+      type: 'work',
+      startAt: START,
+      endAt: addSeconds(START, elapsedSeconds),
+      participants: PARTICIPANTS,
+      createdAt: START,
+      updatedAt: START,
+    };
+  }
+
+  /** 区間1件だけを持つ実施回にする。 */
+  function withInterval(payload, elapsedSeconds) {
+    payload.workRuns[0].createdAt = START;
+    payload.workRuns[0].updatedAt = START;
+    payload.workRuns[0].tasks[0].intervals = [interval(elapsedSeconds)];
+  }
+
+  it('上限ちょうどは通す', () => {
+    const payload = validPayload();
+    withInterval(payload, SECONDS_AT_LIMIT);
+
+    expect(validateImport(payload).errors).toEqual([]);
+  });
+
+  it('上限を超えると作業項目の場所を添えて拒否する', () => {
+    const payload = validPayload();
+    withInterval(payload, SECONDS_AT_LIMIT + 1);
+
+    expect(validateImport(payload).errors.join('\n')).toContain(
+      'workRuns[0].tasks[0]: 合計工数が上限',
+    );
+  });
+
+  it('1件ずつは上限内でも、作業項目をまたいだ合計が超えれば拒否する', () => {
+    // 各作業項目は上限の6割。2件で実施回の合計が上限を超える。
+    const payload = validPayload();
+    const template = payload.taskTemplates[0];
+    payload.workRuns[0].createdAt = START;
+    payload.workRuns[0].updatedAt = START;
+    payload.workRuns[0].tasks = template.tasks.map((definition, index) => ({
+      taskRecordId: `task-${index}`,
+      taskDefinitionId: definition.taskDefinitionId,
+      name: definition.name,
+      externalCode: definition.externalCode,
+      order: definition.order,
+      manuallyAdded: false,
+      intervals: [interval(Math.floor(SECONDS_AT_LIMIT * 0.6), `interval-${index}`)],
+      directEntries: [],
+    }));
+
+    const errors = validateImport(payload).errors.join('\n');
+    expect(errors).toContain('workRuns[0]: 実施回の合計工数が上限');
+    expect(errors).not.toContain('workRuns[0].tasks[0]: 合計工数が上限');
+  });
+
+  it('上限内であれば転記値も安全整数に収まる', () => {
+    // 集計と転記は「厳密な秒の合計」であることが意味の前提である。
+    const transferMinutes = toTransferMinutes(MAX_EFFORT_SECONDS);
+
+    expect(Number.isSafeInteger(transferMinutes)).toBe(true);
+    expect(isEffortWithinRange(MAX_EFFORT_SECONDS)).toBe(true);
+    expect(isEffortWithinRange(MAX_EFFORT_SECONDS + 1)).toBe(false);
+    expect(isEffortWithinRange(Number.MAX_SAFE_INTEGER + 2)).toBe(false);
+    expect(isEffortWithinRange(-1)).toBe(false);
   });
 });

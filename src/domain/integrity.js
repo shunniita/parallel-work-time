@@ -41,8 +41,14 @@
  * ある以上、直す機会は取り込み前にしかない。場所と理由を添えて拒否する。
  */
 
+import { MAX_EFFORT_SECONDS } from '../config.js';
 import { compareIso } from './datetime.js';
-import { INTERVAL_TYPE, isOpenInterval } from './effort.js';
+import {
+  INTERVAL_TYPE,
+  isEffortWithinRange,
+  isOpenInterval,
+  taskTotalSeconds,
+} from './effort.js';
 import { HISTORY_ENTITY_BY_OP } from './history.js';
 import { normalizeParticipants } from './participants.js';
 import { Problems } from './problems.js';
@@ -201,6 +207,12 @@ function checkTemplateSeriesVersions(problems, templates) {
  * テンプレートの `taskDefinitionId` は版をまたいで引き継ぐため、全体ではなく
  * テンプレート1版の中だけで一意とする。実績側の識別子は変更履歴の `targetId`
  * からも使われるため、データセット全体で一意にする。
+ *
+ * 実施回の中でも `taskDefinitionId` は一意である。実施回はテンプレート1版の
+ * 作業項目定義を1件ずつ複製して作るため（`templateInstantiate.js`）、同じ定義が
+ * 2行並ぶ実施回は通常の生成経路では作れない。取り込んでしまうと、集計・転記の
+ * 一覧へ同じ作業項目が2行現れ、どちらへ工数を記録したのかが利用者に分からなく
+ * なる。`taskRecordId` の全体一意性では防げない（別の実績IDを振れば通る）。
  */
 function checkNestedIdentifiers(problems, templates, runs) {
   templates.forEach((template, templateIndex) => {
@@ -209,6 +221,16 @@ function checkNestedIdentifiers(problems, templates, runs) {
       template?.tasks ?? [],
       'taskDefinitionId',
       `taskTemplates[${templateIndex}].tasks`,
+      '作業項目定義',
+    );
+  });
+
+  runs.forEach((run, runIndex) => {
+    checkUniqueNestedKeys(
+      problems,
+      run?.tasks ?? [],
+      'taskDefinitionId',
+      `workRuns[${runIndex}].tasks`,
       '作業項目定義',
     );
   });
@@ -352,7 +374,41 @@ function checkRunContents(problems, runs) {
     checkParticipants(problems, run, path);
     checkStatusConsistency(problems, run, path);
     checkTimestampOrder(problems, run, path);
+    checkEffortRange(problems, run, path);
   });
+}
+
+/**
+ * 派生する合計工数が厳密に扱える範囲か（仕様書8.6、8.9.12）。
+ *
+ * 1件ずつの値には上限があるが（`schema.js`）、合計には効かない。工数は
+ * 「経過秒 × 参加者数」を足し合わせた値であり、区間数・作業項目数・参加者数が
+ * それぞれ上限内でも、積と和を重ねれば安全整数を超える。超えた時点で加算は
+ * 丸められ、集計値と転記値が厳密値から静かにずれる。
+ *
+ * 作業項目ごとに見てから実施回でも見る。どちらも利用者が数字を読む単位であり、
+ * 作業項目単位で場所を示せると原因のレコードを特定できる。
+ */
+function checkEffortRange(problems, run, path) {
+  let runTotal = 0;
+  (run?.tasks ?? []).forEach((task, taskIndex) => {
+    const total = taskTotalSeconds(task);
+    if (!isEffortWithinRange(total)) {
+      problems.add(
+        `${path}.tasks[${taskIndex}]`,
+        `合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える。` +
+          '期間または参加者数が現実的な範囲を外れている（仕様書8.9.12）。',
+      );
+    }
+    runTotal += total;
+  });
+
+  if (!isEffortWithinRange(runTotal)) {
+    problems.add(
+      path,
+      `実施回の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える（仕様書8.9.12）。`,
+    );
+  }
 }
 
 /**
