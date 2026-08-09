@@ -93,6 +93,21 @@ function isNormalizedString(value) {
 const NORMALIZED_STRING_MESSAGE =
   `前後に空白の無い ${MAX_TEXT_LENGTH} 文字以内の非空文字列である必要がある`;
 
+/**
+ * 識別子として使える文字列か。
+ *
+ * 識別子はツールが採番する UUID であり（`ids.js`）、利用者が打ち込む値ではない。
+ * 形は問わない——過去に別の採番規則で作られたエクスポートも取り込めるようにする
+ * ためである。ただし長さは他の文字列と同じ上限に収める。識別子はDOMのid属性や
+ * 変更履歴の `targetId` として使い回され、際限のない長さは比較と表示の費用に
+ * そのまま乗る（レビュー指摘 F12-32）。
+ */
+function isBoundedId(value) {
+  return isNonEmptyString(value) && value.length <= MAX_TEXT_LENGTH;
+}
+
+const BOUNDED_ID_MESSAGE = `${MAX_TEXT_LENGTH} 文字以内の非空文字列である必要がある`;
+
 function isStringArray(value) {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
@@ -251,8 +266,8 @@ function validateSettings(settings, problems) {
 /** 作業テンプレート（仕様書6.3）。 */
 function validateTaskTemplate(template, path, problems) {
   for (const key of ['templateSeriesId', 'templateId']) {
-    if (!isNonEmptyString(template[key])) {
-      problems.add(`${path}.${key}`, '非空文字列である必要がある');
+    if (!isBoundedId(template[key])) {
+      problems.add(`${path}.${key}`, BOUNDED_ID_MESSAGE);
     }
   }
   // 対象種別とバリエーションは有効版の一意性キーである（8.1.1）。空白差で別物に
@@ -278,8 +293,8 @@ function validateTaskTemplate(template, path, problems) {
 }
 
 function validateTemplateTask(task, path, problems) {
-  if (!isNonEmptyString(task.taskDefinitionId)) {
-    problems.add(`${path}.taskDefinitionId`, '非空文字列である必要がある');
+  if (!isBoundedId(task.taskDefinitionId)) {
+    problems.add(`${path}.taskDefinitionId`, BOUNDED_ID_MESSAGE);
   }
   if (!isNormalizedString(task.name)) {
     problems.add(`${path}.name`, NORMALIZED_STRING_MESSAGE);
@@ -298,8 +313,8 @@ function validateTemplateTask(task, path, problems) {
 
 /** 案件グループ（仕様書6.4）。 */
 function validateProjectGroup(group, path, problems) {
-  if (!isNonEmptyString(group.projectGroupId)) {
-    problems.add(`${path}.projectGroupId`, '非空文字列である必要がある');
+  if (!isBoundedId(group.projectGroupId)) {
+    problems.add(`${path}.projectGroupId`, BOUNDED_ID_MESSAGE);
   }
   // 案件IDは一意制約を持つ唯一の利用者入力である（8.2.6）。対象種別・
   // バリエーションは案件詳細の表示とテンプレート照合に使う。
@@ -320,8 +335,8 @@ function validateProjectGroup(group, path, problems) {
 /** 実施回（仕様書6.5）。 */
 function validateWorkRun(run, path, problems) {
   for (const key of ['runId', 'projectGroupId', 'templateId']) {
-    if (!isNonEmptyString(run[key])) {
-      problems.add(`${path}.${key}`, '非空文字列である必要がある');
+    if (!isBoundedId(run[key])) {
+      problems.add(`${path}.${key}`, BOUNDED_ID_MESSAGE);
     }
   }
   if (!isValidDateKey(run.workDate)) {
@@ -354,8 +369,8 @@ function validateWorkRun(run, path, problems) {
 /** 作業項目実績（仕様書6.6）。 */
 function validateTaskRecord(task, path, problems) {
   for (const key of ['taskRecordId', 'taskDefinitionId']) {
-    if (!isNonEmptyString(task[key])) {
-      problems.add(`${path}.${key}`, '非空文字列である必要がある');
+    if (!isBoundedId(task[key])) {
+      problems.add(`${path}.${key}`, BOUNDED_ID_MESSAGE);
     }
   }
   // 名称と外部項目コードはテンプレートからの複製値であり（6.6、8.1.4）、複製元が
@@ -384,8 +399,8 @@ function validateTaskRecord(task, path, problems) {
 
 /** 作業区間（仕様書6.7）。 */
 function validateInterval(interval, path, problems) {
-  if (!isNonEmptyString(interval.intervalId)) {
-    problems.add(`${path}.intervalId`, '非空文字列である必要がある');
+  if (!isBoundedId(interval.intervalId)) {
+    problems.add(`${path}.intervalId`, BOUNDED_ID_MESSAGE);
   }
   if (!Object.values(INTERVAL_TYPE).includes(interval.type)) {
     problems.add(
@@ -412,8 +427,8 @@ function validateInterval(interval, path, problems) {
 
 /** 直接入力（仕様書6.8）。 */
 function validateDirectEntry(entry, path, problems) {
-  if (!isNonEmptyString(entry.entryId)) {
-    problems.add(`${path}.entryId`, '非空文字列である必要がある');
+  if (!isBoundedId(entry.entryId)) {
+    problems.add(`${path}.entryId`, BOUNDED_ID_MESSAGE);
   }
   if (!isNonNegativeIntegerInRange(entry.seconds, MAX_DIRECT_ENTRY_SECONDS)) {
     problems.add(
@@ -430,8 +445,8 @@ function validateDirectEntry(entry, path, problems) {
 
 /** 簡易変更履歴（仕様書11章）。 */
 function validateHistoryEntry(entry, path, problems) {
-  if (!isNonEmptyString(entry.historyId)) {
-    problems.add(`${path}.historyId`, '非空文字列である必要がある');
+  if (!isBoundedId(entry.historyId)) {
+    problems.add(`${path}.historyId`, BOUNDED_ID_MESSAGE);
   }
   if (!isValidIsoSecond(entry.timestamp)) {
     problems.add(`${path}.timestamp`, 'オフセット付きISO 8601（秒精度）である必要がある');
@@ -439,8 +454,8 @@ function validateHistoryEntry(entry, path, problems) {
   if (!HISTORY_ENTITY_TYPE.includes(entry.entityType)) {
     problems.add(`${path}.entityType`, `${HISTORY_ENTITY_TYPE.join(' / ')} のいずれか`);
   }
-  if (!isNonEmptyString(entry.targetId)) {
-    problems.add(`${path}.targetId`, '非空文字列である必要がある');
+  if (!isBoundedId(entry.targetId)) {
+    problems.add(`${path}.targetId`, BOUNDED_ID_MESSAGE);
   }
   if (!HISTORY_OPERATION.includes(entry.operation)) {
     problems.add(`${path}.operation`, `${HISTORY_OPERATION.join(' / ')} のいずれか`);

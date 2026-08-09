@@ -9,6 +9,7 @@
  * 新しい開発時ファイルが増えたときに名前を書き足し忘れて素通りする。
  */
 
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,6 +19,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   CONTENTS,
   MANIFEST_PATH,
+  ROOT,
   STAGE_DIR,
   STAGE_NAME,
   ZIP_PATH,
@@ -29,6 +31,22 @@ import { createZip, extractZip, readZipEntries } from '../../tools/zip.mjs';
 
 function sha256(data) {
   return createHash('sha256').update(data).digest('hex');
+}
+
+/**
+ * 採用リスト配下でGitが管理しているファイルを、ZIPと同じ並びで返す。
+ *
+ * 期待値をここへ書き写さない。書き写すと、`src/` へファイルを1つ足すたびに
+ * 試験も直すことになり、やがて「落ちたら期待値を合わせる」運用になる。
+ *
+ * @returns {string[]} リポジトリルートからの相対パス（`/` 区切り、名前順）
+ */
+function trackedFiles() {
+  const listed = execFileSync('git', ['ls-files', '-z', '--', ...CONTENTS], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  return listed.split('\0').filter((line) => line !== '').sort();
 }
 
 describe('配布物の組み立て', () => {
@@ -56,6 +74,18 @@ describe('配布物の組み立て', () => {
     // 除外すべきものを列挙するのではなく、置いたものが採用リストと一致することを
     // 断定する。新しい開発時ファイルが増えても自動的に落ちる。
     expect(readdirSync(STAGE_DIR).sort()).toEqual([...CONTENTS].sort());
+  });
+
+  it('採用ディレクトリの配下まで、Git管理下のファイルと一致する（F12-31）', () => {
+    // 直下の一致だけでは、`src/` や `data/` の中へ紛れたファイルを見つけられない。
+    // 「配布物 = Git管理下の採用リスト配下」を断定すれば、作業ツリーに残った
+    // エクスポートJSONや編集中の一時ファイルが混入した時点で落ちる。
+    const tracked = trackedFiles();
+    const staged = listFiles(STAGE_DIR).map((file) =>
+      file.name.slice(`${STAGE_NAME}/`.length),
+    );
+
+    expect(staged).toEqual(tracked);
   });
 
   it('展開すると全ファイルがマニフェストと一致する（F12-23）', () => {

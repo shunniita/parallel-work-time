@@ -33,9 +33,14 @@
  * 入れ物は `problems.js` を `validation.js` と共有する。
  */
 
-import { MAX_PARTICIPANTS } from '../config.js';
+import { MAX_EFFORT_SECONDS, MAX_PARTICIPANTS } from '../config.js';
 import { compareIso, isValidIsoSecond } from './datetime.js';
-import { INTERVAL_TYPE, isOpenInterval } from './effort.js';
+import {
+  INTERVAL_TYPE,
+  isEffortWithinRange,
+  isOpenInterval,
+  taskTotalSeconds,
+} from './effort.js';
 import { findOverlappingPairs } from './overlap.js';
 import { normalizeParticipants } from './participants.js';
 import { Problems } from './problems.js';
@@ -58,16 +63,43 @@ function rejected(problems) {
 }
 
 /**
- * 変換に成功した結果を返す。重複の警告はここで一度だけ足す。
+ * 変換結果を返す。重複の警告はここで一度だけ足す。
+ *
+ * 合計工数の範囲だけは、変換後の一覧が揃ってからでないと判定できない。
+ * 1区間ごとの上限では防げず（`participants` と経過時間の積を足し合わせた値が
+ * 問題になる）、ここで確かめて範囲外なら拒否へ倒す（仕様書8.9.12）。
  *
  * @param {Problems} problems
+ * @param {{directEntries?: object[]}} taskRecord 変換前の作業項目実績
  * @param {object[]} intervals 変換後の区間一覧
  * @param {object} [extra] `created` / `closed` / `updated` などの補足
- * @returns {{ok: true, errors: string[], warnings: object[], intervals: object[]}}
+ * @returns {{ok: boolean, errors: string[], warnings: object[], intervals: object[]|null}}
  */
-function accepted(problems, intervals, extra = {}) {
+function accepted(problems, taskRecord, intervals, extra = {}) {
+  if (!checkEffortRange(problems, { ...taskRecord, intervals })) {
+    return rejected(problems);
+  }
   addOverlapWarning(problems, intervals);
   return { ok: true, errors: [], warnings: problems.warnings, intervals, ...extra };
+}
+
+/**
+ * 合計工数が厳密に扱える範囲かを確かめる（仕様書8.9.12）。
+ *
+ * @param {Problems} problems
+ * @param {object} taskRecord 変換後の内容を持つ作業項目実績
+ * @returns {boolean}
+ */
+function checkEffortRange(problems, taskRecord) {
+  if (isEffortWithinRange(taskTotalSeconds(taskRecord))) {
+    return true;
+  }
+  problems.add(
+    '作業区間',
+    `作業項目の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える。` +
+      '期間または参加者数を見直す（仕様書8.9.12）。',
+  );
+  return false;
 }
 
 /**
@@ -257,7 +289,7 @@ function closeThenOpen(taskRecord, plan, context) {
   if (created !== null) {
     intervals.push(created);
   }
-  return accepted(problems, intervals, { closed, created });
+  return accepted(problems, taskRecord, intervals, { closed, created });
 }
 
 /**
@@ -292,7 +324,7 @@ export function startWork(taskRecord, input, context) {
     { type: INTERVAL_TYPE.WORK, startAt: input.at, endAt: null, participants },
     context,
   );
-  return accepted(problems, [...taskRecord.intervals, created], { created });
+  return accepted(problems, taskRecord, [...taskRecord.intervals, created], { created });
 }
 
 /**
@@ -443,7 +475,7 @@ export function addInterval(taskRecord, input, context) {
     },
     context,
   );
-  return accepted(problems, [...taskRecord.intervals, created], { created });
+  return accepted(problems, taskRecord, [...taskRecord.intervals, created], { created });
 }
 
 /**
@@ -512,7 +544,7 @@ export function editInterval(taskRecord, intervalId, changes, context) {
   const intervals = taskRecord.intervals.map((interval) =>
     interval.intervalId === intervalId ? updated : interval,
   );
-  return accepted(problems, intervals, { updated });
+  return accepted(problems, taskRecord, intervals, { updated });
 }
 
 /**
