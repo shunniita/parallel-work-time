@@ -57,7 +57,7 @@
   font-weight: 600;
 }
 
-/* 警告領域。中身が無いあいだは hidden 属性で畳む（Step 11 で内容を入れる）。 */
+/* 警告領域。中身が無いあいだは hidden 属性で畳む（仕様書8.8.1、12.2）。 */
 .warning-bar {
   padding: var(--space-2) var(--space-4);
   background: var(--color-warning-bg);
@@ -66,6 +66,57 @@
 
 .warning-bar[hidden] {
   display: none;
+}
+
+.warning-bar__tabs,
+.warning-bar__notice {
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+}
+
+.warning-bar__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.warning-bar__list {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+
+.warning-bar__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.warning-bar__link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.warning-bar__meta {
+  color: var(--color-text-muted);
+  font-size: 0.9em;
+}
+
+.warning-bar__meta--warn,
+.warning-bar__elapsed--exceeded {
+  color: var(--color-error-text);
+  font-weight: 600;
+}
+
+.warning-bar__elapsed {
+  font-size: 0.9em;
 }
 
 .layout {

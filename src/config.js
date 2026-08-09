@@ -66,6 +66,20 @@ export function resolveRetentionDays(settings) {
   return isSettingInRange(value, MAX_RETENTION_DAYS) ? value : DEFAULT_RETENTION_DAYS;
 }
 
+/**
+ * 保存済みの未終了しきい値を読み取り用に解決する。`resolveRetentionDays` と
+ * 同じ理由で、範囲外の値は既定値へ倒す。
+ *
+ * @param {{longRunningThresholdHours?: unknown}|null|undefined} settings
+ * @returns {number}
+ */
+export function resolveLongRunningThresholdHours(settings) {
+  const value = settings?.longRunningThresholdHours;
+  return isSettingInRange(value, MAX_LONG_RUNNING_THRESHOLD_HOURS)
+    ? value
+    : DEFAULT_LONG_RUNNING_THRESHOLD_HOURS;
+}
+
 /** 未終了区間のしきい値判定を再評価する間隔。ミリ秒（仕様書8.8）。 */
 export const THRESHOLD_RECHECK_INTERVAL_MS = 60 * 1000;
 

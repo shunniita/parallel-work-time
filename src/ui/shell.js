@@ -4,9 +4,8 @@
  * 画面幅1280px以上のPCを主対象とし、左に階層一覧、右に選択中の詳細を置く。
  * 専用ルーティングは持たず、単一ページ内のビュー切替で7画面を表現する（12.2）。
  *
- * 本モジュールは器だけを用意する。警告領域（8.8.1、8.10、9.5）と左ツリーの
- * 中身は、それぞれ実装計画 Step 11 と Step 5 で埋める。空のまま置いておくのは、
- * 後から差し込む位置を先に決めておくためである。
+ * 本モジュールは器だけを用意する。警告領域の中身は `src/ui/warningBar.js`、
+ * 左ツリーは `src/ui/tree.js` が埋める。
  */
 
 import { el, replaceChildren } from './dom.js';
@@ -34,15 +33,6 @@ const NAV_ITEMS = [
   { view: VIEW.SETTINGS, label: '設定' },
 ];
 
-/** 中身のある画面。仕様書12.2 の7画面がすべて揃っている。 */
-const IMPLEMENTED_VIEWS = new Set([
-  VIEW.PROJECTS,
-  VIEW.SUMMARY,
-  VIEW.TEMPLATES,
-  VIEW.ARCHIVE,
-  VIEW.SETTINGS,
-]);
-
 /**
  * 骨格を組み立てて指定要素へ差し込む。
  *
@@ -58,16 +48,11 @@ export function renderShell(root, handlers) {
     'nav',
     { class: 'header__nav', 'aria-label': '画面切替' },
     NAV_ITEMS.map((item) => {
-      const implemented = IMPLEMENTED_VIEWS.has(item.view);
       const button = el('button', {
         type: 'button',
         class: 'header__nav-item',
         text: item.label,
         dataset: { view: item.view, testid: `nav-${item.view}` },
-        // 未実装の画面は押せないようにする。押せるのに何も起きない状態より、
-        // 何がまだ無いのかが分かる方がよい。
-        disabled: !implemented,
-        title: implemented ? undefined : '実装予定',
         on: { click: () => handlers.onNavigate(item.view) },
       });
       navButtons.set(item.view, button);
@@ -80,7 +65,7 @@ export function renderShell(root, handlers) {
     'aria-live': 'polite',
     'aria-label': '警告',
     dataset: { testid: 'warning-bar' },
-    // 中身が無いあいだは領域を占めない。Step 11 で件数に応じて表示する。
+    // 中身が無いあいだは領域を占めない。表示の制御は warningBar.js が持つ。
     hidden: true,
   });
 
