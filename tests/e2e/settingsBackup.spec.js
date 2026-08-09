@@ -36,7 +36,7 @@ test('JSONエクスポートは仕様どおりの名前と全データを含む�
   await expect(page.getByTestId('last-exported-at')).toContainText('最終エクスポート');
 });
 
-test('退避して全置換インポートするとエクスポート時点へ戻る（T-11）', async ({ page }) => {
+test('T-11 退避して全置換インポートするとエクスポート時点へ戻る（A-11）', async ({ page }) => {
   await createProject(page, { projectId: 'PJ-BEFORE', totalQuantity: 100 });
   await page.getByTestId('nav-settings').click();
 
@@ -62,7 +62,7 @@ test('退避して全置換インポートするとエクスポート時点へ�
   await expect(page.getByText('PJ-AFTER', { exact: true })).toHaveCount(0);
 });
 
-test('壊れたJSONでは既存データを変更しない（T-12）', async ({ page }) => {
+test('T-12 壊れたJSONでは既存データを変更しない（A-12）', async ({ page }) => {
   await createProject(page, { projectId: 'PJ-KEEP', totalQuantity: 100 });
   await page.getByTestId('nav-settings').click();
 

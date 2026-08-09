@@ -157,6 +157,30 @@ test('T-15 参加者名が別の作業区間で候補表示される（A-14）',
   await expect(page.locator('#run-op-participants-options option[value="乙"]')).toHaveCount(1);
 });
 
+test('T-04 20分×3人と30分×2人で合計120分になる（A-05）', async ({ page }) => {
+  // T-16 と数字は同じだが見るものが違う。こちらは参加者変更を挟まず、
+  // 「作業時間×参加人数」がそのまま積み上がることだけを確かめる（仕様書8.6.1）。
+  await setup(page, 'PJ-T04');
+
+  await operate(page, {
+    task: '受入確認',
+    operation: 'start',
+    at: '2026-08-01T09:00:00',
+    participants: ['甲', '乙', '丙'],
+  });
+  await operate(page, { task: '受入確認', operation: 'finish', at: '2026-08-01T09:20:00' });
+
+  await operate(page, {
+    task: '受入確認',
+    operation: 'start',
+    at: '2026-08-01T10:00:00',
+    participants: ['甲', '乙'],
+  });
+  await operate(page, { task: '受入確認', operation: 'finish', at: '2026-08-01T10:30:00' });
+
+  // 20分×3人＝3,600秒、30分×2人＝3,600秒。合計7,200秒を分へ切り上げて120分。
+  await expect(taskRow(page, '受入確認').getByTestId('task-time')).toHaveText('120分');
+});
 test('T-16 参加者変更で2人になり、合計120分となる（A-16）', async ({ page }) => {
   await setup(page, 'PJ-T16');
 

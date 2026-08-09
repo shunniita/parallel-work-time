@@ -160,7 +160,7 @@ test.describe('作業項目の生成（仕様書8.3、A-01）', () => {
     await createProject(page, { projectId: 'PJ-0001', totalQuantity: 100 });
   });
 
-  test('サンプル対象A・標準の有効な作業項目が生成される（T-01相当）', async ({ page }) => {
+  test('T-01 サンプル対象A・標準の有効な作業項目が生成される（A-01）', async ({ page }) => {
     await createRun(page, { workDate: '2026-08-01', runQuantity: 50 });
 
     expect(await readTaskNames(page)).toEqual([
@@ -247,7 +247,7 @@ test.describe('作業項目の生成（仕様書8.3、A-01）', () => {
 });
 
 test.describe('数量の集計（仕様書8.2.5、A-02）', () => {
-  test('第1回50・第2回50で総数100・累計100・残数0（T-02相当）', async ({ page }) => {
+  test('T-02 第1回50・第2回50で総数100・累計100・残数0（A-02）', async ({ page }) => {
     await createProject(page, { projectId: 'PJ-0001', totalQuantity: 100 });
     await createRun(page, { workDate: '2026-08-01', runQuantity: 50 });
     await openProject(page, 'PJ-0001');
@@ -583,7 +583,7 @@ test.describe('階層ツリー（仕様書12.1）', () => {
 });
 
 test.describe('外部通信（仕様書5.1.4、13章）', () => {
-  test('一連の操作で外部オリジンへの要求が発生しない', async ({ page }) => {
+  test('T-18 一連の操作で外部オリジンへの要求が発生しない（A-15）', async ({ page }) => {
     const external = [];
     page.on('request', (request) => {
       if (!request.url().startsWith('http://127.0.0.1:')) {

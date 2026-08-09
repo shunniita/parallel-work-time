@@ -409,6 +409,8 @@ GAR-6 の「拒否したときに有効版が増えない」は、件数だけ�
 
 これらはStep 12の計画範囲と一致するため、本レビューでは実装変更を行わない。
 
+**2026-08-09 追記: 4件とも Step 12 で対応した。** READMEを現行実装へ合わせ、viewport を `width=device-width` へ変え（D-19）、性能実測値をREADMEへ記載し、`npm run dist` と展開後の起動確認（`distribution.spec.js`）を用意した。詳細は PWT-DESIGN-012 を参照。
+
 ---
 
 ## 8. レビュー判断

@@ -2,7 +2,13 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=1280" />
+    <!--
+      主対象は画面幅1280px以上のPC（仕様書12.1）だが、幅を1280へ固定しない。
+      固定すると layout.css の狭幅対応（max-width: 1279px）が実機で発火せず、
+      狭い画面では横スクロールしないと操作できなくなる。仕様書13章は
+      「狭い画面でも操作不能な崩壊を避ける」と定めている（レビュー指摘 D-19）。
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>同時並行作業時間計測支援ツール</title>
     <!--
       外部フォント・CDN・外部APIを参照しない（仕様書5.1.4、13章）。
