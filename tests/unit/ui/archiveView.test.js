@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDefaultSettings } from '../../../src/config.js';
 import { summarizeArchive } from '../../../src/app/actions/retentionActions.js';
+import { runDestructiveAction } from '../../../src/io/safetyExport.js';
 import { RUN_STATUS } from '../../../src/domain/schema.js';
 import { createArchiveView } from '../../../src/ui/views/archiveView.js';
 import { projectGroup, resetIds, workRun } from '../../fixtures/builders.js';
@@ -47,12 +48,18 @@ function mount(options = {}) {
     deleteProjectGroup: vi.fn(async () => ({ dataset: null })),
     exportData: vi.fn(async () => ({ dataset: null })),
   };
+  // 排他区間の用意は `main.js` の役目なので、ここでは順序だけを持つ本体
+  // （`runDestructiveAction`）へモックを差し込む（GAR-1）。
+  const runDestructive =
+    options.runDestructive ??
+    ((input) =>
+      runDestructiveAction({ ...input, exportData: actions.exportData, scoped: actions }));
   const view = createArchiveView({
     container,
     store: { getState: () => state },
     actions,
     now: () => FIXED_NOW,
-    runDestructive: options.runDestructive,
+    runDestructive,
   });
   view.render();
 
@@ -188,18 +195,7 @@ describe('createArchiveView', () => {
     });
 
     it('退避してから削除すると、退避が先に走る', async () => {
-      const order = [];
-      const view = mountWithDeletable({
-        runDestructive: async ({ backup, exportData, destructiveAction }) => {
-          if (backup) {
-            order.push('export');
-            await exportData();
-          }
-          order.push('delete');
-          await destructiveAction();
-          return { executed: true, backedUp: backup };
-        },
-      });
+      const view = mountWithDeletable();
       view.query('delete-run').click();
       view.query('archive-delete-reason').value = '保持期間を過ぎたため';
       view.query('archive-delete-confirm').click();
@@ -208,8 +204,11 @@ describe('createArchiveView', () => {
       view.query('delete-with-backup').click();
       await vi.waitFor(() => expect(view.actions.deleteRun).toHaveBeenCalled());
 
-      expect(order).toEqual(['export', 'delete']);
-      expect(view.actions.exportData).toHaveBeenCalled();
+      // 退避が先。順序は `runDestructiveAction` が持つので、偽物で組み直さず
+      // 実物の呼び出し順を見る。
+      expect(view.actions.exportData.mock.invocationCallOrder[0]).toBeLessThan(
+        view.actions.deleteRun.mock.invocationCallOrder[0],
+      );
     });
 
     it('退避せずに削除すると退避を呼ばない', async () => {

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ValidationError } from '../../../src/app/errors.js';
 import { createDefaultSettings } from '../../../src/config.js';
 import { createSettingsView } from '../../../src/ui/views/settingsView.js';
+import { runDestructiveAction } from '../../../src/io/safetyExport.js';
 
 function mount(options = {}) {
   const container = document.createElement('div');
@@ -25,11 +26,17 @@ function mount(options = {}) {
   };
   const payload = { schemaVersion: 1 };
   const readFile = options.readFile ?? vi.fn(async () => payload);
+  // 排他区間の用意は `main.js` の役目なので、ここでは順序だけを持つ本体
+  // （`runDestructiveAction`）へモックを差し込む（GAR-1）。
+  const runDestructive = (input) =>
+    runDestructiveAction({ ...input, exportData: actions.exportData, scoped: actions });
   const view = createSettingsView({
     container,
     store: { getState: () => state },
     actions,
     readFile,
+    runDestructive,
+    isActive: options.isActive,
   });
   view.render();
   return {
@@ -162,5 +169,32 @@ describe('createSettingsView', () => {
     mounted.view.render();
 
     expect(mounted.query('settings-message')).toBeNull();
+  });
+
+  describe('別画面へ移った後は詳細ペインを奪い返さない（GAR-4）', () => {
+    it('非アクティブになったビューは描かない', async () => {
+      // すべてのビューが詳細ペインを共有する。非同期保存の完了後に自分の
+      // render() を呼ぶため、その間に画面が変わっていると表示が食い違う。
+      let active = true;
+      const mounted = mount({ isActive: () => active });
+      expect(mounted.query('settings-form')).not.toBeNull();
+
+      // 保存を保留したまま別画面へ移った状況を作る。
+      active = false;
+      mounted.container.replaceChildren();
+
+      await mounted.view.render();
+
+      expect(mounted.container.children).toHaveLength(0);
+    });
+
+    it('アクティブなら従来どおり描く', () => {
+      const mounted = mount({ isActive: () => true });
+      mounted.container.replaceChildren();
+
+      mounted.view.render();
+
+      expect(mounted.query('settings-form')).not.toBeNull();
+    });
   });
 });

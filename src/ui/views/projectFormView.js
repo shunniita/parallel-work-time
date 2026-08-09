@@ -29,7 +29,7 @@ import { toIntegerInput } from '../numeric.js';
  *          handlers: {onCreated: Function, onOpenExisting: Function, onCancel: Function}}} options
  * @returns {{render: () => void, reset: () => void}}
  */
-export function createProjectFormView({ container, store, actions, handlers }) {
+export function createProjectFormView({ container, store, actions, handlers, isActive = () => true }) {
   const local = {
     draft: emptyDraft(),
     /** @type {string[]} */
@@ -230,6 +230,11 @@ export function createProjectFormView({ container, store, actions, handlers }) {
   }
 
   function render() {
+    // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
+    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    if (!isActive()) {
+      return;
+    }
     const targetTypeSuggest = suggestInput('target-type', 'targetType', targetTypeOptions());
     const variantSuggest = suggestInput('variant', 'variant', variantOptions());
     refs.variantOptions = variantSuggest.datalist;

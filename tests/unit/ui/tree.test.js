@@ -647,3 +647,56 @@ describe('キーボード操作（仕様書13章、レビュー指摘 D-18）', 
     });
   });
 });
+
+describe('取り込み可能な識別子でDOM参照を壊さない（GAR-5）', () => {
+  /** 記号を含む識別子。JSONの契約では非空文字列であればよい（仕様書9.3）。 */
+  function trickyFixture() {
+    return {
+      projectGroups: [
+        projectGroup({ projectGroupId: 'a:b', projectId: 'PJ-A' }),
+        projectGroup({ projectGroupId: 'a/b', projectId: 'PJ-B' }),
+      ],
+      workRuns: [
+        workRun({ runId: 'r"1', projectGroupId: 'a:b', tasks: [taskRecord()] }),
+        workRun({ runId: 'r]2', projectGroupId: 'a/b', tasks: [taskRecord()] }),
+      ],
+    };
+  }
+
+  it('記号だけが違う識別子でも group の ID が衝突しない', () => {
+    // 識別子から組み立てると `a:b` と `a/b` が同じ ID になり、aria-owns が
+    // 別の案件の子を指す。
+    const { container, tree } = renderTree(trickyFixture());
+    tree.expand({ projectGroupId: 'a:b' });
+    tree.expand({ projectGroupId: 'a/b' });
+    tree.render();
+
+    const ids = [...container.querySelectorAll('[role="group"]')].map((node) => node.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(container.querySelectorAll(`[aria-owns="${id}"]`)).toHaveLength(1);
+    }
+  });
+
+  it('引用符を含む識別子でもフォーカス移動が落ちない', () => {
+    // 実施回IDは `r"1`。属性セレクターへ素で埋めると引用符が閉じて
+    // `SyntaxError` になる。
+    const rendered = renderTree(trickyFixture());
+    document.body.replaceChildren(rendered.container);
+    rendered.tree.expand({ projectGroupId: 'a:b' });
+    rendered.tree.render();
+
+    const run = rendered.container.querySelector('[data-testid="tree-run"]');
+    expect(run.dataset.treeKey).toBe('run:r"1');
+    run.focus();
+
+    // 展開（→）で再描画が起き、同じノードへフォーカスを戻す経路を通る。
+    expect(() => {
+      run.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+      );
+    }).not.toThrow();
+
+    expect(document.activeElement.dataset.treeKey).toBe('run:r"1');
+  });
+});

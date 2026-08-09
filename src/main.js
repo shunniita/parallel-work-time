@@ -76,6 +76,7 @@ import {
   deleteRun,
   summarizeArchive,
 } from './app/actions/retentionActions.js';
+import { runDestructiveAction } from './io/safetyExport.js';
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
 import { VIEW, renderShell } from './ui/shell.js';
 import { renderStatusBar } from './ui/statusBar.js';
@@ -212,9 +213,9 @@ async function main() {
    *
    * @param {Function} action
    */
-  function wrap(action) {
+  function wrap(action, scopedDeps = deps) {
     return async (...args) => {
-      const result = await action(deps, ...args);
+      const result = await action(scopedDeps, ...args);
       // 書き込みは成功したが読み直しに失敗した場合は null が返る。古い内容で
       // 上書きせず、保存状態表示の注記に任せる（`persistence.run` 参照）。
       if (result.dataset !== null) {
@@ -222,6 +223,39 @@ async function main() {
       }
       return result;
     };
+  }
+
+  /**
+   * 退避付きの破壊的操作（仕様書9.4、10.5、敵対的レビュー GAR-1）。
+   *
+   * 退避と破壊的操作を1つの排他区間で実行する。別々に待ち行列へ積むと、退避JSONを
+   * 取った後・破壊的操作の前に別の保存が割り込みうる。その保存は退避にも置換後にも
+   * 残らず、成功したのにどこにも無い書き込みになる。
+   *
+   * 区間の中では `session.run` を使うアクションへ差し替える。区間内かどうかを
+   * 共有フラグで見分けないのは、区間の実行中に利用者が別画面を操作した場合まで
+   * 「内側」と誤判定するためである（`persistence.js` 参照）。
+   *
+   * 画面は「何を壊すか」だけを決め、取引の境界はここが持つ。
+   *
+   * @param {{backup: boolean, confirmedWithoutBackup?: boolean,
+   *          destructiveAction: (scoped: object) => Promise<unknown>}} options
+   */
+  function runDestructive({ backup, confirmedWithoutBackup = false, destructiveAction }) {
+    return persistence.runExclusive(({ run }) => {
+      const scopedDeps = { adapter, persistence: { ...persistence, run } };
+      return runDestructiveAction({
+        backup,
+        confirmedWithoutBackup,
+        exportData: wrap(exportData, scopedDeps),
+        destructiveAction,
+        scoped: {
+          deleteRun: wrap(deleteRun, scopedDeps),
+          deleteProjectGroup: wrap(deleteProjectGroup, scopedDeps),
+          importData: wrap(importData, scopedDeps),
+        },
+      });
+    });
   }
 
   /**
@@ -258,6 +292,35 @@ async function main() {
     previewDirectEntryDeletion,
   };
 
+  /**
+   * いま詳細ペインを持っているビューの識別子（敵対的レビュー GAR-4）。
+   *
+   * すべてのビューが `shell.detailPane` を共有する。非同期保存の完了後、ビューは
+   * 自分の `render()` を呼ぶが、その間に利用者が別画面へ移っていることがある。
+   * 所有者を1か所で決め、各ビューは自分の番かどうかだけを見る。
+   *
+   * 案件画面は選択の深さで中身が変わるため（`renderProjectsView`）、`VIEW` の値
+   * ではなく専用の識別子を返す。
+   */
+  const DETAIL = { PROJECT: 'detail:project', RUN: 'detail:run', TASK: 'detail:task' };
+
+  function activeDetailKey() {
+    const { view, selection } = store.getState();
+    if (view !== VIEW.PROJECTS) {
+      return view;
+    }
+    if (selection.taskRecordId !== null) {
+      return DETAIL.TASK;
+    }
+    if (selection.runId !== null) {
+      return DETAIL.RUN;
+    }
+    return DETAIL.PROJECT;
+  }
+
+  /** @param {string} key */
+  const owns = (key) => () => activeDetailKey() === key;
+
   const tree = createTree({
     container: shell.treePane,
     store,
@@ -281,12 +344,14 @@ async function main() {
       createTemplate: wrap(createTemplate),
       reviseTemplate: wrap(reviseTemplateAction),
     },
+    isActive: owns(VIEW.TEMPLATES),
   });
 
   const projectFormView = createProjectFormView({
     container: shell.detailPane,
     store,
     actions: { createProjectGroup: wrap(createProjectGroup) },
+    isActive: owns(VIEW.PROJECT_FORM),
     handlers: {
       onCreated: (projectGroup) => {
         tree.expand({ projectGroupId: projectGroup.projectGroupId });
@@ -318,6 +383,7 @@ async function main() {
       updateRunQuantity: wrap(updateRunQuantity),
     },
     handlers: { onSelectRun: selectRun },
+    isActive: owns(DETAIL.PROJECT),
   });
 
   const runView = createRunView({
@@ -331,6 +397,7 @@ async function main() {
       },
       onSelectProject: selectProject,
     },
+    isActive: owns(DETAIL.RUN),
   });
 
   const taskDetailView = createTaskDetailView({
@@ -338,6 +405,7 @@ async function main() {
     store,
     actions: { ...intervalActions, ...directEntryActions },
     handlers: { onBackToRun: selectRun },
+    isActive: owns(DETAIL.TASK),
   });
 
   /**
@@ -361,18 +429,16 @@ async function main() {
       // 集計中に記録の誤りへ気づいたとき、実施回詳細へ移れるようにする。
       onSelectRun: (runId) => selectRun(runId),
     },
+    isActive: owns(VIEW.SUMMARY),
   });
 
   /** 設定とJSONバックアップ（仕様書9.2〜9.5）。 */
   const archiveView = createArchiveView({
     container: shell.detailPane,
     store,
-    actions: {
-      summarizeArchive,
-      deleteRun: wrap(deleteRun),
-      deleteProjectGroup: wrap(deleteProjectGroup),
-      exportData: wrap(exportData),
-    },
+    actions: { summarizeArchive },
+    runDestructive,
+    isActive: owns(VIEW.ARCHIVE),
   });
 
   const settingsView = createSettingsView({
@@ -381,8 +447,9 @@ async function main() {
     actions: {
       updateSettings: wrap(updateSettings),
       exportData: wrap(exportData),
-      importData: wrap(importData),
     },
+    runDestructive,
+    isActive: owns(VIEW.SETTINGS),
   });
 
   /**

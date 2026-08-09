@@ -55,7 +55,14 @@ const SORT_OPTIONS = [
  *   `copyText` はクリップボード書き出しの差し替え口（テスト用）。
  * @returns {{render: () => void, reset: () => void}}
  */
-export function createSummaryView({ container, store, actions, handlers, copyText }) {
+export function createSummaryView({
+  container,
+  store,
+  actions,
+  handlers,
+  copyText,
+  isActive = () => true,
+}) {
   const writeClipboard = copyText ?? writeToClipboard;
 
   /**
@@ -472,6 +479,11 @@ export function createSummaryView({ container, store, actions, handlers, copyTex
   }
 
   function render() {
+    // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
+    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    if (!isActive()) {
+      return;
+    }
     const run = selectedRun();
     if (run === null) {
       replaceChildren(container, [

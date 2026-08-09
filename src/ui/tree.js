@@ -56,18 +56,22 @@ const TASK_STATE_MARK = {
 };
 
 /**
- * 子ノードの入れ物（`role="group"`）に振る ID（レビュー指摘 S11-2）。
+ * 子ノードの入れ物（`role="group"`）に振る ID（レビュー指摘 S11-2、GAR-5）。
  *
  * treeitem は `button` なので、その内側へ子の `ul` を入れられない（対話要素の
  * 入れ子になる）。DOM では兄弟に置き、所有関係だけ `aria-owns` で示す。これが
  * 無いと、支援技術からは「どの group がどの treeitem の子か」が分からず、
  * 見た目が3階層でも階層として読まれない。
  *
- * @param {string} key ノードのキー（`group:...` / `run:...`）
+ * **識別子から作らず、描画ごとの連番にする。** 内部生成IDはUUIDだが、取り込む
+ * JSONの識別子は「非空文字列」でありさえすればよい（9.3）。記号を落として
+ * 組み立てると `a:b` と `a/b` が同じIDになり、`aria-owns` が別のノードを指す。
+ *
+ * @param {number} sequence 描画ごとに振り直す通し番号
  * @returns {string}
  */
-function childrenId(key) {
-  return `tree-children-${key.replace(/[^\w-]/g, '-')}`;
+function childrenId(sequence) {
+  return `tree-children-${sequence}`;
 }
 
 /**
@@ -111,6 +115,9 @@ export function createTree({ container, store, handlers }) {
 
   /** 最後にフォーカスしていたノードのキー。roving tabindex の停留所になる。 */
   let focusedKey = null;
+
+  /** `aria-owns` 用の通し番号。描画のたびに0へ戻す（GAR-5）。 */
+  let childrenSequence = 0;
 
   function toggle(key) {
     if (expanded.has(key)) {
@@ -173,8 +180,12 @@ export function createTree({ container, store, handlers }) {
     if (key === null) {
       return;
     }
-    const item = container.querySelector(`[data-tree-key="${key}"]`);
-    item?.focus();
+    // 属性セレクターへ識別子を埋め込まない。取り込むJSONの識別子は非空文字列で
+    // ありさえすればよく（9.3）、引用符や角括弧が入ると別要素に当たるか
+    // `SyntaxError` になる（GAR-5）。既に手元にある要素から完全一致で探す。
+    visibleItems()
+      .find((item) => item.dataset.treeKey === key)
+      ?.focus();
   }
 
   /**
@@ -297,6 +308,7 @@ export function createTree({ container, store, handlers }) {
     const key = `run:${run.runId}`;
     const hasTasks = run.tasks.length > 0;
     const open = hasTasks && expanded.has(key);
+    const groupId = open ? childrenId((childrenSequence += 1)) : undefined;
     const current = key === currentKey;
 
     return el('li', { class: 'tree__item', role: 'none' }, [
@@ -311,7 +323,7 @@ export function createTree({ container, store, handlers }) {
           'aria-current': current ? 'true' : 'false',
           'aria-expanded': hasTasks ? String(expanded.has(key)) : undefined,
           // 畳んでいるあいだ `ul` は存在しないため、参照先の無い ID を指さない。
-          'aria-owns': open ? childrenId(key) : undefined,
+          'aria-owns': groupId,
           on: { click: () => handlers.onSelectRun(run.runId) },
         }, [
           el('span', { class: 'tree__text', text: `第${number}回 ${run.workDate}` }),
@@ -324,7 +336,7 @@ export function createTree({ container, store, handlers }) {
       open &&
         el(
           'ul',
-          { class: 'tree__children', role: 'group', id: childrenId(key) },
+          { class: 'tree__children', role: 'group', id: groupId },
           run.tasks.map((task) => renderTaskNode(run, task, currentKey)),
         ),
     ]);
@@ -338,6 +350,7 @@ export function createTree({ container, store, handlers }) {
     const visible = activeRuns(runs);
     const summary = summarizeQuantity(group, runs);
     const open = visible.length > 0 && expanded.has(key);
+    const groupId = open ? childrenId((childrenSequence += 1)) : undefined;
     const current = key === currentKey;
 
     return el('li', { class: 'tree__item', role: 'none' }, [
@@ -355,7 +368,7 @@ export function createTree({ container, store, handlers }) {
           },
           'aria-current': current ? 'true' : 'false',
           'aria-expanded': visible.length > 0 ? String(expanded.has(key)) : undefined,
-          'aria-owns': open ? childrenId(key) : undefined,
+          'aria-owns': groupId,
           on: { click: () => handlers.onSelectProject(group.projectGroupId) },
         }, [
           el('span', { class: 'tree__text', text: group.projectId }),
@@ -369,7 +382,7 @@ export function createTree({ container, store, handlers }) {
       open &&
         el(
           'ul',
-          { class: 'tree__children', role: 'group', id: childrenId(key) },
+          { class: 'tree__children', role: 'group', id: groupId },
           visible.map(({ run, number }) => renderRunNode(run, number, currentKey)),
         ),
     ]);
@@ -377,6 +390,7 @@ export function createTree({ container, store, handlers }) {
 
   function render() {
     const { dataset, selection = {} } = store.getState();
+    childrenSequence = 0;
     const currentKey = currentKeyOf(selection);
     const groups = [...dataset.projectGroups].sort((left, right) =>
       left.projectId.localeCompare(right.projectId, 'ja'),
