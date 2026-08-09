@@ -2,7 +2,11 @@
  * E2E（受入試験 T-01〜T-18）の設定。
  *
  * 仕様書5.1.3 に従い HTTP で静的配信して試験する。`file://` は使わない。
- * 対象ブラウザは Chromium 1種に絞る（実装計画8.3）。
+ *
+ * 常用の回帰試験は Chromium 1種で走らせる（実装計画8.3）。Chrome と Edge は
+ * Chromium を共有するため、これで対応表明の2つを覆える。Firefox は別実装なので
+ * 定義だけ用意し、対応表明の裏づけを取るときに `--project=firefox` で明示的に
+ * 走らせる。毎回2種を回すほど描画依存の実装ではない。
  */
 
 import { defineConfig, devices } from '@playwright/test';
@@ -25,7 +29,10 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+  ],
   webServer: {
     command: `node tools/static-server.mjs --port ${PORT}`,
     url: BASE_URL,

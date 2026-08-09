@@ -26,10 +26,16 @@ function mount(options = {}) {
   };
   const payload = { schemaVersion: 1 };
   const readFile = options.readFile ?? vi.fn(async () => payload);
-  // 排他区間の用意は `main.js` の役目なので、ここでは順序だけを持つ本体
-  // （`runDestructiveAction`）へモックを差し込む（GAR-1）。
-  const runDestructive = (input) =>
-    runDestructiveAction({ ...input, exportData: actions.exportData, scoped: actions });
+  // 排他区間の用意と、区間内で使うアクションを閉じ込めるのは `main.js` の役目で
+  // ある（GAR-1、F12-18）。ここでは順序だけを持つ本体（`runDestructiveAction`）へ
+  // 同じ形でモックを差し込む。
+  const runDestructive = ({ backup, confirmedWithoutBackup, destructiveAction }) =>
+    runDestructiveAction({
+      backup,
+      confirmedWithoutBackup,
+      exportData: actions.exportData,
+      destructiveAction: () => destructiveAction(actions),
+    });
   const view = createSettingsView({
     container,
     store: { getState: () => state },
@@ -133,6 +139,72 @@ describe('createSettingsView', () => {
     mounted.query('import-skip-accept').click();
     await vi.waitFor(() => expect(mounted.actions.importData).toHaveBeenCalledWith(mounted.payload));
     expect(mounted.actions.exportData).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 利用者の1回の操作意図に対して破壊的操作は1回だけ（レビュー指摘 F12-06）。
+   *
+   * 排他区間の途中で退避エクスポートが `store.setState` を呼び、その購読が画面を
+   * 描き直す。busy を持たないとボタンが活性のまま戻り、区間が2つ直列に並んで
+   * 全置換が2回走る。区間の隙間に入った保存は2回目の置換で消える。
+   */
+  describe('取り込みの二重実行を防ぐ（F12-06）', () => {
+    /** 退避の完了を試験側から握る。区間の途中で再クリックできる状況を作る。 */
+    function deferred() {
+      let resolve;
+      const promise = new Promise((settle) => { resolve = settle; });
+      return { promise, resolve };
+    }
+
+    it('連打しても全置換は1回だけ走る', async () => {
+      const mounted = mount();
+      const backup = deferred();
+      mounted.actions.exportData.mockImplementation(() => backup.promise);
+      await mounted.view.selectFile({ name: 'backup.json' });
+
+      mounted.query('import-with-backup').click();
+      mounted.query('import-with-backup').click();
+      mounted.query('import-with-backup').click();
+      backup.resolve({ dataset: null });
+
+      await vi.waitFor(() => expect(mounted.actions.importData).toHaveBeenCalledOnce());
+      expect(mounted.actions.exportData).toHaveBeenCalledOnce();
+    });
+
+    it('実行中は取り込みボタンを押せない', async () => {
+      const mounted = mount();
+      const backup = deferred();
+      mounted.actions.exportData.mockImplementation(() => backup.promise);
+      await mounted.view.selectFile({ name: 'backup.json' });
+
+      mounted.query('import-with-backup').click();
+
+      await vi.waitFor(() => expect(mounted.query('import-with-backup').disabled).toBe(true));
+      expect(mounted.query('import-without-backup').disabled).toBe(true);
+      expect(mounted.query('import-cancel').disabled).toBe(true);
+      expect(mounted.query('import-file').disabled).toBe(true);
+
+      backup.resolve({ dataset: null });
+      await vi.waitFor(() => expect(mounted.actions.importData).toHaveBeenCalledOnce());
+    });
+
+    it('退避せず進む経路でも二重実行しない', async () => {
+      const mounted = mount();
+      const replace = deferred();
+      mounted.actions.importData.mockImplementation(() => replace.promise);
+      await mounted.view.selectFile({ name: 'backup.json' });
+      mounted.query('import-without-backup').click();
+
+      mounted.query('import-skip-accept').click();
+      await vi.waitFor(() => expect(mounted.query('import-skip-accept').disabled).toBe(true));
+      mounted.query('import-skip-accept').click();
+      replace.resolve({ dataset: null });
+
+      await vi.waitFor(() =>
+        expect(mounted.query('settings-message')?.textContent).toContain('置き換えました'),
+      );
+      expect(mounted.actions.importData).toHaveBeenCalledOnce();
+    });
   });
 
   it('壊れたファイルは置換確認を出さずエラーを表示する', async () => {

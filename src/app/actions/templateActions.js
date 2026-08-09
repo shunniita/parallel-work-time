@@ -122,8 +122,8 @@ export async function reviseTemplateAction(deps, templateId, draft) {
     //
     // 改訂元自身は同じ書き込みで無効化するので、衝突の相手から外す。
     const conflict = validateTemplateIsNew(
-      taskTemplates.filter(
-        (template) => template.active === true && template.templateId !== current.templateId,
+      activeTemplates(taskTemplates).filter(
+        (template) => template.templateId !== current.templateId,
       ),
       {
         targetType: draft.targetType ?? current.targetType,

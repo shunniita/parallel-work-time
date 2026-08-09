@@ -38,6 +38,8 @@
  * `intervalOps.js` / `validation.js` と共有する。
  */
 
+import { MAX_DIRECT_ENTRY_SECONDS, MAX_PARTICIPANTS } from '../config.js';
+import { normalizeParticipants } from './participants.js';
 import { Problems } from './problems.js';
 
 /** 直接入力の検証で出る警告の種別。 */
@@ -72,39 +74,6 @@ function accepted(problems, directEntries, extra = {}) {
 }
 
 /**
- * 参加者一覧を整える。
- *
- * `intervalOps.js` の同名関数と同じ規則で、前後空白を落とし、空文字を除き、
- * 完全一致の重複を1つにまとめる。表記ゆれは判断しない（仕様書8.9.9）。
- *
- * 直接入力の参加者は0人でよい。人数を掛けない値なので、`work` 区間のように
- * 0人を禁じる理由（仕様書8.9.4）が無い。誰の分か分からない計測漏れを、備考だけ
- * 添えて足せる必要がある。
- *
- * @param {unknown} value
- * @returns {string[]|null} 配列でなければ null
- */
-export function normalizeParticipants(value) {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const seen = new Set();
-  const result = [];
-  for (const item of value) {
-    if (typeof item !== 'string') {
-      return null;
-    }
-    const name = item.trim();
-    if (name === '' || seen.has(name)) {
-      continue;
-    }
-    seen.add(name);
-    result.push(name);
-  }
-  return result;
-}
-
-/**
  * 追加工数の秒数を確かめる（仕様書8.5.1、8.5.5）。
  *
  * `allowZero` は「もともと0秒だったものを0秒のまま保存する」場合に立てる。
@@ -117,7 +86,7 @@ export function normalizeParticipants(value) {
  * @returns {boolean}
  */
 function checkSeconds(problems, seconds, { allowZero = false } = {}) {
-  if (!Number.isInteger(seconds)) {
+  if (!Number.isSafeInteger(seconds)) {
     problems.add('追加工数', '秒数は整数で指定する');
     return false;
   }
@@ -127,6 +96,10 @@ function checkSeconds(problems, seconds, { allowZero = false } = {}) {
   }
   if (seconds === 0 && !allowZero) {
     problems.add('追加工数', '1秒以上を入力する');
+    return false;
+  }
+  if (seconds > MAX_DIRECT_ENTRY_SECONDS) {
+    problems.add('追加工数', `${MAX_DIRECT_ENTRY_SECONDS}秒（1年）以下で入力する`);
     return false;
   }
   return true;
@@ -151,11 +124,19 @@ function checkNote(problems, note) {
 /**
  * 参加者を確かめる。
  *
+ * 0人を許す。人数を掛けない値なので、`work` 区間のように0人を禁じる理由
+ * （仕様書8.9.4）が無い。誰の分か分からない計測漏れを、備考だけ添えて足せる
+ * 必要がある。
+ *
  * @returns {boolean}
  */
 function checkParticipants(problems, participants) {
   if (participants === null) {
     problems.add('参加者', '文字列の配列で指定する');
+    return false;
+  }
+  if (participants.length > MAX_PARTICIPANTS) {
+    problems.add('参加者', `${MAX_PARTICIPANTS}名以下で指定する`);
     return false;
   }
   return true;

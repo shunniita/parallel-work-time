@@ -11,6 +11,7 @@
  */
 
 import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
+import { runWriteTime } from '../../domain/writeClock.js';
 import { RunNotEditableError, ValidationError } from '../errors.js';
 
 /**
@@ -80,6 +81,9 @@ export function assertEditable(workRun) {
  * 元のオブジェクトは書き換えない。保存に失敗したとき、画面が持っているデータ
  * セットが中途半端に変わっているのを避けるためである。
  *
+ * `updatedAt` は実施回が既に持つ日時より前にしない（`writeClock.js`）。時計が
+ * 巻き戻っている間に書いても、自分のエクスポートを読み戻せる。
+ *
  * @param {object} workRun
  * @param {string} taskRecordId
  * @param {object} patch 例: `{intervals}` / `{directEntries}`
@@ -92,7 +96,7 @@ export function replaceTaskFields(workRun, taskRecordId, patch, updatedAt) {
     tasks: workRun.tasks.map((task) =>
       task.taskRecordId === taskRecordId ? { ...task, ...patch } : task,
     ),
-    updatedAt,
+    updatedAt: runWriteTime(workRun, updatedAt),
   };
 }
 

@@ -400,7 +400,8 @@ describe('改訂で有効版の一意性を破れない（GAR-6）', () => {
   }
 
   it('別の有効版と同じ組み合わせへ改訂できない', async () => {
-    // 保存自体は通っていたが、直後のエクスポートを取り込めなくなる。
+    // 保存層は有効版の重複を拒まない。通してしまうと、直後のエクスポートを
+    // 取り込めなくなる（`integrity.js` が有効版2つを拒む）。
     const { first } = await twoActive();
 
     const error = await reviseTemplateAction(deps, first.templateId, {

@@ -1,0 +1,64 @@
+# 単体・結合・カバレッジ・E2E・配布物検証を通す。
+#
+# 実行するのは Windows だけである。正式な対応環境が Windows のみであり
+# （README「動作環境」）、確認しない環境の緑は判断の役に立たない。
+#
+# 外部 Action は完全なコミット SHA へ固定する。タグは書き換えられるため、
+# 同じ参照が別の中身を指しうる。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit and integration tests
+        run: npm run test:coverage
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Build distribution
+        run: npm run dist
+
+      - name: Upload distribution
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distribution
+          path: |
+            dist/parallel-work-time.zip
+            dist/manifest.json
+          if-no-files-found: error
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results
+          path: test-results
+          if-no-files-found: ignore

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDefaultSettings, SCHEMA_VERSION } from '../../src/config.js';
-import { validateImport } from '../../src/domain/integrity.js';
+import { validateImport, validateImportIntegrity } from '../../src/domain/integrity.js';
 import {
   historyEntry,
   projectGroup,
@@ -57,14 +57,27 @@ describe('validateImport（構造＋業務整合性）', () => {
     );
   });
 
-  it('前後空白を除いた案件IDの重複を拒否する', () => {
+  it('案件IDの重複を拒否する', () => {
     expect(
       errorsOf((p) => p.projectGroups.push({
         ...p.projectGroups[0],
         projectGroupId: 'group-2',
-        projectId: '  PJ-0001  ',
+        projectId: 'PJ-0001',
       })),
     ).toContain('案件IDが重複');
+  });
+
+  it('前後空白を除いた案件IDの重複も重複として扱う', () => {
+    // 構造検証は非正規な文字列を先に弾くため（F12-01）、この経路は
+    // `validateImportIntegrity` を単独で呼んだときの防御として残る。
+    const payload = validPayload();
+    payload.projectGroups.push({
+      ...payload.projectGroups[0],
+      projectGroupId: 'group-2',
+      projectId: '  PJ-0001  ',
+    });
+
+    expect(validateImportIntegrity(payload).errors.join('\n')).toContain('案件IDが重複');
   });
 
   it('対象種別とバリエーションに有効版が2つあると拒否する', () => {
@@ -186,6 +199,15 @@ describe('参加者の意味を通常入力と一致させる（GAR-2）', () =>
     expect(errors).toContain('参加者が1名以上必要');
   });
 
+  it('文字列以外の要素が混じっても、同じ一覧の重複を見落とさない（F12-12）', () => {
+    // 文字列以外は構造検証の担当である。そこで打ち切ると、水増しにつながる重複が
+    // `validateImportIntegrity` を単独で呼んだときに素通りする。
+    const payload = validPayload();
+    payload.workRuns[0].tasks[0].intervals[0].participants = ['甲', '甲', 1];
+
+    expect(validateImportIntegrity(payload).errors.join('\n')).toContain('同じ参加者が重複している');
+  });
+
   it('休憩区間は0人を許す（仕様書8.9.4）', () => {
     const payload = validPayload();
     payload.workRuns[0].tasks[0].intervals.push({
@@ -236,9 +258,28 @@ describe('状態日時の前後関係（GAR-3）', () => {
   it('作成前にアーカイブされた実施回を拒否する', () => {
     // 保持期間は archivedAt を起算日とする（10.2）。過去日を入れると、
     // 保持期間内の記録が経過済みとして削除候補になる。
+    // 鎖は隣接する組だけを見るため、指摘は直前の転記完了日時との比較で出る。
     expect(errorsOf((p) => archived(p, { archivedAt: '2020-01-01T00:00:00+09:00' }))).toContain(
-      'アーカイブ日時が作成日時より前',
+      'workRuns[0].archivedAt: アーカイブ日時が転記完了日時より前',
     );
+  });
+
+  it('転記していない実施回では作成日時と直接比べる', () => {
+    expect(errorsOf((p) => {
+      p.workRuns[0].status = 'archived';
+      p.workRuns[0].transferredAt = null;
+      p.workRuns[0].archivedAt = '2020-01-01T00:00:00+09:00';
+    })).toContain('アーカイブ日時が作成日時より前');
+  });
+
+  it('日時が1つ壊れても同じ項目へ指摘を重ねない', () => {
+    const payload = validPayload();
+    archived(payload, { archivedAt: '2020-01-01T00:00:00+09:00' });
+    const archivedErrors = validateImport(payload).errors.filter((message) =>
+      message.startsWith('workRuns[0].archivedAt:'),
+    );
+
+    expect(archivedErrors).toHaveLength(1);
   });
 
   it('アーカイブ後に転記された実施回を拒否する', () => {
