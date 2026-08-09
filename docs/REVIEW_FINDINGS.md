@@ -203,6 +203,7 @@
 - 対象: `index.html:5`（`<meta name="viewport" content="width=1280">`）vs `src/styles/layout.css:238`（`@media (max-width: 1279px)`）
 - 内容: viewport を1280へ固定するとこのメディアクエリは実機では発火しない（スクリーンショット試験は `setViewportSize` なので効く）。1280固定か狭幅対応か、意図をどちらかへ寄せる。
 - 推奨対応時期: Step 12（仕上げ）まで
+- 状況: **対応済み（2026-08-09、Step 12）**。`width=device-width, initial-scale=1` へ変え、狭幅対応を活かす方へ寄せた。仕様書12.1 の「1280px以上のPCが主対象」と13章の「狭い画面でも操作不能な崩壊を避ける」は両立する。E2Eで1440pxの2段組み・1024pxの1段組み・横スクロール無しを固定した。
 
 ---
 
@@ -276,6 +277,7 @@
 - 対象: `src/storage/StorageAdapter.js:352,362,372`、`src/app/actions/projectActions.js:96-98,307`
 - 内容: `findTaskTemplates` / `findTemplateSeries` / `findProjectGroupByProjectId` は実装・契約テスト済みだが `src/app/` からの呼び出しがゼロで、案件ID一意性検証は全件 `loadAll()` で行っている（計画書§3.1.1 の追加理由が未回収）。さらに `projectActions.js:307` に同名で配列を引数に取る別関数があり、import ミスを誘発する。
 - 推奨対応時期: Step 6 以降、実経路で索引を使うタイミングで整理
+- 状況: **対応済み（2026-08-09、Step 12）**。操作は残した。`persistence.run(plan)` が読み込み済みのデータセットを渡す設計のため、索引を引き直すと区間の外を読むことになり、検証と書き込みの間に隙間ができる。アクション層が受け取った一覧の中だけで判断するのが正しい。取り違えを誘う同名関数（`projectActions.js`）は `findLoadedProjectGroup` へ改名し、役割の違いをコメントへ書いた。
 
 ### F-29 その他の小粒な指摘
 

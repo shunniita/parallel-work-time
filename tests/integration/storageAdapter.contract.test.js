@@ -804,12 +804,14 @@ describe('IndexedDbAdapter の接続管理（レビュー指摘 C-13）', () => 
     const dbName = freshName();
     const blocker = await openRaw(dbName, 1);
 
-    // 遅れて成功する要求を捕まえるため、`open` を包んで控えておく。
-    const requests = [];
+    // 遅れて成功する接続を捕まえるため、`open` を包んで成功を購読しておく。
+    // `request.result` は保留中に例外を投げるので、監視には使えない。
+    // `addEventListener` はアダプターが設定する `onsuccess` と衝突しない。
+    const opened = [];
     const factory = {
       open: (...args) => {
         const request = globalThis.indexedDB.open(...args);
-        requests.push(request);
+        request.addEventListener('success', () => opened.push(request.result));
         return request;
       },
     };
@@ -820,13 +822,17 @@ describe('IndexedDbAdapter の接続管理（レビュー指摘 C-13）', () => 
     expect(error).toBeInstanceOf(StorageError);
     expect(error.kind).toBe(STORAGE_ERROR_KIND.UNAVAILABLE);
     expect(adapter.db).toBeNull();
+    expect(opened).toHaveLength(0);
 
-    // 塞ぎを外すと、拒否済みの要求が遅れて成功する。
+    // 塞ぎを外すと、拒否済みの要求が遅れて成功する。いつ届くかは決まっていない
+    // ため、1回の setTimeout では負荷時に取りこぼす。届くまで待つ。
     blocker.close();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let attempt = 0; opened.length === 0 && attempt < 100; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
 
-    const delayed = requests[0].result;
-    expect(delayed).not.toBeNull();
+    expect(opened, '遅延した onsuccess が届かなかった').toHaveLength(1);
+    const delayed = opened[0];
     // 開いたままなら誰も閉じられない（`adapter.db` は null なので `close()` も
     // 届かない）。閉じてあればトランザクションを開始できない。
     expect(() => delayed.transaction([ENTITY_TYPE.SETTINGS], 'readonly')).toThrowError(

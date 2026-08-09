@@ -373,3 +373,86 @@ describe('templateActions / IndexedDbAdapter での往復', () => {
     expect(series.map((template) => template.version).sort()).toEqual([1, 2]);
   });
 });
+
+describe('改訂で有効版の一意性を破れない（GAR-6）', () => {
+  let adapter;
+  let deps;
+
+  beforeEach(async () => {
+    adapter = new MemoryAdapter();
+    await adapter.initialize();
+    deps = { adapter, persistence: createPersistence(adapter) };
+  });
+
+  /** 対象種別だけが違う有効版を2つ作る。 */
+  async function twoActive() {
+    const first = await createTemplate(deps, {
+      targetType: '対象A',
+      variant: '標準',
+      tasks: [{ name: '準備', externalCode: 'A-1', order: 1, active: true }],
+    });
+    const second = await createTemplate(deps, {
+      targetType: '対象B',
+      variant: '標準',
+      tasks: [{ name: '準備', externalCode: 'B-1', order: 1, active: true }],
+    });
+    return { first: first.template, second: second.template };
+  }
+
+  it('別の有効版と同じ組み合わせへ改訂できない', async () => {
+    // 保存自体は通っていたが、直後のエクスポートを取り込めなくなる。
+    const { first } = await twoActive();
+
+    const error = await reviseTemplateAction(deps, first.templateId, {
+      targetType: '対象B',
+      variant: '標準',
+      tasks: first.tasks,
+    }).catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.message).toContain('対象B / 標準');
+  });
+
+  it('拒否したときは同じ組み合わせの有効版が並ばない', async () => {
+    // 件数だけを見ると、改訂元が無効化されるぶんと相殺して2件のままになる。
+    // 壊れるのは「組み合わせごとに有効版は1つ」の方である。
+    const { first } = await twoActive();
+
+    await reviseTemplateAction(deps, first.templateId, {
+      targetType: '対象B',
+      variant: '標準',
+      tasks: first.tasks,
+    }).catch(() => {});
+
+    const { taskTemplates } = await adapter.loadAll();
+    const keys = taskTemplates
+      .filter((template) => template.active === true)
+      .map((template) => `${template.targetType} / ${template.variant}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys.sort()).toEqual(['対象A / 標準', '対象B / 標準']);
+  });
+
+  it('組み合わせを変えない改訂は通る（自分自身は衝突相手にしない）', async () => {
+    const { first } = await twoActive();
+
+    const result = await reviseTemplateAction(deps, first.templateId, {
+      targetType: '対象A',
+      variant: '標準',
+      tasks: first.tasks,
+    });
+
+    expect(result.template.version).toBe(2);
+  });
+
+  it('空いている組み合わせへの改訂は通る（表記の誤りを直せる）', async () => {
+    const { first } = await twoActive();
+
+    const result = await reviseTemplateAction(deps, first.templateId, {
+      targetType: '対象C',
+      variant: '標準',
+      tasks: first.tasks,
+    });
+
+    expect(result.template.targetType).toBe('対象C');
+  });
+});

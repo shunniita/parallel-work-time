@@ -14,7 +14,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --grep-invert @screenshot",
     "test:e2e:shots": "playwright test --grep @screenshot",
-    "serve": "node tools/static-server.mjs"
+    "serve": "node tools/static-server.mjs",
+    "dist": "node tools/build-dist.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",

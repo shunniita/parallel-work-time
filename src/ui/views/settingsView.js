@@ -14,8 +14,9 @@ import { createConfirmPanel } from '../components/confirmPanel.js';
 
 /**
  * @param {{container: HTMLElement, store: object,
- *          actions: {updateSettings: Function, exportData: Function, importData: Function},
+ *          actions: {updateSettings: Function, exportData: Function},
  *          readFile?: Function, runDestructive?: Function}} options
+ *   全置換は `runDestructive` が排他区間の中で用意する（GAR-1）。
  */
 export function createSettingsView({
   container,
@@ -23,6 +24,7 @@ export function createSettingsView({
   actions,
   readFile = readImportFile,
   runDestructive = runDestructiveAction,
+  isActive = () => true,
 }) {
   const local = {
     importPayload: null,
@@ -99,8 +101,10 @@ export function createSettingsView({
     const result = await runDestructive({
       backup,
       confirmedWithoutBackup: !backup,
-      exportData: () => actions.exportData(),
-      destructiveAction: () => actions.importData(payload),
+      // 退避と全置換は1つの排他区間で行う。別々に積むと、退避JSONを取った後・
+      // 全置換の前に別の保存が割り込み、その内容が退避にも置換後にも残らない
+      // （敵対的レビュー GAR-1）。
+      destructiveAction: (scoped) => scoped.importData(payload),
     });
     if (result.executed) {
       resetImport();
@@ -182,6 +186,11 @@ export function createSettingsView({
   }
 
   function render() {
+    // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
+    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    if (!isActive()) {
+      return;
+    }
     // loadAll() は設定欠落時に null を返す契約である。通常は initialize() が既定値を
     // 保存するが、欠落した保存領域やMemoryAdapterの呼び出しでも画面を落とさない。
     const settings = store.getState().dataset.settings ?? createDefaultSettings();

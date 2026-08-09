@@ -74,7 +74,7 @@ const COLUMN_COUNT = 7;
  *          now?: () => Date}} options
  * @returns {{render: () => void, reset: () => void}}
  */
-export function createRunView({ container, store, actions, handlers, now }) {
+export function createRunView({ container, store, actions, handlers, now, isActive = () => true }) {
   /**
    * ビュー内部の状態（`src/app/store.js` の規約2）。
    *
@@ -428,6 +428,11 @@ export function createRunView({ container, store, actions, handlers, now }) {
   }
 
   function render() {
+    // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
+    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    if (!isActive()) {
+      return;
+    }
     form = null;
     // 描き直すと前回のボタンは捨てられる。画面に無い要素へ無効化を当てないよう、
     // 参照を先に空にする。

@@ -26,7 +26,7 @@ import { toOptionalIntegerInput } from '../numeric.js';
  *          actions: {createTemplate: Function, reviseTemplate: Function}}} options
  * @returns {{render: () => void}}
  */
-export function createTemplateView({ container, store, actions }) {
+export function createTemplateView({ container, store, actions, isActive = () => true }) {
   /**
    * 画面が持つ編集状態。
    *
@@ -471,6 +471,11 @@ export function createTemplateView({ container, store, actions }) {
   }
 
   function render() {
+    // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
+    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    if (!isActive()) {
+      return;
+    }
     replaceChildren(container, [
       el('div', { class: 'view__head' }, [
         el('h2', { class: 'view__title', text: '作業テンプレート' }),

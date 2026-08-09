@@ -13,7 +13,16 @@
  *    「項目Aで開始 → 項目Bで開始」のように同一 WorkRun への連続書き込みが
  *    常態になるため、版管理を持たない現状では直列化で防ぐ。
  *
- * 警告領域との結線は実装計画 Step 11 で行う。ここでは購読の仕組みだけ用意する。
+ * ## 単一の保存と、複数の保存からなる1操作は別物（敵対的レビュー GAR-1）
+ *
+ * `run()` が守るのは保存1回ぶんである。「退避してから全置換」（9.4）のように
+ * 利用者から1つに見える操作が2回の保存でできている場合、その隙間へ別の保存が
+ * 割り込む。退避JSONを取った後に積まれた保存は、退避にも置換後にも残らない。
+ *
+ * そのため `runExclusive()` を分けて用意した。区間の中では渡された `run` を使い、
+ * 外から積まれた保存は区間の終了まで待つ。区間内かどうかを共有フラグで見分ける
+ * 作りにはしない。区間の実行中に利用者が別画面を操作した場合まで「区間の内側」と
+ * 誤判定し、まさに防ぎたい割り込みを許してしまう。
  */
 
 import { STORAGE_ERROR_KIND } from '../storage/StorageAdapter.js';
@@ -121,43 +130,68 @@ export function createPersistence(adapter, options = {}) {
    * @returns {Promise<{dataset: object|null, value: T|undefined}>}
    */
   async function run(plan) {
-    return enqueue(async () => {
-      const loaded = await adapter.loadAll();
-      const { write, value } = await plan(loaded);
-
-      setStatus({ state: SAVE_STATE.SAVING, at: null, message: '保存中…', details: [] });
-      try {
-        await write();
-      } catch (error) {
-        setStatus({
-          state: SAVE_STATE.FAILED,
-          at: toIsoSecond(now()),
-          message: describeFailure(error),
-          details: error?.details ?? [],
-        });
-        // 呼び出し側が画面の入力内容を保持したままやり直せるよう投げ直す。
-        // 通知だけして成功したように見せない。
-        throw error;
-      }
-
-      const at = toIsoSecond(now());
-      try {
-        const dataset = await adapter.loadAll();
-        setStatus({ state: SAVE_STATE.SAVED, at, message: '保存しました', details: [] });
-        return { dataset, value };
-      } catch {
-        setStatus({
-          state: SAVE_STATE.SAVED,
-          at,
-          message: '保存しました',
-          details: [RELOAD_FAILED_DETAIL],
-        });
-        return { dataset: null, value };
-      }
-    });
+    return enqueue(() => execute(plan));
   }
 
-  return { run, getStatus, subscribe };
+  /**
+   * 複数の保存を1つの排他区間として実行する（仕様書9.4、敵対的レビュー GAR-1）。
+   *
+   * `body` は区間内で使う `run` を受け取る。これは待ち行列へ積み直さず直接
+   * 実行するため、区間を握ったまま複数回の保存ができる。外から `run()` で
+   * 積まれた保存は、区間が終わるまで待つ。
+   *
+   * 区間内の保存が失敗した場合は `body` へそのまま投げ返す。どこまで進めるかは
+   * 呼び出し側が決める（退避に失敗したら破壊的操作へ進まない、など）。
+   *
+   * @template T
+   * @param {(session: {run: typeof execute}) => Promise<T>} body
+   * @returns {Promise<T>}
+   */
+  async function runExclusive(body) {
+    return enqueue(() => body({ run: execute }));
+  }
+
+  /**
+   * 待ち行列へ積まずに、読み込みから書き込みまでを1回実行する。
+   *
+   * 直列化は呼び出し側（`run` / `runExclusive`）が持つ。
+   */
+  async function execute(plan) {
+    const loaded = await adapter.loadAll();
+    const { write, value } = await plan(loaded);
+
+    setStatus({ state: SAVE_STATE.SAVING, at: null, message: '保存中…', details: [] });
+    try {
+      await write();
+    } catch (error) {
+      setStatus({
+        state: SAVE_STATE.FAILED,
+        at: toIsoSecond(now()),
+        message: describeFailure(error),
+        details: error?.details ?? [],
+      });
+      // 呼び出し側が画面の入力内容を保持したままやり直せるよう投げ直す。
+      // 通知だけして成功したように見せない。
+      throw error;
+    }
+
+    const at = toIsoSecond(now());
+    try {
+      const dataset = await adapter.loadAll();
+      setStatus({ state: SAVE_STATE.SAVED, at, message: '保存しました', details: [] });
+      return { dataset, value };
+    } catch {
+      setStatus({
+        state: SAVE_STATE.SAVED,
+        at,
+        message: '保存しました',
+        details: [RELOAD_FAILED_DETAIL],
+      });
+      return { dataset: null, value };
+    }
+  }
+
+  return { run, runExclusive, getStatus, subscribe };
 }
 
 /**
