@@ -20,8 +20,11 @@ import { el, replaceChildren } from '../dom.js';
 /**
  * 確認パネルを作る。
  *
+ * `busy` は、確認の実行中に親ビューが描き直したときに渡す。パネルは描くたびに
+ * 作り直されるため、実行中であることを引き継がないと押せる見た目に戻る。
+ *
  * @param {{title: string, description: string, confirmLabel?: string,
- *          note?: string, testidPrefix?: string,
+ *          note?: string, testidPrefix?: string, busy?: boolean,
  *          onConfirm: () => Promise<unknown>, onCancel: () => void}} options
  * @returns {{element: HTMLElement, focus: () => void}}
  */
@@ -31,6 +34,7 @@ export function createConfirmPanel({
   confirmLabel = '続行する',
   note,
   testidPrefix = 'confirm',
+  busy = false,
   onConfirm,
   onCancel,
 }) {
@@ -46,6 +50,7 @@ export function createConfirmPanel({
     class: 'button button--primary',
     text: confirmLabel,
     dataset: { testid: `${testidPrefix}-accept` },
+    disabled: busy,
     on: { click: submit },
   });
 
@@ -54,6 +59,7 @@ export function createConfirmPanel({
     class: 'button',
     text: 'やめる',
     dataset: { testid: `${testidPrefix}-cancel` },
+    disabled: busy,
     on: { click: () => onCancel() },
   });
 

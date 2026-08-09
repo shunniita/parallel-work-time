@@ -33,9 +33,11 @@
  * 入れ物は `problems.js` を `validation.js` と共有する。
  */
 
+import { MAX_PARTICIPANTS } from '../config.js';
 import { compareIso, isValidIsoSecond } from './datetime.js';
 import { INTERVAL_TYPE, isOpenInterval } from './effort.js';
 import { findOverlappingPairs } from './overlap.js';
+import { normalizeParticipants } from './participants.js';
 import { Problems } from './problems.js';
 import { TASK_STATE, TASK_STATE_LABEL, activeInterval, taskState } from './taskState.js';
 
@@ -91,36 +93,6 @@ function addOverlapWarning(problems, intervals) {
 }
 
 /**
- * 参加者一覧を整える。
- *
- * 前後空白を落とし、空文字を除き、完全一致の重複を1つにまとめる。表記ゆれ
- * （「甲」と「甲 太郎」など）は判断しない。利用者へ委ねると決まっている
- * （仕様書8.9.9）。
- *
- * @param {unknown} value
- * @returns {string[]|null} 配列でなければ null
- */
-export function normalizeParticipants(value) {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const seen = new Set();
-  const result = [];
-  for (const item of value) {
-    if (typeof item !== 'string') {
-      return null;
-    }
-    const name = item.trim();
-    if (name === '' || seen.has(name)) {
-      continue;
-    }
-    seen.add(name);
-    result.push(name);
-  }
-  return result;
-}
-
-/**
  * 日時が保存形式として妥当かを確かめる。
  *
  * @returns {boolean}
@@ -169,6 +141,11 @@ function checkParticipants(problems, type, participants, path = '参加者') {
   }
   if (type === INTERVAL_TYPE.WORK && participants.length === 0) {
     problems.add(path, '作業区間は1人以上必要である（仕様書8.9.4）');
+    return false;
+  }
+  // 人数は工数へそのまま掛かる（仕様書8.6.1）。
+  if (participants.length > MAX_PARTICIPANTS) {
+    problems.add(path, `${MAX_PARTICIPANTS}名以下で指定する`);
     return false;
   }
   return true;

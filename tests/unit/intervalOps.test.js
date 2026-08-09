@@ -13,7 +13,6 @@ import {
   changeParticipants,
   editInterval,
   findInterval,
-  normalizeParticipants,
   removeInterval,
   resumeWork,
   startBreak,
@@ -41,30 +40,6 @@ function contextWith(prefix = 'new') {
 function applied(taskRecordValue, result) {
   return { ...taskRecordValue, intervals: result.intervals };
 }
-
-describe('normalizeParticipants', () => {
-  it('前後空白を落とす', () => {
-    expect(normalizeParticipants([' 甲 ', '乙'])).toEqual(['甲', '乙']);
-  });
-
-  it('空文字を除く', () => {
-    expect(normalizeParticipants(['甲', '', '   '])).toEqual(['甲']);
-  });
-
-  it('完全一致の重複をまとめる', () => {
-    expect(normalizeParticipants(['甲', '甲', '乙'])).toEqual(['甲', '乙']);
-  });
-
-  it('表記ゆれは別人として残す（仕様書8.9.9）', () => {
-    expect(normalizeParticipants(['甲', '甲 太郎'])).toEqual(['甲', '甲 太郎']);
-  });
-
-  it('配列でなければ null', () => {
-    expect(normalizeParticipants('甲')).toBeNull();
-    expect(normalizeParticipants(undefined)).toBeNull();
-    expect(normalizeParticipants(['甲', 1])).toBeNull();
-  });
-});
 
 describe('startWork（仕様書8.4.1）', () => {
   beforeEach(resetIds);

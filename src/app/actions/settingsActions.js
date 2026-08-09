@@ -5,7 +5,7 @@ import {
   MAX_RETENTION_DAYS,
   SCHEMA_VERSION,
   createDefaultSettings,
-  isSettingInRange,
+  isIntegerInRange,
 } from '../../config.js';
 import { toIsoSecond } from '../../domain/datetime.js';
 import { downloadExport } from '../../io/exportJson.js';
@@ -13,7 +13,7 @@ import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
 import { AppError, ValidationError } from '../errors.js';
 
 function integerInRange(value, max, label) {
-  if (!isSettingInRange(value, max)) {
+  if (!isIntegerInRange(value, max)) {
     throw new ValidationError([`${label}: 1以上 ${max} 以下の整数で入力してください`]);
   }
   return value;

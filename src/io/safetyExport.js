@@ -5,7 +5,8 @@
  *
  * 退避と破壊的操作を1つの排他区間へ入れるのは呼び出し側の役目である
  * （`main.js` の `runDestructive`）。この関数は排他を知らない。区間の中で使う
- * アクション（`scoped`）を受け取って渡すだけにしてある。
+ * アクションも知らない。呼び出し側がクロージャで閉じてから渡すため、この共通
+ * フローの公開契約は「退避する関数」と「壊す関数」の2つに収まる。
  */
 
 /**
@@ -15,15 +16,13 @@
  *
  * @param {{backup: boolean, confirmedWithoutBackup?: boolean,
  *          exportData: () => Promise<unknown>,
- *          destructiveAction: (scoped: object) => Promise<unknown>,
- *          scoped?: object}} options
+ *          destructiveAction: () => Promise<unknown>}} options
  */
 export async function runDestructiveAction({
   backup,
   confirmedWithoutBackup = false,
   exportData,
   destructiveAction,
-  scoped = {},
 }) {
   if (backup) {
     await exportData();
@@ -31,6 +30,6 @@ export async function runDestructiveAction({
     return { executed: false, backedUp: false };
   }
 
-  const value = await destructiveAction(scoped);
+  const value = await destructiveAction();
   return { executed: true, backedUp: backup, value };
 }
