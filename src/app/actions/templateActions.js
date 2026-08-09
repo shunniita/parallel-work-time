@@ -115,6 +115,25 @@ export async function reviseTemplateAction(deps, templateId, draft) {
       ]);
     }
 
+    // 改訂で対象種別・バリエーションを直せる（`reviseTemplate`）。別の有効版と
+    // 同じ組み合わせにすると有効版が2つ並び、実施回作成時にどちらから生成される
+    // かが決まらなくなる。保存自体は通るが、直後のエクスポートを取り込めなく
+    // なる（`integrity.js` が拒む）ため、ここで止める（敵対的レビュー GAR-6）。
+    //
+    // 改訂元自身は同じ書き込みで無効化するので、衝突の相手から外す。
+    const conflict = validateTemplateIsNew(
+      taskTemplates.filter(
+        (template) => template.active === true && template.templateId !== current.templateId,
+      ),
+      {
+        targetType: draft.targetType ?? current.targetType,
+        variant: draft.variant ?? current.variant,
+      },
+    );
+    if (!conflict.ok) {
+      throw new ValidationError(conflict.errors);
+    }
+
     const built = reviseTemplate(current, draft, {
       createdAt: toIsoSecond(now()),
       templateId: newId(),

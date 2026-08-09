@@ -45,10 +45,9 @@ const TARGET = {
  * アーカイブ画面を作る。
  *
  * @param {{container: HTMLElement, store: object,
- *          actions: {summarizeArchive: Function, archiveRun: Function,
- *                    deleteRun: Function, deleteProjectGroup: Function,
- *                    exportData: Function},
+ *          actions: {summarizeArchive: Function},
  *          now?: () => Date, runDestructive?: Function}} options
+ *   削除そのものは `runDestructive` が排他区間の中で用意する（GAR-1）。
  * @returns {{render: () => void, reset: () => void}}
  */
 export function createArchiveView({
@@ -57,6 +56,7 @@ export function createArchiveView({
   actions,
   now = () => new Date(),
   runDestructive = runDestructiveAction,
+  isActive = () => true,
 }) {
   /**
    * ビュー内部の状態（`src/app/store.js` の規約2）。
@@ -140,18 +140,18 @@ export function createArchiveView({
    */
   function executeDelete(backup) {
     const target = local.backupChoice;
-    const remove = () =>
-      target.kind === TARGET.RUN
-        ? actions.deleteRun(target.id, { reason: target.reason })
-        : actions.deleteProjectGroup(target.id, { reason: target.reason });
 
     return submit(
       () =>
         runDestructive({
           backup,
           confirmedWithoutBackup: true,
-          exportData: () => actions.exportData(),
-          destructiveAction: remove,
+          // 退避と削除は1つの排他区間で行う。区間の中で使うアクションは
+          // 呼び出し元から渡される（敵対的レビュー GAR-1）。
+          destructiveAction: (scoped) =>
+            target.kind === TARGET.RUN
+              ? scoped.deleteRun(target.id, { reason: target.reason })
+              : scoped.deleteProjectGroup(target.id, { reason: target.reason }),
         }),
       target.kind === TARGET.RUN ? '実施回を削除しました。' : '案件を削除しました。',
     );
@@ -364,6 +364,11 @@ export function createArchiveView({
   }
 
   function render() {
+    // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
+    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    if (!isActive()) {
+      return;
+    }
     panel = null;
     const { dataset } = store.getState();
     // 削除候補は保存しない派生値なので、描くたびに現在日時から求める（10.3）。
