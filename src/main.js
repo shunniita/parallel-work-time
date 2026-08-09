@@ -26,10 +26,11 @@
  * 更新と描画を1つの経路へまとめる。
  */
 
-import { SCHEMA_VERSION } from './config.js';
+import { SCHEMA_VERSION, THRESHOLD_RECHECK_INTERVAL_MS } from './config.js';
 import { bootstrap } from './app/bootstrap.js';
 import { createStore } from './app/store.js';
 import { createPersistence } from './app/persistence.js';
+import { startTabGuard } from './app/tabGuard.js';
 import {
   createTemplate,
   reviseTemplateAction,
@@ -78,6 +79,7 @@ import {
 import { IndexedDbAdapter } from './storage/IndexedDbAdapter.js';
 import { VIEW, renderShell } from './ui/shell.js';
 import { renderStatusBar } from './ui/statusBar.js';
+import { createWarningBar } from './ui/warningBar.js';
 import { createTree } from './ui/tree.js';
 import { createTemplateView } from './ui/views/templateView.js';
 import { createProjectFormView } from './ui/views/projectFormView.js';
@@ -97,19 +99,21 @@ const SAMPLE_TEMPLATES_URL = 'data/sample-task-templates.json';
  * サンプルテンプレートJSONを読み込む。
  *
  * 読めなくても起動自体は続ける。テンプレートは画面から登録できるため
- * （仕様書8.1.1）、初期投入の失敗は致命的ではない。
+ * （仕様書8.1.1）、初期投入の失敗は致命的ではない。ただし失敗は警告領域へ
+ * 出す（レビュー指摘 F-29）。配布物から `data/` が欠けたとき、「テンプレートが
+ * 空のまま何も言わない」状態では原因がたどれない。
  *
- * @returns {Promise<object|null>}
+ * @returns {Promise<{payload: object|null, failed: boolean}>}
  */
 async function loadSampleTemplates() {
   try {
     const response = await fetch(SAMPLE_TEMPLATES_URL);
     if (!response.ok) {
-      return null;
+      return { payload: null, failed: true };
     }
-    return await response.json();
+    return { payload: await response.json(), failed: false };
   } catch {
-    return null;
+    return { payload: null, failed: true };
   }
 }
 
@@ -134,11 +138,11 @@ async function main() {
   const root = document.getElementById('app');
   const adapter = new IndexedDbAdapter();
 
+  const samples = await loadSampleTemplates();
+
   let dataset;
   try {
-    ({ dataset } = await bootstrap(adapter, {
-      sampleTemplates: await loadSampleTemplates(),
-    }));
+    ({ dataset } = await bootstrap(adapter, { sampleTemplates: samples.payload }));
   } catch (error) {
     renderBootFailure(root, error);
     return;
@@ -157,6 +161,45 @@ async function main() {
   const statusBar = renderStatusBar(shell.statusBar, { schemaVersion: SCHEMA_VERSION });
   statusBar.update(persistence.getStatus());
   persistence.subscribe((status) => statusBar.update(status));
+
+  /**
+   * 警告領域（仕様書8.8.1、8.8.2、8.10、12.2）。
+   *
+   * 未終了区間の一覧はストア購読で描き直し、しきい値の再評価だけを1分ごとの
+   * `tick()` で行う（8.8）。tick は部分更新であり、領域内のフォーカスを奪わない。
+   */
+  const warningBar = createWarningBar({
+    container: shell.warningBar,
+    store,
+    handlers: { onSelectTask: selectTask },
+  });
+  setInterval(() => warningBar.tick(), THRESHOLD_RECHECK_INTERVAL_MS);
+
+  // 多重タブの検知（仕様書8.10）。警告を出すだけで、ロックはしない。
+  startTabGuard({ onChange: (hasPeers) => warningBar.setMultiTab(hasPeers) });
+
+  if (samples.failed && dataset.taskTemplates.length === 0) {
+    warningBar.addNotice(
+      'サンプルテンプレート（data/sample-task-templates.json）を読み込めませんでした。' +
+        'テンプレート画面から手動で登録できます。',
+    );
+  }
+
+  // ブート後に捕捉されなかった例外の受け皿（レビュー指摘 F-29）。無言で失敗
+  // させない。同じ文言は warningBar 側で重複を抑える。
+  window.addEventListener('error', (event) => {
+    warningBar.addNotice(
+      `画面の処理でエラーが発生しました（${event.message}）。` +
+        '再読み込みしても続く場合は、設定画面からJSONへ退避してください。',
+    );
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    const message = event.reason?.message ?? String(event.reason);
+    warningBar.addNotice(
+      `画面の処理でエラーが発生しました（${message}）。` +
+        '再読み込みしても続く場合は、設定画面からJSONへ退避してください。',
+    );
+  });
 
   const deps = { adapter, persistence };
 
@@ -465,6 +508,7 @@ async function main() {
 
   function render() {
     shell.setActiveView(store.getState().view);
+    warningBar.render();
     tree.render();
     renderDetail();
   }

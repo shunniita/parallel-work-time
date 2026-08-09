@@ -734,3 +734,103 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
     });
   });
 });
+
+describe('IndexedDbAdapter の接続管理（レビュー指摘 C-13）', () => {
+  function freshName() {
+    dbSequence += 1;
+    return `pwt-connection-${dbSequence}`;
+  }
+
+  it('並行して initialize() しても接続は1つになる', async () => {
+    // null 確認と await の間に別の呼び出しが入っても、データベースを二重に
+    // 開かない。二重に開くと、片方の接続が閉じられずに残る。
+    const adapter = new IndexedDbAdapter({ dbName: freshName() });
+    let opens = 0;
+    const original = adapter.openDatabase.bind(adapter);
+    adapter.openDatabase = () => {
+      opens += 1;
+      return original();
+    };
+
+    await Promise.all([adapter.initialize(), adapter.initialize()]);
+
+    expect(opens).toBe(1);
+    expect(adapter.db).not.toBeNull();
+    await adapter.close();
+  });
+
+  it('別接続が版を上げようとしたら、自分の接続を手放す', async () => {
+    // onversionchange を放置すると、将来 DB 版を上げる改訂時に、開きっぱなしの
+    // タブが新しい版の open を永久にブロックする。
+    const dbName = freshName();
+    const adapter = new IndexedDbAdapter({ dbName });
+    await adapter.initialize();
+
+    // 2つ目の接続として版を上げる。旧接続が閉じない限り onsuccess へ進めない。
+    const upgraded = await new Promise((resolve, reject) => {
+      const request = globalThis.indexedDB.open(dbName, 2);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    upgraded.close();
+
+    expect(adapter.db).toBeNull();
+    await expect(adapter.loadAll()).rejects.toMatchObject({
+      kind: STORAGE_ERROR_KIND.UNAVAILABLE,
+      message: expect.stringContaining('再読み込み'),
+    });
+  });
+
+  /**
+   * 生の接続を開く。塞がれた場合は待たずに失敗させる。
+   *
+   * @param {string} dbName
+   * @param {number} version
+   * @returns {Promise<IDBDatabase>}
+   */
+  function openRaw(dbName, version) {
+    return new Promise((resolve, reject) => {
+      const request = globalThis.indexedDB.open(dbName, version);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error(`版${version} の open が塞がれた`));
+    });
+  }
+
+  it('blocked で拒否した後、遅れて開いた接続を残さない（レビュー指摘 S11-4）', async () => {
+    // `onblocked` で Promise を拒否しても要求は取り消せない。塞いでいた接続が
+    // 閉じれば `onsuccess` が遅れて発生し、その接続は誰の手にも渡らないまま
+    // 開き続ける。C-13 で防ごうとした「閉じられずに残る接続」が別経路で生じる。
+    const dbName = freshName();
+    const blocker = await openRaw(dbName, 1);
+
+    // 遅れて成功する要求を捕まえるため、`open` を包んで控えておく。
+    const requests = [];
+    const factory = {
+      open: (...args) => {
+        const request = globalThis.indexedDB.open(...args);
+        requests.push(request);
+        return request;
+      },
+    };
+    const adapter = new IndexedDbAdapter({ dbName, dbVersion: 2, indexedDB: factory });
+
+    const error = await adapter.initialize().catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(StorageError);
+    expect(error.kind).toBe(STORAGE_ERROR_KIND.UNAVAILABLE);
+    expect(adapter.db).toBeNull();
+
+    // 塞ぎを外すと、拒否済みの要求が遅れて成功する。
+    blocker.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const delayed = requests[0].result;
+    expect(delayed).not.toBeNull();
+    // 開いたままなら誰も閉じられない（`adapter.db` は null なので `close()` も
+    // 届かない）。閉じてあればトランザクションを開始できない。
+    expect(() => delayed.transaction([ENTITY_TYPE.SETTINGS], 'readonly')).toThrowError(
+      expect.objectContaining({ name: 'InvalidStateError' }),
+    );
+  });
+});

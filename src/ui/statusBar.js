@@ -19,6 +19,10 @@ import { el, replaceChildren } from './dom.js';
 export function renderStatusBar(container, { schemaVersion }) {
   const message = el('span', {
     class: 'status-bar__message',
+    // 保存の成否は読み上げでも伝える（仕様書9.1、レビュー指摘 D-18）。失敗に
+    // 気づけないと記録の欠落につながるため、画面を見ていない利用者にも届ける。
+    role: 'status',
+    'aria-live': 'polite',
     dataset: { testid: 'save-status' },
     text: '—',
   });
