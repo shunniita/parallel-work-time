@@ -75,7 +75,7 @@ test('手順2: 改訂で版が繰り上がる（仕様書8.1.3）', async ({ pag
   await expect(page.getByTestId('editor-heading')).toContainText('版2');
 });
 
-test('手順3: 改訂前に作成した実施回の作業項目名が変化しない', async ({ page }) => {
+test('T-09 手順3: 改訂前に作成した実施回の作業項目名が変化しない（A-09）', async ({ page }) => {
   await createRunThenRevise(page);
 
   await openProject(page, 'PJ-0001');

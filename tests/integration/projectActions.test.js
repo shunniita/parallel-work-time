@@ -12,7 +12,7 @@ import {
   createProjectGroup,
   createWorkRun,
   findActiveTemplate,
-  findProjectGroupByProjectId,
+  findLoadedProjectGroup,
   updateRunQuantity,
   updateTotalQuantity,
 } from '../../src/app/actions/projectActions.js';
@@ -753,16 +753,16 @@ describe('projectActions', () => {
     });
   });
 
-  describe('findProjectGroupByProjectId()', () => {
+  describe('findLoadedProjectGroup()', () => {
     it('案件IDで引ける', async () => {
       await seedProject();
       const { projectGroups } = await adapter.loadAll();
 
-      expect(findProjectGroupByProjectId(projectGroups, 'PJ-0001')).not.toBeNull();
+      expect(findLoadedProjectGroup(projectGroups, 'PJ-0001')).not.toBeNull();
     });
 
     it('未登録なら null', async () => {
-      expect(findProjectGroupByProjectId([], 'PJ-9999')).toBeNull();
+      expect(findLoadedProjectGroup([], 'PJ-9999')).toBeNull();
     });
   });
 });

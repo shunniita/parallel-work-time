@@ -161,3 +161,26 @@ test('ツリーを矢印キーで移動できる（仕様書13章、レビュー
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('run-title')).toBeVisible();
 });
+
+test('狭い画面では左ペインが上へ回り込む（仕様書13章、レビュー指摘 D-19）', async ({ page }) => {
+  // viewport を1280へ固定していると layout.css の狭幅対応が実機で発火せず、
+  // 横スクロールしないと操作できなくなる。
+  await openFresh(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  const columns = () =>
+    page.getByTestId('tree-pane').evaluate((node) =>
+      getComputedStyle(node.parentElement).gridTemplateColumns.split(' ').length,
+    );
+
+  expect(await columns()).toBe(2);
+
+  await page.setViewportSize({ width: 1024, height: 900 });
+  expect(await columns()).toBe(1);
+
+  // 横スクロールが出ない。
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+});
