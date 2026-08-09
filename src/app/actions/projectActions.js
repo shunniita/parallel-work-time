@@ -300,13 +300,19 @@ export function findActiveTemplate(taskTemplates, targetType, variant) {
 }
 
 /**
- * 案件IDから案件グループを引く（仕様書8.2.6）。
+ * 読み込み済みの一覧から案件IDで引く（仕様書8.2.6）。
  *
- * @param {object[]} projectGroups
+ * `StorageAdapter.findProjectGroupByProjectId()` と役割が似ているが別物である。
+ * あちらは索引を引き直すため、`persistence.run()` が渡すデータセットの外を読む。
+ * 検証と書き込みの間に別の操作が割り込む隙間ができるので、アクション層は
+ * 受け取った一覧の中だけで判断する。名前を分けて取り違えを防ぐ
+ * （レビュー指摘 F-28）。
+ *
+ * @param {object[]} projectGroups `persistence.run()` が渡した一覧
  * @param {string} projectId
  * @returns {object|null}
  */
-export function findProjectGroupByProjectId(projectGroups, projectId) {
+export function findLoadedProjectGroup(projectGroups, projectId) {
   const normalized = normalizeProjectId(projectId);
   return projectGroups.find((group) => group.projectId === normalized) ?? null;
 }

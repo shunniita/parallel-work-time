@@ -35,7 +35,7 @@ import { toIntegerInput } from '../numeric.js';
  *          now?: () => Date}} options
  * @returns {{render: () => void, openRunForm: () => void, reset: () => void}}
  */
-export function createProjectView({ container, store, actions, handlers, now }) {
+export function createProjectView({ container, store, actions, handlers, now, isActive = () => true }) {
   const currentDate = now ?? (() => new Date());
 
   const local = {
@@ -686,6 +686,11 @@ export function createProjectView({ container, store, actions, handlers, now }) 
   }
 
   function render() {
+    // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
+    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    if (!isActive()) {
+      return;
+    }
     // 前回の描画で作ったノードは捨てられる。部分更新が外れたノードを掴んだまま
     // 書き換え続けないよう、参照をここで切る。
     refs.quantityPreview = null;

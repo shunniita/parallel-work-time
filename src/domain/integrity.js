@@ -27,13 +27,22 @@
  * | 存在しない参照 | 拒否 | 画面から親を選び直す手段が無い |
  * | `endAt < startAt` | 拒否 | 工数が0秒へ丸められ、欠落に気づけない（8.9.3） |
  * | 転記済みwith未終了区間 | 拒否 | 画面から到達しない状態（7章、S8-1） |
+ * | 参加者の重複・空白名 | 拒否 | 人数を掛けるため工数が水増しされる（8.6.1、GAR-2） |
+ * | 状態日時の前後が逆 | 拒否 | 保持期間の起算が狂う（10.2、GAR-3） |
  * | 区間の重複 | 通す | 警告にとどめる決まり（8.9.5）。画面でも保存できる |
  * | 累計が総予定数を超える | 通す | 警告して続行できる決まり（8.9.7） |
  * | 外部項目コード未設定 | 通す | 許される（8.7.4 は警告のみ） |
+ *
+ * ## 黙って正規化しない
+ *
+ * 通常入力は参加者名の前後空白を落とし、完全一致の重複を1つへまとめる
+ * （`intervalOps.normalizeParticipants`）。取り込みで同じ正規化を黙って行うと、
+ * 利用者は「読み込ませた内容と保存された内容が違う」ことに気づけない。全置換で
+ * ある以上、直す機会は取り込み前にしかない。場所と理由を添えて拒否する。
  */
 
 import { compareIso } from './datetime.js';
-import { isOpenInterval } from './effort.js';
+import { INTERVAL_TYPE, isOpenInterval } from './effort.js';
 import { HISTORY_ENTITY_BY_OP } from './history.js';
 import { Problems } from './problems.js';
 import { RUN_STATUS, validateImportPayload } from './schema.js';
@@ -339,8 +348,131 @@ function checkRunContents(problems, runs) {
   runs.forEach((run, index) => {
     const path = `workRuns[${index}]`;
     checkIntervalOrder(problems, run, path);
+    checkParticipants(problems, run, path);
     checkStatusConsistency(problems, run, path);
+    checkTimestampOrder(problems, run, path);
   });
+}
+
+/**
+ * 参加者一覧が通常入力と同じ意味になるか（仕様書8.6.1、8.9.4、GAR-2）。
+ *
+ * 工数は `participants.length` を人数として掛ける。同じ名前が2回入ったJSONは、
+ * 1人の作業を2人分として計上する。1時間の区間が7,200秒になり、その値が分単位の
+ * 切り上げと転記値まで伝播する。取り込みは通常入力の検証を通らないため、ここで
+ * 拒む。
+ *
+ * 表記ゆれ（「甲」と「甲 太郎」）は判断しない。利用者へ委ねると決まっている
+ * （仕様書8.9.9）。見るのは前後空白を落とした完全一致だけである。
+ */
+function checkParticipants(problems, run, path) {
+  (run?.tasks ?? []).forEach((task, taskIndex) => {
+    (task?.intervals ?? []).forEach((interval, intervalIndex) => {
+      checkParticipantList(
+        problems,
+        interval?.participants,
+        `${path}.tasks[${taskIndex}].intervals[${intervalIndex}].participants`,
+        // 作業区間は0人を許さない（仕様書8.9.4）。休憩は0人でよい。
+        interval?.type === INTERVAL_TYPE.WORK,
+      );
+    });
+    (task?.directEntries ?? []).forEach((entry, entryIndex) => {
+      // 直接入力の `seconds` は既に人数を含む（8.5.6）ため工数は水増しされないが、
+      // 重複候補の判定（8.9.8）が参加者一覧の一致で行われるため、正規化前の値が
+      // 残ると同じ組み合わせを別物として扱ってしまう。
+      checkParticipantList(
+        problems,
+        entry?.participants,
+        `${path}.tasks[${taskIndex}].directEntries[${entryIndex}].participants`,
+        false,
+      );
+    });
+  });
+}
+
+/**
+ * @param {unknown} participants
+ * @param {string} path
+ * @param {boolean} requireAtLeastOne
+ */
+function checkParticipantList(problems, participants, path, requireAtLeastOne) {
+  if (!Array.isArray(participants)) {
+    // 構造検証（`schema.js`）が先に弾く。
+    return;
+  }
+  const seen = new Set();
+  let blank = false;
+  let duplicated = false;
+  for (const item of participants) {
+    if (typeof item !== 'string') {
+      return;
+    }
+    const name = item.trim();
+    if (name === '') {
+      blank = true;
+      continue;
+    }
+    if (seen.has(name)) {
+      duplicated = true;
+      continue;
+    }
+    seen.add(name);
+  }
+
+  if (blank) {
+    problems.add(path, '空の参加者名が含まれている');
+  }
+  if (duplicated) {
+    problems.add(path, '同じ参加者が重複している。人数として二重に数えられる（仕様書8.6.1）');
+  }
+  if (requireAtLeastOne && seen.size === 0) {
+    problems.add(path, '作業区間は参加者が1名以上必要である（仕様書8.9.4）');
+  }
+}
+
+/**
+ * 状態日時の前後関係（仕様書7.1、10.2、GAR-3）。
+ *
+ * 求めるのは通常操作が必ず満たす順序である。
+ *
+ * ```text
+ * createdAt <= transferredAt <= archivedAt <= updatedAt
+ * ```
+ *
+ * 保持期間は `archivedAt` を唯一の起算日とする（10.2）。作成前にアーカイブされた
+ * ような到達不能な時系列を通すと、**保持期間を経過済みとして削除候補になる**。
+ * 完全削除には確認が残るとはいえ、「保持期間内の記録を守る」という判定の根拠が
+ * 成立しなくなる。
+ *
+ * 自動補正はしない。日時を書き換えると保持期間の意味そのものが変わるため、
+ * 取り込む前に直してもらう。同秒は許す。
+ */
+function checkTimestampOrder(problems, run, path) {
+  const { createdAt, updatedAt } = run ?? {};
+  const transferredAt = run?.transferredAt ?? null;
+  const archivedAt = run?.archivedAt ?? null;
+
+  /** 前後が逆なら指摘する。どちらかが欠けていれば他の検査に任せる。 */
+  function requireOrder(earlier, later, laterPath, message) {
+    if (typeof earlier !== 'string' || typeof later !== 'string') {
+      return;
+    }
+    if (compareIso(later, earlier) < 0) {
+      problems.add(`${path}.${laterPath}`, message);
+    }
+  }
+
+  requireOrder(createdAt, updatedAt, 'updatedAt', '更新日時が作成日時より前である');
+  requireOrder(createdAt, transferredAt, 'transferredAt', '転記完了日時が作成日時より前である');
+  requireOrder(
+    transferredAt,
+    archivedAt,
+    'archivedAt',
+    'アーカイブ日時が転記完了日時より前である',
+  );
+  requireOrder(createdAt, archivedAt, 'archivedAt', 'アーカイブ日時が作成日時より前である');
+  requireOrder(archivedAt, updatedAt, 'updatedAt', '更新日時がアーカイブ日時より前である');
+  requireOrder(transferredAt, updatedAt, 'updatedAt', '更新日時が転記完了日時より前である');
 }
 
 /**
