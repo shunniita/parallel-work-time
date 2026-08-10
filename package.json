@@ -12,9 +12,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test --project=chromium --grep-invert @screenshot",
-    "test:e2e:firefox": "playwright test --project=firefox --grep-invert @screenshot",
+    "test:e2e": "playwright test --project=chromium --grep-invert \"@screenshot|@manual\"",
+    "test:e2e:firefox": "playwright test --project=firefox --grep-invert \"@screenshot|@manual\"",
     "test:e2e:shots": "playwright test --project=chromium --grep @screenshot",
+    "shots:manual": "playwright test --project=chromium --grep @manual",
     "serve": "node tools/static-server.mjs",
     "dist": "node tools/build-dist.mjs"
   },
