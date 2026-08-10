@@ -21,6 +21,7 @@ Python、Node.js、管理者権限の追加は不要です。`index.html` を直
 | [2. 操作ガイド](manual/02-guide.md) | 日々の操作手順を確認する |
 | [3. 画面リファレンス](manual/03-screens.md) | ボタンや入力欄の意味を調べる |
 | [4. トラブルとFAQ](manual/04-faq.md) | 起動・データ・警告などの問題を調べる |
+| [5. ブラウザー動作確認](manual/05-browser-smoke-checklist.md) | このPCで一通り動くか、操作と結果を順番に確認する |
 
 ## データを失わないために
 
