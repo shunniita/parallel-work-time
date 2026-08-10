@@ -21,8 +21,8 @@ function Read-ConfiguredPort {
 
     $settings = @(
         Get-Content -LiteralPath $settingsPath -Encoding UTF8 |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -ne '' -and -not $_.StartsWith('#') }
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -ne '' -and -not $_.StartsWith('#') }
     )
     if ($settings.Count -ne 1 -or $settings[0] -notmatch '^port\s*=\s*([0-9]{1,5})$') {
         throw 'port=数字 の行を1行だけ指定してください。'
@@ -38,7 +38,8 @@ function Read-ConfiguredPort {
 if (-not $PSBoundParameters.ContainsKey('Port')) {
     try {
         $Port = Read-ConfiguredPort
-    } catch {
+    }
+    catch {
         Write-Host 'PWT_SETTINGS_INVALID'
         Write-Host 'local-settings.txt の内容が正しくありません。'
         Write-Host $_.Exception.Message
@@ -146,7 +147,8 @@ function Handle-Request {
     try {
         $requestPath = $parts[1].Split('?')[0]
         $decodedPath = [Uri]::UnescapeDataString($requestPath)
-    } catch {
+    }
+    catch {
         Write-TextResponse -Stream $stream -StatusCode 400 -Reason 'Bad Request' -Message 'Invalid URL.' -HeadOnly:$headOnly
         return
     }
@@ -159,7 +161,8 @@ function Handle-Request {
     $relativePath = $decodedPath.TrimStart('/').Replace('/', [IO.Path]::DirectorySeparatorChar)
     try {
         $candidate = [IO.Path]::GetFullPath((Join-Path $root $relativePath))
-    } catch {
+    }
+    catch {
         Write-TextResponse -Stream $stream -StatusCode 400 -Reason 'Bad Request' -Message 'Invalid path.' -HeadOnly:$headOnly
         return
     }
@@ -191,7 +194,8 @@ function Handle-Request {
 try {
     try {
         $listener.Start()
-    } catch [Net.Sockets.SocketException] {
+    }
+    catch [Net.Sockets.SocketException] {
         Write-Host "PWT_PORT_IN_USE $Port"
         Write-Host "ポート $Port は、すでに別のアプリで使われています。"
         Write-Host '起動済みの Parallel Work Time の黒い画面を閉じてから、もう一度お試しください。'
@@ -209,7 +213,8 @@ try {
     if (-not $NoBrowser) {
         try {
             Start-Process $url
-        } catch {
+        }
+        catch {
             Write-Host 'ブラウザーを自動で開けませんでした。上に表示されたURLを開いてください。'
         }
     }
@@ -218,14 +223,18 @@ try {
         $client = $listener.AcceptTcpClient()
         try {
             Handle-Request -Client $client
-        } catch {
+        }
+        catch {
             try {
                 Write-TextResponse -Stream $client.GetStream() -StatusCode 500 -Reason 'Internal Server Error' -Message 'Server error.'
-            } catch { }
-        } finally {
+            }
+            catch { }
+        }
+        finally {
             $client.Close()
         }
     } while (-not $Once)
-} finally {
+}
+finally {
     $listener.Stop()
 }

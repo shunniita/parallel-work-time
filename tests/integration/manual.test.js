@@ -23,6 +23,21 @@ function localTargets(markdownPath) {
 }
 
 describe('利用者向け説明書', () => {
+  it('開発READMEでも利用者向けの保存案内を開発情報より先に示す', () => {
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+
+    expect(readme.indexOf('## ダウンロードとインストール')).toBeLessThan(
+      readme.indexOf('## 説明書'),
+    );
+    expect(readme.indexOf('## 説明書')).toBeLessThan(readme.indexOf('## データの保存'));
+    expect(readme.indexOf('## データの保存')).toBeLessThan(
+      readme.indexOf('## 開発者向け情報'),
+    );
+    expect(readme).toContain('https://github.com/shunniita/parallel-work-time/releases');
+    expect(readme).toContain('`parallel-work-time.zip`');
+    expect(readme).toContain('`Source code (zip)`');
+  });
+
   it('相対リンクと画像の参照先が存在する', () => {
     const missing = DOCUMENTS.flatMap((document) =>
       localTargets(document)
