@@ -63,6 +63,39 @@ export async function openFresh(page) {
 }
 
 /**
+ * クリップボードへ渡された文字列を記録する。
+ *
+ * 実際のクリップボードを読み戻さない。`clipboard-read` 権限は Playwright の
+ * Firefox では付与できず、ブラウザーごとに分岐すると確かめる内容そのものが
+ * 環境で変わる。ここでは `writeText()` を包んで「アプリが何を渡したか」を記録し、
+ * どのブラウザーでも同じことを確かめる。書き出す文字列の組み立ては
+ * `aggregate.test.js` が固定している。
+ *
+ * 最初のページ遷移より前に呼ぶ（`openFresh` の前）。
+ *
+ * @param {import('@playwright/test').Page} page
+ * @returns {{read: () => Promise<string|null>}}
+ */
+export async function recordClipboard(page) {
+  await page.addInitScript(() => {
+    window.__copiedText = [];
+    const clipboard = navigator.clipboard;
+    if (clipboard === undefined || typeof clipboard.writeText !== 'function') {
+      return;
+    }
+    // OS の権限には依存させず、成功する Clipboard API のテストダブルに置き換える。
+    // 実APIを呼んで失敗前に記録すると、アプリが fallback へ進んだのに成功した
+    // ように見える。成功を返す経路そのものを明示的に用意する。
+    clipboard.writeText = async (text) => {
+      window.__copiedText.push(text);
+    };
+  });
+  return {
+    read: () => page.evaluate(() => window.__copiedText.at(-1) ?? null),
+  };
+}
+
+/**
  * 案件を登録する（仕様書8.2.1）。
  *
  * 登録に成功すると案件詳細へ移り、実施回追加フォームが開く。

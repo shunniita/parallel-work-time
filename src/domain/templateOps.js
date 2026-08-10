@@ -1,3 +1,5 @@
+import { MAX_ORDINAL } from '../config.js';
+
 /**
  * 作業テンプレートの組み立てと改訂（仕様書8.1、6.3）。
  *
@@ -81,7 +83,8 @@ export function nextTemplateVersion(templates, templateSeriesId) {
   const versions = templates
     .filter((template) => template.templateSeriesId === templateSeriesId)
     .map((template) => (Number.isInteger(template.version) ? template.version : 0));
-  return versions.length === 0 ? 1 : Math.max(...versions) + 1;
+  const next = versions.length === 0 ? 1 : Math.max(...versions) + 1;
+  return next <= MAX_ORDINAL ? next : null;
 }
 
 /**

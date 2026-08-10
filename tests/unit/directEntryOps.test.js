@@ -17,6 +17,7 @@ import {
   removeDirectEntry,
 } from '../../src/domain/directEntryOps.js';
 import { directEntry, resetIds, taskRecord } from '../fixtures/builders.js';
+import { MAX_TEXT_LENGTH } from '../../src/config.js';
 
 const NOW = '2026-08-01T12:00:00+09:00';
 
@@ -123,6 +124,15 @@ describe('addDirectEntry()', () => {
 
       expect(result.created.note).toBe('移動時間');
     });
+
+    it('保存形式の文字数上限を超える備考は拒否する', () => {
+      const result = addDirectEntry(
+        taskRecord({}),
+        input({ note: 'A'.repeat(MAX_TEXT_LENGTH + 1) }),
+        context(),
+      );
+      expect(result.ok).toBe(false);
+    });
   });
 
   describe('参加者の扱い', () => {
@@ -158,6 +168,15 @@ describe('addDirectEntry()', () => {
     it('配列でなければ拒否する', () => {
       const result = addDirectEntry(taskRecord({}), input({ participants: '甲' }), context());
 
+      expect(result.ok).toBe(false);
+    });
+
+    it('保存形式の文字数上限を超える参加者名は拒否する', () => {
+      const result = addDirectEntry(
+        taskRecord({}),
+        input({ participants: ['A'.repeat(MAX_TEXT_LENGTH + 1)] }),
+        context(),
+      );
       expect(result.ok).toBe(false);
     });
   });

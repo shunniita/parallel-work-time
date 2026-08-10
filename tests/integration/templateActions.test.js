@@ -18,8 +18,9 @@ import { SAVE_STATE, createPersistence } from '../../src/app/persistence.js';
 import { MemoryAdapter } from '../../src/storage/MemoryAdapter.js';
 import { IndexedDbAdapter } from '../../src/storage/IndexedDbAdapter.js';
 import { ENTITY_TYPE, STORAGE_ERROR_KIND, StorageError } from '../../src/storage/StorageAdapter.js';
-import { activeTemplates } from '../../src/domain/templateOps.js';
+import { toIsoSecond } from '../../src/domain/datetime.js';
 import { validateImportPayload } from '../../src/domain/schema.js';
+import { activeTemplates } from '../../src/domain/templateOps.js';
 import { SCHEMA_VERSION, createDefaultSettings } from '../../src/config.js';
 
 const FIXED_NOW = new Date('2026-07-31T01:00:00Z');
@@ -79,7 +80,7 @@ describe('templateActions', () => {
     it('createdAt に現在日時を入れる', async () => {
       const { template } = await createTemplate(deps, draft());
 
-      expect(template.createdAt).toBe('2026-07-31T10:00:00+09:00');
+      expect(template.createdAt).toBe(toIsoSecond(FIXED_NOW));
     });
 
     it('保存成功を通知する（仕様書9.1）', async () => {
@@ -400,7 +401,8 @@ describe('改訂で有効版の一意性を破れない（GAR-6）', () => {
   }
 
   it('別の有効版と同じ組み合わせへ改訂できない', async () => {
-    // 保存自体は通っていたが、直後のエクスポートを取り込めなくなる。
+    // 保存層は有効版の重複を拒まない。通してしまうと、直後のエクスポートを
+    // 取り込めなくなる（`integrity.js` が有効版2つを拒む）。
     const { first } = await twoActive();
 
     const error = await reviseTemplateAction(deps, first.templateId, {

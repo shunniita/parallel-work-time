@@ -13,13 +13,14 @@ import {
   changeParticipants,
   editInterval,
   findInterval,
-  normalizeParticipants,
   removeInterval,
   resumeWork,
   startBreak,
   startWork,
   finishWork,
 } from '../../src/domain/intervalOps.js';
+import { MAX_EFFORT_SECONDS, MAX_PARTICIPANTS } from '../../src/config.js';
+import { addSeconds } from '../../src/domain/datetime.js';
 import { INTERVAL_TYPE } from '../../src/domain/effort.js';
 import { TASK_STATE, taskState } from '../../src/domain/taskState.js';
 import { breakInterval, resetIds, taskRecord, workInterval } from '../fixtures/builders.js';
@@ -41,30 +42,6 @@ function contextWith(prefix = 'new') {
 function applied(taskRecordValue, result) {
   return { ...taskRecordValue, intervals: result.intervals };
 }
-
-describe('normalizeParticipants', () => {
-  it('前後空白を落とす', () => {
-    expect(normalizeParticipants([' 甲 ', '乙'])).toEqual(['甲', '乙']);
-  });
-
-  it('空文字を除く', () => {
-    expect(normalizeParticipants(['甲', '', '   '])).toEqual(['甲']);
-  });
-
-  it('完全一致の重複をまとめる', () => {
-    expect(normalizeParticipants(['甲', '甲', '乙'])).toEqual(['甲', '乙']);
-  });
-
-  it('表記ゆれは別人として残す（仕様書8.9.9）', () => {
-    expect(normalizeParticipants(['甲', '甲 太郎'])).toEqual(['甲', '甲 太郎']);
-  });
-
-  it('配列でなければ null', () => {
-    expect(normalizeParticipants('甲')).toBeNull();
-    expect(normalizeParticipants(undefined)).toBeNull();
-    expect(normalizeParticipants(['甲', 1])).toBeNull();
-  });
-});
 
 describe('startWork（仕様書8.4.1）', () => {
   beforeEach(resetIds);
@@ -452,6 +429,58 @@ describe('changeParticipants（仕様書8.4.10、補足2）', () => {
       changeParticipants(taskRecord(), { at: NOW, participants: ['甲'] }, contextWith())
         .ok,
     ).toBe(false);
+  });
+});
+
+/**
+ * 合計工数の安全範囲（仕様書8.9.12、レビュー指摘 F12-29）。
+ *
+ * 保存の入口でも上限を確かめる。日時入力は西暦9999年まで受け付けるため、
+ * 参加者数の上限内でも1件の区間で合計が安全整数の外へ出る。
+ */
+describe('合計工数の上限（F12-29）', () => {
+  beforeEach(resetIds);
+
+  const START = '2000-01-01T00:00:00+00:00';
+  const PARTICIPANTS = Array.from({ length: MAX_PARTICIPANTS }, (_, index) => `参加者${index}`);
+  const SECONDS_AT_LIMIT = MAX_EFFORT_SECONDS / MAX_PARTICIPANTS;
+
+  function addHugeInterval(task, elapsedSeconds) {
+    return addInterval(
+      task,
+      {
+        type: INTERVAL_TYPE.WORK,
+        startAt: START,
+        endAt: addSeconds(START, elapsedSeconds),
+        participants: PARTICIPANTS,
+      },
+      contextWith(),
+    );
+  }
+
+  it('上限ちょうどの区間は保存できる', () => {
+    expect(addHugeInterval(taskRecord(), SECONDS_AT_LIMIT).ok).toBe(true);
+  });
+
+  it('上限を超える区間は理由を添えて拒否する', () => {
+    const result = addHugeInterval(taskRecord(), SECONDS_AT_LIMIT + 1);
+
+    expect(result.ok).toBe(false);
+    expect(result.intervals).toBeNull();
+    expect(result.errors.join('\n')).toContain('合計工数が上限');
+  });
+
+  it('既にある区間との合計で超える場合も拒否する', () => {
+    // 1件ずつは上限内でも、足し合わせた結果が範囲を外れる。
+    const half = Math.floor(SECONDS_AT_LIMIT * 0.6);
+    const task = taskRecord();
+    const first = addHugeInterval(task, half);
+    expect(first.ok).toBe(true);
+
+    const result = addHugeInterval(applied(task, first), half);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toContain('合計工数が上限');
   });
 });
 

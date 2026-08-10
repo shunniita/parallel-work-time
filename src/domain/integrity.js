@@ -36,14 +36,21 @@
  * ## 黙って正規化しない
  *
  * 通常入力は参加者名の前後空白を落とし、完全一致の重複を1つへまとめる
- * （`intervalOps.normalizeParticipants`）。取り込みで同じ正規化を黙って行うと、
+ * （`participants.normalizeParticipants`）。取り込みで同じ正規化を黙って行うと、
  * 利用者は「読み込ませた内容と保存された内容が違う」ことに気づけない。全置換で
  * ある以上、直す機会は取り込み前にしかない。場所と理由を添えて拒否する。
  */
 
+import { MAX_EFFORT_SECONDS } from '../config.js';
 import { compareIso } from './datetime.js';
-import { INTERVAL_TYPE, isOpenInterval } from './effort.js';
+import {
+  INTERVAL_TYPE,
+  isEffortWithinRange,
+  isOpenInterval,
+  taskTotalSeconds,
+} from './effort.js';
 import { HISTORY_ENTITY_BY_OP } from './history.js';
+import { normalizeParticipants } from './participants.js';
 import { Problems } from './problems.js';
 import { RUN_STATUS, validateImportPayload } from './schema.js';
 import { normalizeProjectId } from './projectId.js';
@@ -200,6 +207,12 @@ function checkTemplateSeriesVersions(problems, templates) {
  * テンプレートの `taskDefinitionId` は版をまたいで引き継ぐため、全体ではなく
  * テンプレート1版の中だけで一意とする。実績側の識別子は変更履歴の `targetId`
  * からも使われるため、データセット全体で一意にする。
+ *
+ * 実施回の中でも `taskDefinitionId` は一意である。実施回はテンプレート1版の
+ * 作業項目定義を1件ずつ複製して作るため（`templateInstantiate.js`）、同じ定義が
+ * 2行並ぶ実施回は通常の生成経路では作れない。取り込んでしまうと、集計・転記の
+ * 一覧へ同じ作業項目が2行現れ、どちらへ工数を記録したのかが利用者に分からなく
+ * なる。`taskRecordId` の全体一意性では防げない（別の実績IDを振れば通る）。
  */
 function checkNestedIdentifiers(problems, templates, runs) {
   templates.forEach((template, templateIndex) => {
@@ -208,6 +221,16 @@ function checkNestedIdentifiers(problems, templates, runs) {
       template?.tasks ?? [],
       'taskDefinitionId',
       `taskTemplates[${templateIndex}].tasks`,
+      '作業項目定義',
+    );
+  });
+
+  runs.forEach((run, runIndex) => {
+    checkUniqueNestedKeys(
+      problems,
+      run?.tasks ?? [],
+      'taskDefinitionId',
+      `workRuns[${runIndex}].tasks`,
       '作業項目定義',
     );
   });
@@ -351,7 +374,41 @@ function checkRunContents(problems, runs) {
     checkParticipants(problems, run, path);
     checkStatusConsistency(problems, run, path);
     checkTimestampOrder(problems, run, path);
+    checkEffortRange(problems, run, path);
   });
+}
+
+/**
+ * 派生する合計工数が厳密に扱える範囲か（仕様書8.6、8.9.12）。
+ *
+ * 1件ずつの値には上限があるが（`schema.js`）、合計には効かない。工数は
+ * 「経過秒 × 参加者数」を足し合わせた値であり、区間数・作業項目数・参加者数が
+ * それぞれ上限内でも、積と和を重ねれば安全整数を超える。超えた時点で加算は
+ * 丸められ、集計値と転記値が厳密値から静かにずれる。
+ *
+ * 作業項目ごとに見てから実施回でも見る。どちらも利用者が数字を読む単位であり、
+ * 作業項目単位で場所を示せると原因のレコードを特定できる。
+ */
+function checkEffortRange(problems, run, path) {
+  let runTotal = 0;
+  (run?.tasks ?? []).forEach((task, taskIndex) => {
+    const total = taskTotalSeconds(task);
+    if (!isEffortWithinRange(total)) {
+      problems.add(
+        `${path}.tasks[${taskIndex}]`,
+        `合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える。` +
+          '期間または参加者数が現実的な範囲を外れている（仕様書8.9.12）。',
+      );
+    }
+    runTotal += total;
+  });
+
+  if (!isEffortWithinRange(runTotal)) {
+    problems.add(
+      path,
+      `実施回の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える（仕様書8.9.12）。`,
+    );
+  }
 }
 
 /**
@@ -391,6 +448,12 @@ function checkParticipants(problems, run, path) {
 }
 
 /**
+ * 通常入力と同じ意味の参加者一覧かを、共有の正規化規則から導いて確かめる。
+ *
+ * 判定は `normalizeParticipants()` の結果との差で表す。規則を書き写すと、正規化を
+ * 変えたときに取り込み検証だけが古い規則で残り、水増し（GAR-2）がそのクラスで
+ * 復活する。何が落ちたかによって指摘の文言を分ける。
+ *
  * @param {unknown} participants
  * @param {string} path
  * @param {boolean} requireAtLeastOne
@@ -400,32 +463,22 @@ function checkParticipantList(problems, participants, path, requireAtLeastOne) {
     // 構造検証（`schema.js`）が先に弾く。
     return;
   }
-  const seen = new Set();
-  let blank = false;
-  let duplicated = false;
-  for (const item of participants) {
-    if (typeof item !== 'string') {
-      return;
-    }
-    const name = item.trim();
-    if (name === '') {
-      blank = true;
-      continue;
-    }
-    if (seen.has(name)) {
-      duplicated = true;
-      continue;
-    }
-    seen.add(name);
-  }
+  // 文字列以外の要素は構造検証の担当である。ここで打ち切ると、同じ一覧に含まれる
+  // 空白名・重複・0人の指摘まで一緒に消える。
+  const names = participants.filter((name) => typeof name === 'string');
+  const normalized = normalizeParticipants(names);
 
-  if (blank) {
+  const blankCount = names.filter((name) => name.trim() === '').length;
+  // 正規化で減った件数のうち、空文字で説明できない差が重複である。
+  const duplicated = names.length - blankCount > normalized.length;
+
+  if (blankCount > 0) {
     problems.add(path, '空の参加者名が含まれている');
   }
   if (duplicated) {
     problems.add(path, '同じ参加者が重複している。人数として二重に数えられる（仕様書8.6.1）');
   }
-  if (requireAtLeastOne && seen.size === 0) {
+  if (requireAtLeastOne && normalized.length === 0) {
     problems.add(path, '作業区間は参加者が1名以上必要である（仕様書8.9.4）');
   }
 }
@@ -446,33 +499,28 @@ function checkParticipantList(problems, participants, path, requireAtLeastOne) {
  *
  * 自動補正はしない。日時を書き換えると保持期間の意味そのものが変わるため、
  * 取り込む前に直してもらう。同秒は許す。
+ *
+ * 書き込み側は `runWriteTime()`（`writeClock.js`）でこの順序を保証する。時計が
+ * 巻き戻っても、ツール自身が書いたエクスポートは必ずここを通る（A-11）。
+ *
+ * 鎖は隣接する組だけを見る。存在する値を順に比べれば残りは推移律で導けるうえ、
+ * 日時が1つ壊れたときに同じ項目へ何件も指摘が並ばない。
  */
 function checkTimestampOrder(problems, run, path) {
-  const { createdAt, updatedAt } = run ?? {};
-  const transferredAt = run?.transferredAt ?? null;
-  const archivedAt = run?.archivedAt ?? null;
+  const chain = [
+    { key: 'createdAt', value: run?.createdAt, label: '作成日時' },
+    { key: 'transferredAt', value: run?.transferredAt ?? null, label: '転記完了日時' },
+    { key: 'archivedAt', value: run?.archivedAt ?? null, label: 'アーカイブ日時' },
+    { key: 'updatedAt', value: run?.updatedAt, label: '更新日時' },
+  ].filter((item) => typeof item.value === 'string');
 
-  /** 前後が逆なら指摘する。どちらかが欠けていれば他の検査に任せる。 */
-  function requireOrder(earlier, later, laterPath, message) {
-    if (typeof earlier !== 'string' || typeof later !== 'string') {
-      return;
-    }
-    if (compareIso(later, earlier) < 0) {
-      problems.add(`${path}.${laterPath}`, message);
+  for (let index = 1; index < chain.length; index += 1) {
+    const earlier = chain[index - 1];
+    const later = chain[index];
+    if (compareIso(later.value, earlier.value) < 0) {
+      problems.add(`${path}.${later.key}`, `${later.label}が${earlier.label}より前である`);
     }
   }
-
-  requireOrder(createdAt, updatedAt, 'updatedAt', '更新日時が作成日時より前である');
-  requireOrder(createdAt, transferredAt, 'transferredAt', '転記完了日時が作成日時より前である');
-  requireOrder(
-    transferredAt,
-    archivedAt,
-    'archivedAt',
-    'アーカイブ日時が転記完了日時より前である',
-  );
-  requireOrder(createdAt, archivedAt, 'archivedAt', 'アーカイブ日時が作成日時より前である');
-  requireOrder(archivedAt, updatedAt, 'updatedAt', '更新日時がアーカイブ日時より前である');
-  requireOrder(transferredAt, updatedAt, 'updatedAt', '更新日時が転記完了日時より前である');
 }
 
 /**

@@ -44,7 +44,14 @@ import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
 import { ValidationError } from '../errors.js';
 import { resolveDeps } from './deps.js';
-import { assertEditable, findTask, locateTask, replaceTaskFields, taskOf } from './taskTarget.js';
+import {
+  assertEditable,
+  assertRunEffortWithinRange,
+  findTask,
+  locateTask,
+  replaceTaskFields,
+  taskOf,
+} from './taskTarget.js';
 
 /**
  * 作業項目実績の直接入力を差し替えた実施回を作る。
@@ -88,6 +95,7 @@ async function applyDirectEntryChange(deps, target, apply) {
       result.directEntries,
       context.now,
     );
+    assertRunEffortWithinRange(nextRun);
 
     return {
       write: () => adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, nextRun),

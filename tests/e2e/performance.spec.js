@@ -10,6 +10,13 @@
  * 「その規模のデータを抱えたときの描画・集計・出力」であって入力操作ではない
  * ため、保存済みの状態を直接組み立てる。
  *
+ * ## 集計は測る対象へ区間を集中させる
+ *
+ * 集計画面は**選択中の実施回だけ**を集計する（`aggregateRun`）。区間を100実施回へ
+ * 均等に配ると、測っているのは1実施回あたり20区間の集計であって、2,000区間規模の
+ * 集計ではない（レビュー指摘 F12-13）。目標値どおりの集計性能を測るため、区間は
+ * 計測対象の実施回へ寄せる。起動と出力は全件を対象にするので配分に依らない。
+ *
  * ## 閾値は緩く、値は記録する
  *
  * 実行機の性能に左右されるので、合否は「明らかな破綻」だけを見る。README へ
@@ -49,8 +56,6 @@ async function seed(page) {
     const groups = [];
     const runs = [];
     let intervalCount = 0;
-    // 区間は実施回へ均等に配る。1実施回あたり 2,000 / 100 = 20 区間。
-    const perRun = Math.ceil(scale.intervals / scale.runs);
 
     for (let g = 0; g < scale.groups; g += 1) {
       groups.push({
@@ -68,9 +73,10 @@ async function seed(page) {
       const group = groups[r % groups.length];
       const tasks = template.tasks.map((definition, index) => {
         const intervals = [];
-        // 先頭の作業項目へ区間をまとめる。項目数ではなく総区間数が目標値である。
-        if (index === 0) {
-          for (let i = 0; i < perRun && intervalCount < scale.intervals; i += 1) {
+        // 区間は計測対象（先頭の実施回の先頭の作業項目）へすべて寄せる。集計は
+        // 選択中の実施回だけを対象にするため、配ると集計性能を測れない。
+        if (r === 0 && index === 0) {
+          for (let i = 0; i < scale.intervals; i += 1) {
             const hour = String(1 + (i % 20)).padStart(2, '0');
             intervals.push({
               intervalId: `perf-interval-${r}-${i}`,
@@ -140,13 +146,17 @@ test('性能目標の規模で通常操作が破綻しない（仕様書13章）
   await expect(page.getByTestId('tree-project')).toHaveCount(SCALE.groups);
   const startupMs = Date.now() - startup;
 
-  // 実施回の集計（集計・転記画面）。
+  // 実施回の集計（集計・転記画面）。区間はこの実施回へ集中させてある。
   await page.getByTestId('tree-project').first().click();
   await page.getByTestId('run-row').first().getByTestId('open-run').click();
   const aggregate = Date.now();
   await page.getByTestId('nav-summary').click();
   await expect(page.getByTestId('summary-run-status')).toBeVisible();
   const aggregateMs = Date.now() - aggregate;
+
+  // 測った集計が目標規模のものであることを確かめる（レビュー指摘 F12-13）。
+  // 2,000区間 × 30分 × 2名 = 120,000分。20区間ぶんを測っていれば桁が合わない。
+  await expect(page.getByTestId('total-transfer')).toContainText('120000');
 
   // JSONエクスポート。
   await page.getByTestId('nav-settings').click();

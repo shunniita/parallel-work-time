@@ -31,7 +31,6 @@
 import { toErrorMessages } from '../../app/errors.js';
 import { formatIsoForHuman, toIsoSecond } from '../../domain/datetime.js';
 import { canDeleteRun, daysUntilDeletable } from '../../domain/retention.js';
-import { runDestructiveAction } from '../../io/safetyExport.js';
 import { createReasonConfirm } from '../components/reasonConfirm.js';
 import { el, replaceChildren } from '../dom.js';
 
@@ -44,18 +43,22 @@ const TARGET = {
 /**
  * アーカイブ画面を作る。
  *
+ * `runDestructive` は必須である。退避と削除を1つの排他区間へ入れるのは呼び出し元
+ * （`main.js`）の役目であり（GAR-1）、既定値を置くと注入を忘れた画面が排他区間の
+ * 外で削除を走らせる。
+ *
  * @param {{container: HTMLElement, store: object,
  *          actions: {summarizeArchive: Function},
- *          now?: () => Date, runDestructive?: Function}} options
- *   削除そのものは `runDestructive` が排他区間の中で用意する（GAR-1）。
+ *          runDestructive: Function, now?: () => Date,
+ *          isActive?: () => boolean}} options
  * @returns {{render: () => void, reset: () => void}}
  */
 export function createArchiveView({
   container,
   store,
   actions,
+  runDestructive,
   now = () => new Date(),
-  runDestructive = runDestructiveAction,
   isActive = () => true,
 }) {
   /**

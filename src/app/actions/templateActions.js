@@ -122,8 +122,8 @@ export async function reviseTemplateAction(deps, templateId, draft) {
     //
     // 改訂元自身は同じ書き込みで無効化するので、衝突の相手から外す。
     const conflict = validateTemplateIsNew(
-      taskTemplates.filter(
-        (template) => template.active === true && template.templateId !== current.templateId,
+      activeTemplates(taskTemplates).filter(
+        (template) => template.templateId !== current.templateId,
       ),
       {
         targetType: draft.targetType ?? current.targetType,
@@ -134,11 +134,15 @@ export async function reviseTemplateAction(deps, templateId, draft) {
       throw new ValidationError(conflict.errors);
     }
 
+    const version = nextTemplateVersion(taskTemplates, current.templateSeriesId);
+    if (version === null) {
+      throw new ValidationError(['テンプレート: 版番号が保存可能な上限に達している']);
+    }
     const built = reviseTemplate(current, draft, {
       createdAt: toIsoSecond(now()),
       templateId: newId(),
       // 系列内の最大版を基準にする。改訂元の版に1を足すだけでは版番号が重複しうる。
-      version: nextTemplateVersion(taskTemplates, current.templateSeriesId),
+      version,
       newId,
     });
 

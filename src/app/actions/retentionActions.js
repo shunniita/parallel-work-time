@@ -44,6 +44,7 @@ import {
 import { numberRuns } from '../../domain/runOrder.js';
 import { canTransition, timestampsForStatus } from '../../domain/runStatus.js';
 import { RUN_STATUS } from '../../domain/schema.js';
+import { runWriteTime } from '../../domain/writeClock.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
 import { ValidationError } from '../errors.js';
 import { resolveDeps } from './deps.js';
@@ -101,7 +102,8 @@ export async function archiveRun(deps, runId) {
       throw new ValidationError([allowed.reason]);
     }
 
-    const nowIso = toIsoSecond(now());
+    // 既存の日時より前にならない実効時刻で打つ（`writeClock.js`）。
+    const nowIso = runWriteTime(current, toIsoSecond(now()));
     const workRun = {
       ...current,
       status: RUN_STATUS.ARCHIVED,

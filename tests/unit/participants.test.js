@@ -1,13 +1,18 @@
 /**
- * 参加者名の候補抽出（仕様書8.4.7）。
+ * 参加者名の正規化と候補抽出（仕様書8.4.7、8.6.1）。
  *
- * 収集範囲は全実施回、並びは「当該実施回で出ている名前 → それ以外」
+ * 正規化は区間・直接入力・取り込み検証が共有する唯一の「同じ顔ぶれ」の定義で
+ * ある。収集範囲は全実施回、並びは「当該実施回で出ている名前 → それ以外」
  * （設計メモ PWT-DESIGN-006 §6.2）。
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { collectParticipants, participantsInRun } from '../../src/domain/participants.js';
+import {
+  collectParticipants,
+  normalizeParticipants,
+  participantsInRun,
+} from '../../src/domain/participants.js';
 import {
   breakInterval,
   directEntry,
@@ -19,6 +24,30 @@ import {
 
 const START = '2026-07-30T09:00:00+09:00';
 const END = '2026-07-30T10:00:00+09:00';
+
+describe('normalizeParticipants（仕様書8.6.1、8.9.9）', () => {
+  it('前後空白を落とす', () => {
+    expect(normalizeParticipants([' 甲 ', '乙'])).toEqual(['甲', '乙']);
+  });
+
+  it('空文字を除く', () => {
+    expect(normalizeParticipants(['甲', '', '   '])).toEqual(['甲']);
+  });
+
+  it('完全一致の重複をまとめる', () => {
+    expect(normalizeParticipants(['甲', '甲', '乙'])).toEqual(['甲', '乙']);
+  });
+
+  it('表記ゆれは別人として残す（仕様書8.9.9）', () => {
+    expect(normalizeParticipants(['甲', '甲 太郎'])).toEqual(['甲', '甲 太郎']);
+  });
+
+  it('配列でなければ null', () => {
+    expect(normalizeParticipants('甲')).toBeNull();
+    expect(normalizeParticipants(undefined)).toBeNull();
+    expect(normalizeParticipants(['甲', 1])).toBeNull();
+  });
+});
 
 describe('participantsInRun', () => {
   beforeEach(resetIds);

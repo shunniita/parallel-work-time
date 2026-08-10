@@ -19,6 +19,7 @@
  */
 
 import { toErrorMessages } from '../../app/errors.js';
+import { MAX_TEXT_LENGTH } from '../../config.js';
 import { createDurationInput } from './durationInput.js';
 import { createParticipantsInput } from './participantsInput.js';
 import { el, field, replaceChildren } from '../dom.js';
@@ -65,6 +66,7 @@ export function createDirectEntryForm({
   const noteInput = el('textarea', {
     class: 'input',
     rows: '2',
+    maxlength: MAX_TEXT_LENGTH,
     dataset: { testid: 'direct-note' },
     text: entry?.note ?? '',
   });
