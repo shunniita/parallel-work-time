@@ -3,7 +3,7 @@
 | 項目     | 内容                                                                    |
 | -------- | ----------------------------------------------------------------------- |
 | 文書番号 | PWT-DESIGN-012                                                          |
-| 版数     | 1.0                                                                     |
+| 版数     | 1.1                                                                     |
 | 作成日   | 2026-08-09                                                              |
 | 対象     | 実装計画 Step 12（受入試験の総仕上げ、性能実測、README、配布。仕様書13〜16章） |
 | 参照文書 | 仕様書 1.3（13、14、15、16）／ PWT-PLAN-001 版数1.2／ PWT-DESIGN-011 版数1.1／ PWT-REVIEW-008（GAR-1〜GAR-6） |
@@ -117,7 +117,9 @@ E2E で1440pxの2段組みと1024pxの1段組み、横スクロールが出な�
 `tools/build-dist.mjs` は、配布物へ含めるものを明示的に列挙して写す。除外リストではなく採用リストにしたのは、ファイルが増えたときに黙って混入しないためである。
 
 ```text
-index.html / src/ / data/ / licenses/ / LICENSE / README.md
+start-local.cmd / local-settings.txt / LICENSE / README.md / manual/
+アプリ内部（変更しないでください）/
+  _local-server.ps1 / index.html / src/ / data/ / licenses/
 ```
 
 ### 5.2 ZIP圧縮はOSの標準機能を使う
@@ -126,7 +128,7 @@ Node に ZIP 圧縮の標準APIは無い。外部ライブラリを足さない�
 
 ### 5.3 展開後の起動を自動で確かめる
 
-`distribution.spec.js` が組み立てたディレクトリを別ポートで配信し、起動・保存・再読み込み・エクスポート・外部通信なしを通す。開発時ツール（`tools/`、`tests/`、`docs/`、`node_modules/`、`package.json`）が含まれていないことも確かめる。
+`distribution.spec.js` が組み立てた `アプリ内部（変更しないでください）/` を別ポートで配信し、起動・保存・再読み込み・エクスポート・外部通信なしを通す。開発時ツール（`tools/`、`tests/`、`docs/`、`node_modules/`、`package.json`）が含まれていないことも確かめる。
 
 ZIP そのものの展開は確かめない。`build-dist.mjs` は写したディレクトリをそのまま固めるだけで、展開結果はこのディレクトリと同一である。
 

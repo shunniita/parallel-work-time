@@ -20,6 +20,7 @@ import { createProject } from './helpers.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const STAGE_DIR = join(ROOT, 'dist', 'parallel-work-time');
+const INTERNAL_DIR = join(STAGE_DIR, 'アプリ内部（変更しないでください）');
 
 let server;
 let origin;
@@ -33,7 +34,7 @@ test.beforeAll(async () => {
   );
   expect(built.status, built.stderr).toBe(0);
 
-  server = createStaticServer(STAGE_DIR);
+  server = createStaticServer(INTERNAL_DIR);
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   origin = `http://127.0.0.1:${server.address().port}`;
 });
