@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { warningMessages } from '../../src/domain/problems.js';
+import { MAX_QUANTITY, MAX_TEXT_LENGTH } from '../../src/config.js';
 import {
   VALIDATION_WARNING,
   validateProjectGroupDraft,
@@ -54,6 +55,13 @@ describe('validateTemplateDraft()', () => {
       const result = validateTemplateDraft(draft({ targetType }));
 
       expect(result.errors.join('\n')).toContain('対象種別');
+    });
+
+    it('保存形式の文字数上限を超える値は拒否する', () => {
+      expect(validateTemplateDraft(draft({ targetType: 'A'.repeat(MAX_TEXT_LENGTH + 1) })).ok)
+        .toBe(false);
+      expect(validateTemplateDraft(draft({ variant: 'A'.repeat(MAX_TEXT_LENGTH + 1) })).ok)
+        .toBe(false);
     });
 
     it.each(['', '   ', undefined])('バリエーションが %o なら失敗する', (variant) => {
@@ -140,6 +148,13 @@ describe('validateTemplateDraft()', () => {
           }),
         ).ok,
       ).toBe(true);
+    });
+
+    it('作業項目名と外部コードの文字数上限を守る', () => {
+      const tooLong = 'A'.repeat(MAX_TEXT_LENGTH + 1);
+      expect(validateTemplateDraft(draft({ tasks: [{ name: tooLong }] })).ok).toBe(false);
+      expect(validateTemplateDraft(draft({ tasks: [{ name: 'A', externalCode: tooLong }] })).ok)
+        .toBe(false);
     });
 
     it('不備を複数まとめて返す', () => {
@@ -253,6 +268,11 @@ describe('validateProjectGroupDraft()', () => {
 
     it('1は通る', () => {
       expect(validateProjectGroupDraft(draft({ totalQuantity: 1 })).ok).toBe(true);
+    });
+
+    it('上限ちょうどは通り、1超過は拒否する', () => {
+      expect(validateProjectGroupDraft(draft({ totalQuantity: MAX_QUANTITY })).ok).toBe(true);
+      expect(validateProjectGroupDraft(draft({ totalQuantity: MAX_QUANTITY + 1 })).ok).toBe(false);
     });
   });
 });
@@ -378,6 +398,11 @@ describe('validateRunDraft()', () => {
   describe('今回数量は1以上の整数（仕様書8.9.2）', () => {
     it.each([0, -1, 1.5, undefined, '50'])('%o は失敗する', (runQuantity) => {
       expect(validateRunDraft(draft({ runQuantity }), context()).ok).toBe(false);
+    });
+
+    it('保存形式の上限を超える数量は拒否する', () => {
+      expect(validateRunDraft(draft({ runQuantity: MAX_QUANTITY + 1 }), context()).ok)
+        .toBe(false);
     });
 
     it('数量が不正なときは累計の先読みを行わない', () => {

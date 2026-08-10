@@ -83,10 +83,11 @@ export async function recordClipboard(page) {
     if (clipboard === undefined || typeof clipboard.writeText !== 'function') {
       return;
     }
-    const original = clipboard.writeText.bind(clipboard);
+    // OS の権限には依存させず、成功する Clipboard API のテストダブルに置き換える。
+    // 実APIを呼んで失敗前に記録すると、アプリが fallback へ進んだのに成功した
+    // ように見える。成功を返す経路そのものを明示的に用意する。
     clipboard.writeText = async (text) => {
       window.__copiedText.push(text);
-      return original(text);
     };
   });
   return {

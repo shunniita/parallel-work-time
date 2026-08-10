@@ -33,7 +33,7 @@
  * 入れ物は `problems.js` を `validation.js` と共有する。
  */
 
-import { MAX_EFFORT_SECONDS, MAX_PARTICIPANTS } from '../config.js';
+import { MAX_EFFORT_SECONDS } from '../config.js';
 import { compareIso, isValidIsoSecond } from './datetime.js';
 import {
   INTERVAL_TYPE,
@@ -42,7 +42,7 @@ import {
   taskTotalSeconds,
 } from './effort.js';
 import { findOverlappingPairs } from './overlap.js';
-import { normalizeParticipants } from './participants.js';
+import { normalizeParticipants, participantLimitErrors } from './participants.js';
 import { Problems } from './problems.js';
 import { TASK_STATE, TASK_STATE_LABEL, activeInterval, taskState } from './taskState.js';
 
@@ -176,8 +176,11 @@ function checkParticipants(problems, type, participants, path = '参加者') {
     return false;
   }
   // 人数は工数へそのまま掛かる（仕様書8.6.1）。
-  if (participants.length > MAX_PARTICIPANTS) {
-    problems.add(path, `${MAX_PARTICIPANTS}名以下で指定する`);
+  const errors = participantLimitErrors(participants);
+  for (const error of errors) {
+    problems.add(path, error);
+  }
+  if (errors.length > 0) {
     return false;
   }
   return true;

@@ -20,7 +20,28 @@
  * 実用上の候補数を超えるとは考えにくく、超えてから対処する。
  */
 
+import { MAX_PARTICIPANTS, MAX_TEXT_LENGTH } from '../config.js';
 import { compareNatural } from './naturalSort.js';
+
+/** 正規化後の参加者一覧について、保存形式と共有する上限違反を返す。 */
+export function participantLimits(participants) {
+  return {
+    tooMany: participants.length > MAX_PARTICIPANTS,
+    hasOverlongName: participants.some((name) => name.length > MAX_TEXT_LENGTH),
+  };
+}
+
+export function participantLimitErrors(participants) {
+  const errors = [];
+  const limits = participantLimits(participants);
+  if (limits.tooMany) {
+    errors.push(`${MAX_PARTICIPANTS}名以下で指定する`);
+  }
+  if (limits.hasOverlongName) {
+    errors.push(`参加者名は${MAX_TEXT_LENGTH}文字以下で指定する`);
+  }
+  return errors;
+}
 
 /**
  * 参加者一覧を整える。

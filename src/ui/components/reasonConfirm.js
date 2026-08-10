@@ -25,6 +25,7 @@
  */
 
 import { toErrorMessages } from '../../app/errors.js';
+import { MAX_TEXT_LENGTH } from '../../config.js';
 import { el, field, replaceChildren } from '../dom.js';
 
 /**
@@ -63,6 +64,7 @@ export function createReasonConfirm({
   const reasonInput = el('textarea', {
     class: 'input',
     rows: '2',
+    maxlength: MAX_TEXT_LENGTH,
     dataset: { testid: `${testidPrefix}-reason` },
   });
 

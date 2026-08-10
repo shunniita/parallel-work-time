@@ -7,7 +7,7 @@
  */
 
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createDirectEntry,
@@ -20,14 +20,19 @@ import { createProjectGroup, createWorkRun } from '../../src/app/actions/project
 import { createTemplate } from '../../src/app/actions/templateActions.js';
 import { RunNotEditableError, ValidationError } from '../../src/app/errors.js';
 import { createPersistence } from '../../src/app/persistence.js';
-import { toIsoSecond } from '../../src/domain/datetime.js';
+import { addSeconds, toIsoSecond } from '../../src/domain/datetime.js';
 import { DIRECT_ENTRY_WARNING } from '../../src/domain/directEntryOps.js';
 import { INTERVAL_TYPE, summarizeTask } from '../../src/domain/effort.js';
 import { HISTORY_ENTITY, HISTORY_OP } from '../../src/domain/history.js';
 import { collectParticipants } from '../../src/domain/participants.js';
 import { validateImportPayload } from '../../src/domain/schema.js';
 import { TASK_STATE, taskState } from '../../src/domain/taskState.js';
-import { SCHEMA_VERSION, createDefaultSettings } from '../../src/config.js';
+import {
+  MAX_EFFORT_SECONDS,
+  MAX_PARTICIPANTS,
+  SCHEMA_VERSION,
+  createDefaultSettings,
+} from '../../src/config.js';
 import { MemoryAdapter } from '../../src/storage/MemoryAdapter.js';
 import { ENTITY_TYPE } from '../../src/storage/StorageAdapter.js';
 
@@ -107,6 +112,43 @@ describe('directEntryActions', () => {
     const task = await reloadTask();
     return task.directEntries[task.directEntries.length - 1];
   }
+
+  it('別作業項目との合計で実施回上限を超える追加は保存しない（F12-36）', async () => {
+    const { workRuns } = await adapter.loadAll();
+    const saved = workRuns.find((item) => item.runId === run.runId);
+    const participants = Array.from(
+      { length: MAX_PARTICIPANTS },
+      (_, index) => `参加者${index}`,
+    );
+    const startAt = '2000-01-01T00:00:00+00:00';
+    const atLimit = {
+      intervalId: 'at-run-limit',
+      type: INTERVAL_TYPE.WORK,
+      startAt,
+      endAt: addSeconds(startAt, MAX_EFFORT_SECONDS / MAX_PARTICIPANTS),
+      participants,
+      createdAt: NOW_ISO,
+      updatedAt: NOW_ISO,
+    };
+    await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, {
+      ...saved,
+      tasks: saved.tasks.map((task, index) =>
+        index === 0 ? { ...task, intervals: [atLimit] } : task,
+      ),
+    });
+    const save = vi.spyOn(adapter, 'saveEntity');
+
+    await expect(
+      createDirectEntry(deps, target(1), {
+        seconds: 1,
+        participants: [],
+        note: '上限超過の反例',
+      }),
+    ).rejects.toThrow(/実施回.*合計工数が上限/);
+
+    expect(save).not.toHaveBeenCalled();
+    expect((await reloadTask(1)).directEntries).toEqual([]);
+  });
 
   describe('追加（仕様書8.5.1〜8.5.4）', () => {
     it('直接入力を1件保存する', async () => {

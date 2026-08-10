@@ -10,8 +10,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -24,14 +24,12 @@ import {
   STAGE_NAME,
   ZIP_PATH,
   buildDistribution,
+  isDirectExecution,
   listFiles,
+  sha256,
   stage,
 } from '../../tools/build-dist.mjs';
 import { createZip, extractZip, readZipEntries } from '../../tools/zip.mjs';
-
-function sha256(data) {
-  return createHash('sha256').update(data).digest('hex');
-}
 
 /**
  * 採用リスト配下でGitが管理しているファイルを、ZIPと同じ並びで返す。
@@ -131,6 +129,24 @@ describe('段取りのみの実行（F12-23）', () => {
 
     expect(existsSync(join(STAGE_DIR, 'index.html'))).toBe(true);
     expect(existsSync(ZIP_PATH)).toBe(false);
+  });
+});
+
+describe('直接実行の判定（F12-39）', () => {
+  it.runIf(process.platform === 'win32')('junction 経由のスクリプトも直接実行と判定する', () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'pwt-dist-junction-'));
+    const junction = join(temporary, 'repository');
+    try {
+      symlinkSync(ROOT, junction, 'junction');
+      expect(
+        isDirectExecution(
+          join(junction, 'tools', 'build-dist.mjs'),
+          join(ROOT, 'tools', 'build-dist.mjs'),
+        ),
+      ).toBe(true);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
   });
 });
 

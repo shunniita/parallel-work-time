@@ -10,13 +10,11 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
-import { CONTENTS } from '../../tools/build-dist.mjs';
 import { createStaticServer } from '../../tools/static-server.mjs';
 import { createProject } from './helpers.js';
 
@@ -47,12 +45,6 @@ test.afterAll(async () => {
     return;
   }
   await new Promise((resolveClose) => server.close(resolveClose));
-});
-
-test('配布物の中身は採用リストと一致する（仕様書5.1.4）', () => {
-  // 除外すべき名前を列挙する方式にしない。列挙から漏れた開発時ファイルが
-  // 増えても気づけないためである。
-  expect(readdirSync(STAGE_DIR).sort()).toEqual([...CONTENTS].sort());
 });
 
 test('配布物だけで起動・保存・エクスポートができる（仕様書14章）', async ({ page }) => {

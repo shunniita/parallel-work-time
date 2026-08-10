@@ -41,10 +41,10 @@
 import {
   MAX_DIRECT_ENTRY_SECONDS,
   MAX_EFFORT_SECONDS,
-  MAX_PARTICIPANTS,
+  MAX_TEXT_LENGTH,
 } from '../config.js';
 import { isEffortWithinRange, taskTotalSeconds } from './effort.js';
-import { normalizeParticipants } from './participants.js';
+import { normalizeParticipants, participantLimitErrors } from './participants.js';
 import { Problems } from './problems.js';
 
 /** 直接入力の検証で出る警告の種別。 */
@@ -134,6 +134,10 @@ function checkNote(problems, note) {
     problems.add('備考', '必須項目である（仕様書8.5.4）');
     return false;
   }
+  if (note.trim().length > MAX_TEXT_LENGTH) {
+    problems.add('備考', `${MAX_TEXT_LENGTH}文字以下で入力する`);
+    return false;
+  }
   return true;
 }
 
@@ -151,8 +155,11 @@ function checkParticipants(problems, participants) {
     problems.add('参加者', '文字列の配列で指定する');
     return false;
   }
-  if (participants.length > MAX_PARTICIPANTS) {
-    problems.add('参加者', `${MAX_PARTICIPANTS}名以下で指定する`);
+  const errors = participantLimitErrors(participants);
+  for (const error of errors) {
+    problems.add('参加者', error);
+  }
+  if (errors.length > 0) {
     return false;
   }
   return true;
