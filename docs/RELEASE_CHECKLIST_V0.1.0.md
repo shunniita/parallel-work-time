@@ -301,6 +301,8 @@ F12-11、F12-20〜F12-22、F12-26〜F12-32 は解消済みである。F12-40〜F
 
 **版数0.9の判定も Conditional Go。** Windows 11の利用者は、ZIP展開後に `start-local.cmd` をダブルクリックすれば、PythonやNode.jsをインストールせず起動できる。ローカルサーバーはループバックだけへ固定し、`local-settings.txt` でポートを永続指定できる。保存元URLを意図せず変えないため、ポート競合時は自動変更せず明示的に失敗する。単体・結合1,565件、Chromium 140件、Firefox 140件、Windows PowerShell 5.1による97ファイルのZIP照合と展開物smokeが成功した。公開操作と最終承認の残件は変わらない。
 
+**版数1.0の判定も Conditional Go。** 配布ZIP直下を `start-local.cmd`、`local-settings.txt`、`README.md`、`manual/`、`LICENSE` と `アプリ内部（変更しないでください）/` に整理した。アプリ本体の内容と保存元URLは変更していない。単体・結合1,566件、coverage、Chromium 140件、Firefox 140件が成功した。97ファイルの移動前後のバイト一致、ZIP展開後のmanifest照合（不一致0件）、日本語ディレクトリ内のWindows PowerShell 5.1サーバーによるHTTP 200も確認済みである。公開操作と最終承認の残件は変わらない。
+
 ## 9. リリース記録
 
 | 項目               | 記録     |

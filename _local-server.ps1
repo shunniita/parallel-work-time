@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($PSScriptRoot)
 $rootPrefix = $root.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-$settingsPath = Join-Path $root 'local-settings.txt'
+$settingsPath = Join-Path (Split-Path -Parent $root) 'local-settings.txt'
 
 function Read-ConfiguredPort {
     if (-not (Test-Path -LiteralPath $settingsPath -PathType Leaf)) {

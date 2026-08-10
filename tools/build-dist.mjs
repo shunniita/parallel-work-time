@@ -10,7 +10,7 @@
  * 実行時の依存を増やさない方針（5.1.4）に対して、配布物へ開発時の依存が紛れると
  * 「何が要るのか」が読み取れなくなる。
  *
- * 含めるものは {@link CONTENTS} が唯一の正である。除外リストは持たない。新しい
+ * 含めるものは {@link CONTENT_MAPPINGS} が唯一の正である。除外リストは持たない。新しい
  * 開発時ファイルが増えても、採用リストへ書かない限り配布物へは入らない。
  *
  * ## 成功はZIPができたことと同義にする
@@ -49,20 +49,24 @@ export const STAGE_NAME = 'parallel-work-time';
 export const STAGE_DIR = join(OUT_DIR, STAGE_NAME);
 export const ZIP_PATH = join(OUT_DIR, `${STAGE_NAME}.zip`);
 export const MANIFEST_PATH = join(OUT_DIR, 'manifest.json');
+export const INTERNAL_DIR = 'アプリ内部（変更しないでください）';
 
-/** 配布物へ含めるもの。ここに無いものは入らない。 */
-export const CONTENTS = [
-  'start-local.cmd',
-  '_local-server.ps1',
-  'local-settings.txt',
-  'index.html',
-  'src',
-  'data',
-  'licenses',
-  'LICENSE',
-  'README.md',
-  'manual',
+/** 配布元と配布先の対応。ここに無いものは入らない。 */
+export const CONTENT_MAPPINGS = [
+  { source: 'start-local.cmd', destination: 'start-local.cmd' },
+  { source: 'local-settings.txt', destination: 'local-settings.txt' },
+  { source: 'LICENSE', destination: 'LICENSE' },
+  { source: 'README.md', destination: 'README.md' },
+  { source: 'manual', destination: 'manual' },
+  { source: '_local-server.ps1', destination: `${INTERNAL_DIR}/_local-server.ps1` },
+  { source: 'index.html', destination: `${INTERNAL_DIR}/index.html` },
+  { source: 'src', destination: `${INTERNAL_DIR}/src` },
+  { source: 'data', destination: `${INTERNAL_DIR}/data` },
+  { source: 'licenses', destination: `${INTERNAL_DIR}/licenses` },
 ];
+
+/** Git管理下の配布元を列挙するときに使う採用リスト。 */
+export const CONTENTS = CONTENT_MAPPINGS.map(({ source }) => source);
 
 /**
  * 配布物のファイルを `dist/parallel-work-time/` へ写す。
@@ -74,13 +78,15 @@ export function stage() {
   mkdirSync(STAGE_DIR, { recursive: true });
 
   const missing = [];
-  for (const entry of CONTENTS) {
-    const from = join(ROOT, entry);
+  for (const { source, destination } of CONTENT_MAPPINGS) {
+    const from = join(ROOT, source);
     if (!existsSync(from)) {
-      missing.push(entry);
+      missing.push(source);
       continue;
     }
-    cpSync(from, join(STAGE_DIR, entry), { recursive: true });
+    const to = join(STAGE_DIR, destination);
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(from, to, { recursive: true });
   }
   if (missing.length > 0) {
     throw new Error(`配布物に必要なファイルが見つかりません: ${missing.join(', ')}`);
