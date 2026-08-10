@@ -56,7 +56,7 @@ export const CONTENT_MAPPINGS = [
   { source: 'start-local.cmd', destination: 'start-local.cmd' },
   { source: 'local-settings.txt', destination: 'local-settings.txt' },
   { source: 'LICENSE', destination: 'LICENSE' },
-  { source: 'README.md', destination: 'README.md' },
+  { source: 'distribution/README.md', destination: 'README.md' },
   { source: 'manual', destination: 'manual' },
   { source: '_local-server.ps1', destination: `${INTERNAL_DIR}/_local-server.ps1` },
   { source: 'index.html', destination: `${INTERNAL_DIR}/index.html` },
