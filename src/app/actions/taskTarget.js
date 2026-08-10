@@ -11,6 +11,8 @@
  */
 
 import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
+import { isEffortWithinRange, runTotalSeconds } from '../../domain/effort.js';
+import { MAX_EFFORT_SECONDS } from '../../config.js';
 import { runWriteTime } from '../../domain/writeClock.js';
 import { RunNotEditableError, ValidationError } from '../errors.js';
 
@@ -72,6 +74,15 @@ export function locateTask(workRuns, target) {
 export function assertEditable(workRun) {
   if (!isRunEditable(workRun)) {
     throw new RunNotEditableError(describeNotEditable(workRun), workRun.status);
+  }
+}
+
+/** 通常操作がインポート不能な実施回合計を保存しないよう、書込み直前で確かめる。 */
+export function assertRunEffortWithinRange(workRun) {
+  if (!isEffortWithinRange(runTotalSeconds(workRun))) {
+    throw new ValidationError([
+      `実施回: 合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える（仕様書8.9.12）`,
+    ]);
   }
 }
 

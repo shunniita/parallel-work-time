@@ -12,10 +12,12 @@ import {
   nextOrder,
   normalizeExternalCode,
   normalizeTaskDefinitions,
+  nextTemplateVersion,
   reviseTemplate,
   sortTaskDefinitions,
 } from '../../src/domain/templateOps.js';
 import { resetIds, taskTemplate, templateTask } from '../fixtures/builders.js';
+import { MAX_ORDINAL } from '../../src/config.js';
 
 /** 採番を決定的にするためのID生成器。 */
 function idGenerator(prefix = 'new') {
@@ -368,6 +370,13 @@ describe('nextOrder()', () => {
 
   it('表示順が未設定の行しか無ければ1を返す', () => {
     expect(nextOrder([{ name: 'A' }])).toBe(1);
+  });
+});
+
+describe('nextTemplateVersion()', () => {
+  it('版番号の保存上限へ達した系列はこれ以上採番しない', () => {
+    const template = taskTemplate({ templateSeriesId: 'series-1', version: MAX_ORDINAL });
+    expect(nextTemplateVersion([template], 'series-1')).toBeNull();
   });
 });
 

@@ -19,6 +19,7 @@
  * 規則で整える（前後空白を落とし、完全一致の重複をまとめる）。
  */
 
+import { MAX_TEXT_LENGTH } from '../../config.js';
 import { el, field, replaceChildren, replaceOptions } from '../dom.js';
 
 /**
@@ -57,6 +58,7 @@ export function createParticipantsInput({
     class: 'input',
     list: listId,
     autocomplete: 'off',
+    maxlength: MAX_TEXT_LENGTH,
     dataset: { testid },
     on: {
       keydown: (event) => {

@@ -52,7 +52,6 @@ export function createSettingsView({
     local.phase = 'idle';
     local.errors = [];
     local.message = '';
-    local.busy = false;
   }
 
   function errorBox() {
@@ -110,23 +109,20 @@ export function createSettingsView({
     local.phase = 'reading';
     render();
 
-    let result;
     try {
-      result = { payload: await readFile(file), error: null };
-    } catch (error) {
-      result = { payload: null, error };
-    }
-
-    // 待っている間に選び直されていれば、この結果は採用しない。
-    if (token !== selectionToken) {
-      return;
-    }
-    if (result.error === null) {
-      local.importPayload = result.payload;
+      const payload = await readFile(file);
+      if (token !== selectionToken) {
+        return;
+      }
+      local.importPayload = payload;
       local.importFileName = file?.name ?? '選択したファイル';
       local.phase = 'ready';
-    } else {
-      local.errors = toErrorMessages(result.error);
+    } catch (error) {
+      // 待っている間に選び直されていれば、この失敗も採用しない。
+      if (token !== selectionToken) {
+        return;
+      }
+      local.errors = toErrorMessages(error);
       local.phase = 'idle';
     }
     render();
@@ -154,10 +150,14 @@ export function createSettingsView({
         resetImport();
         local.message = 'JSONを取り込み、全データを置き換えました。';
       }
+    } catch (error) {
+      local.errors = toErrorMessages(error);
+      // 確認パネルは再描画で外れるため、選択肢へ戻して再試行可能にする。
+      local.phase = payload === null ? 'idle' : 'ready';
     } finally {
       local.busy = false;
+      render();
     }
-    render();
   }
 
   function importChoice() {
@@ -184,7 +184,7 @@ export function createSettingsView({
             text: '現在のデータを退避して取り込む',
             dataset: { testid: 'import-with-backup' },
             disabled: local.busy,
-            on: { click: () => executeImport(true).catch(showImportError) },
+            on: { click: () => executeImport(true) },
           }),
           el('button', {
             type: 'button',
@@ -210,11 +210,6 @@ export function createSettingsView({
         ]),
       ],
     );
-  }
-
-  function showImportError(error) {
-    local.errors = toErrorMessages(error);
-    render();
   }
 
   function skipConfirmation() {

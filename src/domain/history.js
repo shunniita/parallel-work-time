@@ -31,6 +31,7 @@ import { dateKeyOf, formatIsoForHuman, isValidIsoSecond } from './datetime.js';
 import { formatSeconds } from './directEntryOps.js';
 import { RUN_STATUS_LABEL } from './runStatus.js';
 import { HISTORY_ENTITY_TYPE, HISTORY_OPERATION } from './schema.js';
+import { MAX_SUMMARY_LENGTH, MAX_TEXT_LENGTH } from '../config.js';
 
 /** 履歴の対象種別（仕様書11章）。`schema.js` の一覧へ名前を付けたもの。 */
 export const HISTORY_ENTITY = {
@@ -95,6 +96,8 @@ export function buildHistoryEntry(draft, meta) {
   }
   if (!isNonEmptyString(draft.targetId)) {
     errors.push('対象: 識別子が必要である');
+  } else if (draft.targetId.trim().length > MAX_TEXT_LENGTH) {
+    errors.push(`対象: 識別子は${MAX_TEXT_LENGTH}文字以下である`);
   }
   if (!HISTORY_OPERATION.includes(draft.operation)) {
     errors.push(`操作: ${HISTORY_OPERATION.join(' / ')} のいずれかである`);
@@ -108,12 +111,18 @@ export function buildHistoryEntry(draft, meta) {
   }
   if (typeof draft.summary !== 'string') {
     errors.push('要約: 文字列である');
+  } else if (draft.summary.length > MAX_SUMMARY_LENGTH) {
+    errors.push(`要約: ${MAX_SUMMARY_LENGTH}文字以下である`);
   }
   if (!isNonEmptyString(draft.reason)) {
     errors.push('理由: 必須項目である（仕様書11章）');
+  } else if (draft.reason.trim().length > MAX_TEXT_LENGTH) {
+    errors.push(`理由: ${MAX_TEXT_LENGTH}文字以下である`);
   }
   if (!isNonEmptyString(meta.historyId)) {
     errors.push('履歴ID: 識別子が必要である');
+  } else if (meta.historyId.trim().length > MAX_TEXT_LENGTH) {
+    errors.push(`履歴ID: ${MAX_TEXT_LENGTH}文字以下である`);
   }
   if (!isValidIsoSecond(meta.timestamp)) {
     errors.push('記録日時: オフセット付きISO 8601（秒精度）が必要である');

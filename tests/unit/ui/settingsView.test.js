@@ -29,13 +29,13 @@ function mount(options = {}) {
   // 排他区間の用意と、区間内で使うアクションを閉じ込めるのは `main.js` の役目で
   // ある（GAR-1、F12-18）。ここでは順序だけを持つ本体（`runDestructiveAction`）へ
   // 同じ形でモックを差し込む。
-  const runDestructive = ({ backup, confirmedWithoutBackup, destructiveAction }) =>
+  const runDestructive = options.runDestructive ?? (({ backup, confirmedWithoutBackup, destructiveAction }) =>
     runDestructiveAction({
       backup,
       confirmedWithoutBackup,
       exportData: actions.exportData,
       destructiveAction: () => destructiveAction(actions),
-    });
+    }));
   const view = createSettingsView({
     container,
     store: { getState: () => state },
@@ -139,6 +139,23 @@ describe('createSettingsView', () => {
     mounted.query('import-skip-accept').click();
     await vi.waitFor(() => expect(mounted.actions.importData).toHaveBeenCalledWith(mounted.payload));
     expect(mounted.actions.exportData).not.toHaveBeenCalled();
+  });
+
+  it('退避なしの全置換が失敗してもエラーを表示し再試行できる', async () => {
+    const mounted = mount({
+      runDestructive: vi.fn(async () => {
+        throw new ValidationError(['取り込み: 保存に失敗しました']);
+      }),
+    });
+    await mounted.view.selectFile({ name: 'backup.json' });
+    mounted.query('import-without-backup').click();
+    mounted.query('import-skip-accept').click();
+
+    await vi.waitFor(() => expect(mounted.query('settings-errors')).not.toBeNull());
+    expect(mounted.query('settings-errors').textContent).toContain('保存に失敗');
+    expect(mounted.query('import-choice')).not.toBeNull();
+    expect(mounted.query('import-with-backup').disabled).toBe(false);
+    expect(mounted.query('import-file').disabled).toBe(false);
   });
 
   /**

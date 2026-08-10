@@ -29,6 +29,7 @@ import {
 } from '../config.js';
 import { isValidDateKey, isValidIsoSecond } from './datetime.js';
 import { INTERVAL_TYPE } from './effort.js';
+import { participantLimits } from './participants.js';
 
 /** 実施回の状態（仕様書6.5）。`削除候補` は保存しない導出値なので含めない。 */
 export const RUN_STATUS = {
@@ -128,11 +129,12 @@ function validateParticipantArray(participants, path, problems) {
     problems.add(path, '文字列配列である必要がある');
     return false;
   }
-  if (participants.length > MAX_PARTICIPANTS) {
+  const limits = participantLimits(participants);
+  if (limits.tooMany) {
     problems.add(path, `参加者は ${MAX_PARTICIPANTS} 名以下である必要がある`);
     return false;
   }
-  if (participants.some((name) => name.length > MAX_TEXT_LENGTH)) {
+  if (limits.hasOverlongName) {
     problems.add(path, `参加者名は ${MAX_TEXT_LENGTH} 文字以内である必要がある`);
     return false;
   }

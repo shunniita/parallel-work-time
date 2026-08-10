@@ -160,13 +160,13 @@ mise exec -- npm run test:e2e:firefox
 仕様書16章の受入試験T-01〜T-18 は、試験名の先頭へ試験IDを付けてあります。個別に実行する場合は`--grep`で絞れます。
 
 ```powershell
-mise exec -- npx playwright test --grep "T-10"
+mise exec -- npx playwright test --project=chromium --grep "T-10"
 ```
 
 レイアウトの目視確認用に、主要幅のスクリーンショットを取得できます。合否判定は行わず、`test-results`へ画像を出力するだけです。
 
 ```powershell
-mise exec -- npx playwright test --grep "@screenshot"
+mise exec -- npx playwright test --project=chromium --grep "@screenshot"
 ```
 
 ## データの保存
@@ -298,7 +298,7 @@ export/
 測定環境は Windows 11、Node.js 24.18.0、Chromium（Playwright同梱版）です。測定は`tests/e2e/performance.spec.js`が行い、実行するたびに値を出力します。
 
 ```powershell
-mise exec -- npx playwright test --grep "性能目標"
+mise exec -- npx playwright test --project=chromium --grep "性能目標"
 ```
 
 データは起動時に全件をメモリへ読み込みます（`loadAll()`）。目標規模では問題ありませんが、桁が変わる規模では起動が遅くなります。

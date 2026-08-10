@@ -33,6 +33,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -40,7 +41,7 @@ import {
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createZip, readZipEntries } from './zip.mjs';
+import { createZip, extractZip } from './zip.mjs';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const OUT_DIR = join(ROOT, 'dist');
@@ -93,10 +94,14 @@ export function listFiles(directory, prefix = STAGE_NAME) {
     const name = relative(directory, absolute).split(sep).join('/');
     found.push({ name: `${prefix}/${name}`, path: absolute });
   }
-  return found.sort((left, right) => (left.name < right.name ? -1 : 1));
+  return found.sort(compareFileNames);
 }
 
-function sha256(data) {
+export function compareFileNames(left, right) {
+  return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+}
+
+export function sha256(data) {
   return createHash('sha256').update(data).digest('hex');
 }
 
@@ -110,8 +115,7 @@ function buildManifest(files) {
     name: STAGE_NAME,
     fileCount: files.length,
     files: files.map((file) => {
-      const data = readFileSync(file.path);
-      return { path: file.name, bytes: data.length, sha256: sha256(data) };
+      return { path: file.name, bytes: file.data.length, sha256: sha256(file.data) };
     }),
   };
 }
@@ -126,13 +130,17 @@ function buildManifest(files) {
  */
 export function buildDistribution() {
   const stageDir = stage();
-  const files = listFiles(stageDir);
+  const files = listFiles(stageDir).map((file) => ({
+    ...file,
+    // manifest と ZIP は同じスナップショットから作り、生成途中の変更を混ぜない。
+    data: readFileSync(file.path),
+  }));
   if (files.length === 0) {
     throw new Error('配布物に含めるファイルがありません');
   }
 
   const manifest = buildManifest(files);
-  const zip = createZip(files.map((file) => ({ name: file.name, data: readFileSync(file.path) })));
+  const zip = createZip(files.map((file) => ({ name: file.name, data: file.data })));
   writeFileSync(ZIP_PATH, zip);
   writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
 
@@ -153,19 +161,20 @@ export function buildDistribution() {
  * @param {{fileCount: number, files: {path: string, bytes: number}[]}} manifest
  */
 function verifyZip(zip, manifest) {
-  const entries = readZipEntries(zip);
-  if (entries.length !== manifest.fileCount) {
+  const entries = extractZip(zip);
+  if (entries.size !== manifest.fileCount) {
     throw new Error(
-      `ZIPのエントリ数がマニフェストと一致しません: ${entries.length} / ${manifest.fileCount}`,
+      `ZIPのエントリ数がマニフェストと一致しません: ${entries.size} / ${manifest.fileCount}`,
     );
   }
-  const expected = new Map(manifest.files.map((file) => [file.path, file.bytes]));
-  for (const entry of entries) {
-    if (!expected.has(entry.name)) {
-      throw new Error(`ZIPにマニフェスト外のエントリがあります: ${entry.name}`);
+  const expected = new Map(manifest.files.map((file) => [file.path, file]));
+  for (const [name, data] of entries) {
+    if (!expected.has(name)) {
+      throw new Error(`ZIPにマニフェスト外のエントリがあります: ${name}`);
     }
-    if (expected.get(entry.name) !== entry.size) {
-      throw new Error(`ZIPのエントリの大きさが一致しません: ${entry.name}`);
+    const file = expected.get(name);
+    if (file.bytes !== data.length || file.sha256 !== sha256(data)) {
+      throw new Error(`ZIPのエントリ内容がマニフェストと一致しません: ${name}`);
     }
   }
 }
@@ -187,6 +196,13 @@ function main() {
 }
 
 // 直接実行されたときだけ組み立てる。試験は関数として呼ぶ。
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+export function isDirectExecution(argvPath, modulePath = fileURLToPath(import.meta.url)) {
+  if (argvPath === undefined) {
+    return false;
+  }
+  return realpathSync(resolve(argvPath)) === realpathSync(modulePath);
+}
+
+if (isDirectExecution(process.argv[1])) {
   main();
 }

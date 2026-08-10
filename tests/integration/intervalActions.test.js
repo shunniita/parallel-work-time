@@ -30,8 +30,13 @@ import {
   ValidationError,
 } from '../../src/app/errors.js';
 import { createPersistence } from '../../src/app/persistence.js';
-import { SCHEMA_VERSION, createDefaultSettings } from '../../src/config.js';
-import { toIsoSecond } from '../../src/domain/datetime.js';
+import {
+  MAX_EFFORT_SECONDS,
+  MAX_PARTICIPANTS,
+  SCHEMA_VERSION,
+  createDefaultSettings,
+} from '../../src/config.js';
+import { addSeconds, toIsoSecond } from '../../src/domain/datetime.js';
 import { INTERVAL_TYPE, summarizeTask } from '../../src/domain/effort.js';
 import { INTERVAL_WARNING } from '../../src/domain/intervalOps.js';
 import { collectParticipants } from '../../src/domain/participants.js';
@@ -106,6 +111,48 @@ describe('intervalActions', () => {
     const saved = workRuns.find((item) => item.runId === run.runId);
     await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, { ...saved, status });
   }
+
+  it('別作業項目との合計で実施回上限を超える区間は保存しない（F12-36）', async () => {
+    const { workRuns } = await adapter.loadAll();
+    const saved = workRuns.find((item) => item.runId === run.runId);
+    const participants = Array.from(
+      { length: MAX_PARTICIPANTS },
+      (_, index) => `参加者${index}`,
+    );
+    const startAt = '2000-01-01T00:00:00+00:00';
+    await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, {
+      ...saved,
+      tasks: saved.tasks.map((task, index) =>
+        index === 0
+          ? {
+              ...task,
+              intervals: [{
+                intervalId: 'at-run-limit',
+                type: INTERVAL_TYPE.WORK,
+                startAt,
+                endAt: addSeconds(startAt, MAX_EFFORT_SECONDS / MAX_PARTICIPANTS),
+                participants,
+                createdAt: NOW_ISO,
+                updatedAt: NOW_ISO,
+              }],
+            }
+          : task,
+      ),
+    });
+    const save = vi.spyOn(adapter, 'saveEntity');
+
+    await expect(
+      addIntervalManually(deps, target(1), {
+        type: INTERVAL_TYPE.WORK,
+        startAt: '2026-08-01T09:00:00+09:00',
+        endAt: '2026-08-01T09:00:01+09:00',
+        participants: ['甲'],
+      }),
+    ).rejects.toThrow(/実施回.*合計工数が上限/);
+
+    expect(save).not.toHaveBeenCalled();
+    expect((await reloadTask(1)).intervals).toEqual([]);
+  });
 
   describe('開始・休憩・再開・終了（仕様書8.4.1、8.4.2、A-03）', () => {
     it('4操作を通すと作業・休憩・作業の3区間が残る', async () => {

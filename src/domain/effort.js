@@ -146,6 +146,14 @@ export function taskTotalSeconds(taskRecord) {
   );
 }
 
+/** 実施回全体の合計工数を秒で返す。 */
+export function runTotalSeconds(workRun) {
+  return (workRun?.tasks ?? []).reduce(
+    (total, taskRecord) => total + taskTotalSeconds(taskRecord),
+    0,
+  );
+}
+
 /**
  * 作業項目の工数内訳を求める。
  *
