@@ -20,6 +20,7 @@ import { activeTemplates } from '../../domain/templateOps.js';
 import { ProjectIdConflictError, toErrorMessages } from '../../app/errors.js';
 import { el, field, replaceChildren, replaceOptions } from '../dom.js';
 import { toIntegerInput } from '../numeric.js';
+import { MAX_QUANTITY, MAX_TEXT_LENGTH } from '../../config.js';
 
 /**
  * 案件登録フォームを作る。
@@ -208,6 +209,7 @@ export function createProjectFormView({ container, store, actions, handlers, isA
         class: 'input',
         list: listId,
         value: local.draft[key],
+        maxlength: MAX_TEXT_LENGTH,
         dataset: { testid: id },
         on: {
           input: (event) => {
@@ -255,6 +257,7 @@ export function createProjectFormView({ container, store, actions, handlers, isA
               type: 'text',
               class: 'input',
               value: local.draft.projectId,
+              maxlength: MAX_TEXT_LENGTH,
               dataset: { testid: 'project-id' },
               on: {
                 input: (event) => {
@@ -283,6 +286,7 @@ export function createProjectFormView({ container, store, actions, handlers, isA
               type: 'number',
               class: 'input input--num',
               min: '1',
+              max: String(MAX_QUANTITY),
               step: '1',
               value: local.draft.totalQuantity,
               dataset: { testid: 'total-quantity' },

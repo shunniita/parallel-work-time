@@ -27,6 +27,7 @@ import {
   instantiateRun,
 } from '../../domain/templateInstantiate.js';
 import { activeTemplates } from '../../domain/templateOps.js';
+import { runWriteTime } from '../../domain/writeClock.js';
 import {
   VALIDATION_WARNING,
   validateProjectGroupDraft,
@@ -266,7 +267,8 @@ export async function updateRunQuantity(deps, runId, change) {
     const workRun = {
       ...current,
       runQuantity: change.runQuantity,
-      updatedAt: toIsoSecond(now()),
+      // 既存の日時より前にならない実効時刻で打つ（`writeClock.js`）。
+      updatedAt: runWriteTime(current, toIsoSecond(now())),
     };
 
     return {

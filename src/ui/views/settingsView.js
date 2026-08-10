@@ -7,23 +7,26 @@ import {
   createDefaultSettings,
 } from '../../config.js';
 import { readImportFile } from '../../io/importJson.js';
-import { runDestructiveAction } from '../../io/safetyExport.js';
 import { el, field, replaceChildren } from '../dom.js';
 import { toIntegerInput } from '../numeric.js';
 import { createConfirmPanel } from '../components/confirmPanel.js';
 
 /**
+ * `runDestructive` は必須である。退避と全置換を1つの排他区間へ入れるのは呼び出し元
+ * （`main.js`）の役目であり（GAR-1）、既定値を置くと注入を忘れた画面が排他区間の
+ * 外で全置換を走らせる。
+ *
  * @param {{container: HTMLElement, store: object,
  *          actions: {updateSettings: Function, exportData: Function},
- *          readFile?: Function, runDestructive?: Function}} options
- *   全置換は `runDestructive` が排他区間の中で用意する（GAR-1）。
+ *          runDestructive: Function, readFile?: Function,
+ *          isActive?: () => boolean}} options
  */
 export function createSettingsView({
   container,
   store,
   actions,
+  runDestructive,
   readFile = readImportFile,
-  runDestructive = runDestructiveAction,
   isActive = () => true,
 }) {
   const local = {
@@ -32,6 +35,15 @@ export function createSettingsView({
     phase: 'idle',
     errors: [],
     message: '',
+    /**
+     * 排他区間の実行中か（レビュー指摘 F12-06）。
+     *
+     * 区間の途中で退避エクスポートが `store.setState` を呼び、その購読が画面を
+     * 描き直す。busy を持たないと取り込みボタンが活性のまま再構築され、ダブル
+     * クリックや退避ダウンロード後の再クリックで排他区間が2つ直列に並ぶ。
+     * 区間の隙間に入った保存は2回目の置換で消える（GAR-1 と同種の喪失）。
+     */
+    busy: false,
   };
 
   function resetImport() {
@@ -81,15 +93,35 @@ export function createSettingsView({
     }
   }
 
+  /**
+   * ファイルを選び直したときに、古い読込の結果を捨てるための通し番号。
+   *
+   * 読込は非同期であり、完了の順序は選択の順序と一致しない。大きいファイルを
+   * 選んだ直後に小さいファイルを選ぶと、先に選んだ方が後から完了して、確認画面の
+   * 内容とファイル名を上書きする。利用者の最新の操作と食い違う（F12-30）。
+   */
+  let selectionToken = 0;
+
   async function selectFile(file) {
     resetImport();
+    selectionToken += 1;
+    const token = selectionToken;
     local.phase = 'reading';
     render();
+
     try {
-      local.importPayload = await readFile(file);
+      const payload = await readFile(file);
+      if (token !== selectionToken) {
+        return;
+      }
+      local.importPayload = payload;
       local.importFileName = file?.name ?? '選択したファイル';
       local.phase = 'ready';
     } catch (error) {
+      // 待っている間に選び直されていれば、この失敗も採用しない。
+      if (token !== selectionToken) {
+        return;
+      }
       local.errors = toErrorMessages(error);
       local.phase = 'idle';
     }
@@ -97,18 +129,33 @@ export function createSettingsView({
   }
 
   async function executeImport(backup) {
+    // 利用者の1回の操作意図に対して、破壊的操作は1回だけ走らせる。
+    if (local.busy) {
+      return;
+    }
     const payload = local.importPayload;
-    const result = await runDestructive({
-      backup,
-      confirmedWithoutBackup: !backup,
-      // 退避と全置換は1つの排他区間で行う。別々に積むと、退避JSONを取った後・
-      // 全置換の前に別の保存が割り込み、その内容が退避にも置換後にも残らない
-      // （敵対的レビュー GAR-1）。
-      destructiveAction: (scoped) => scoped.importData(payload),
-    });
-    if (result.executed) {
-      resetImport();
-      local.message = 'JSONを取り込み、全データを置き換えました。';
+    local.busy = true;
+    local.errors = [];
+    render();
+    try {
+      const result = await runDestructive({
+        backup,
+        confirmedWithoutBackup: !backup,
+        // 退避と全置換は1つの排他区間で行う。別々に積むと、退避JSONを取った後・
+        // 全置換の前に別の保存が割り込み、その内容が退避にも置換後にも残らない
+        // （敵対的レビュー GAR-1）。
+        destructiveAction: (scoped) => scoped.importData(payload),
+      });
+      if (result.executed) {
+        resetImport();
+        local.message = 'JSONを取り込み、全データを置き換えました。';
+      }
+    } catch (error) {
+      local.errors = toErrorMessages(error);
+      // 確認パネルは再描画で外れるため、選択肢へ戻して再試行可能にする。
+      local.phase = payload === null ? 'idle' : 'ready';
+    } finally {
+      local.busy = false;
       render();
     }
   }
@@ -136,13 +183,15 @@ export function createSettingsView({
             class: 'button button--primary',
             text: '現在のデータを退避して取り込む',
             dataset: { testid: 'import-with-backup' },
-            on: { click: () => executeImport(true).catch(showImportError) },
+            disabled: local.busy,
+            on: { click: () => executeImport(true) },
           }),
           el('button', {
             type: 'button',
             class: 'button button--danger',
             text: '退避せずに進む',
             dataset: { testid: 'import-without-backup' },
+            disabled: local.busy,
             on: {
               click: () => {
                 local.phase = 'skip-confirm';
@@ -155,16 +204,12 @@ export function createSettingsView({
             class: 'button',
             text: 'やめる',
             dataset: { testid: 'import-cancel' },
+            disabled: local.busy,
             on: { click: () => { resetImport(); render(); } },
           }),
         ]),
       ],
     );
-  }
-
-  function showImportError(error) {
-    local.errors = toErrorMessages(error);
-    render();
   }
 
   function skipConfirmation() {
@@ -177,6 +222,7 @@ export function createSettingsView({
       note: '必要なら「やめる」で戻り、退避してから取り込んでください。',
       confirmLabel: '退避せず全置換する',
       testidPrefix: 'import-skip',
+      busy: local.busy,
       onConfirm: () => executeImport(false),
       onCancel: () => {
         local.phase = 'ready';
@@ -217,6 +263,7 @@ export function createSettingsView({
       type: 'file',
       accept: '.json,application/json',
       dataset: { testid: 'import-file' },
+      disabled: local.busy,
       on: { change: (event) => selectFile(event.target.files?.[0]) },
     });
 

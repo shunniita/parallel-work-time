@@ -15,10 +15,11 @@
  *
  * 「追加」を押さずに保存へ進んだ場合、入力欄に残っている名前も参加者として
  * 数える。押し忘れで参加者が欠けた記録が残る方が、余計に拾うより害が大きい。
- * 重複と空白は `src/domain/intervalOps.js` の `normalizeParticipants()` と同じ
+ * 重複と空白は `src/domain/participants.js` の `normalizeParticipants()` と同じ
  * 規則で整える（前後空白を落とし、完全一致の重複をまとめる）。
  */
 
+import { MAX_TEXT_LENGTH } from '../../config.js';
 import { el, field, replaceChildren, replaceOptions } from '../dom.js';
 
 /**
@@ -57,6 +58,7 @@ export function createParticipantsInput({
     class: 'input',
     list: listId,
     autocomplete: 'off',
+    maxlength: MAX_TEXT_LENGTH,
     dataset: { testid },
     on: {
       keydown: (event) => {

@@ -11,6 +11,9 @@
  */
 
 import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';
+import { isEffortWithinRange, runTotalSeconds } from '../../domain/effort.js';
+import { MAX_EFFORT_SECONDS } from '../../config.js';
+import { runWriteTime } from '../../domain/writeClock.js';
 import { RunNotEditableError, ValidationError } from '../errors.js';
 
 /**
@@ -74,11 +77,23 @@ export function assertEditable(workRun) {
   }
 }
 
+/** 通常操作がインポート不能な実施回合計を保存しないよう、書込み直前で確かめる。 */
+export function assertRunEffortWithinRange(workRun) {
+  if (!isEffortWithinRange(runTotalSeconds(workRun))) {
+    throw new ValidationError([
+      `実施回: 合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える（仕様書8.9.12）`,
+    ]);
+  }
+}
+
 /**
  * 作業項目実績の一部を差し替えた実施回を作る。
  *
  * 元のオブジェクトは書き換えない。保存に失敗したとき、画面が持っているデータ
  * セットが中途半端に変わっているのを避けるためである。
+ *
+ * `updatedAt` は実施回が既に持つ日時より前にしない（`writeClock.js`）。時計が
+ * 巻き戻っている間に書いても、自分のエクスポートを読み戻せる。
  *
  * @param {object} workRun
  * @param {string} taskRecordId
@@ -92,7 +107,7 @@ export function replaceTaskFields(workRun, taskRecordId, patch, updatedAt) {
     tasks: workRun.tasks.map((task) =>
       task.taskRecordId === taskRecordId ? { ...task, ...patch } : task,
     ),
-    updatedAt,
+    updatedAt: runWriteTime(workRun, updatedAt),
   };
 }
 

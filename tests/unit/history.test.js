@@ -17,7 +17,12 @@ import {
 } from '../../src/domain/history.js';
 import { formatIsoForHuman } from '../../src/domain/datetime.js';
 import { validateImportPayload } from '../../src/domain/schema.js';
-import { SCHEMA_VERSION, createDefaultSettings } from '../../src/config.js';
+import {
+  MAX_SUMMARY_LENGTH,
+  MAX_TEXT_LENGTH,
+  SCHEMA_VERSION,
+  createDefaultSettings,
+} from '../../src/config.js';
 import {
   breakInterval,
   resetIds,
@@ -134,6 +139,17 @@ describe('buildHistoryEntry（仕様書11章）', () => {
     const { entry } = buildHistoryEntry(deletionDraft({ reason: '  誤入力  ' }), META);
 
     expect(entry.reason).toBe('誤入力');
+  });
+
+  it('理由と要約の保存形式上限を超える履歴は組み立てない', () => {
+    expect(buildHistoryEntry(
+      deletionDraft({ reason: 'A'.repeat(MAX_TEXT_LENGTH + 1) }),
+      META,
+    ).ok).toBe(false);
+    expect(buildHistoryEntry(
+      deletionDraft({ summary: 'A'.repeat(MAX_SUMMARY_LENGTH + 1) }),
+      META,
+    ).ok).toBe(false);
   });
 
   it('未知の対象種別・操作種別を拒否する', () => {

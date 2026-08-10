@@ -48,12 +48,18 @@ function mount(options = {}) {
     deleteProjectGroup: vi.fn(async () => ({ dataset: null })),
     exportData: vi.fn(async () => ({ dataset: null })),
   };
-  // 排他区間の用意は `main.js` の役目なので、ここでは順序だけを持つ本体
-  // （`runDestructiveAction`）へモックを差し込む（GAR-1）。
+  // 排他区間の用意と、区間内で使うアクションを閉じ込めるのは `main.js` の役目で
+  // ある（GAR-1、F12-18）。ここでは順序だけを持つ本体（`runDestructiveAction`）へ
+  // 同じ形でモックを差し込む。
   const runDestructive =
     options.runDestructive ??
-    ((input) =>
-      runDestructiveAction({ ...input, exportData: actions.exportData, scoped: actions }));
+    (({ backup, confirmedWithoutBackup, destructiveAction }) =>
+      runDestructiveAction({
+        backup,
+        confirmedWithoutBackup,
+        exportData: actions.exportData,
+        destructiveAction: () => destructiveAction(actions),
+      }));
   const view = createArchiveView({
     container,
     store: { getState: () => state },

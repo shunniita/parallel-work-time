@@ -18,6 +18,7 @@ import { toDraft } from '../../app/actions/templateActions.js';
 import { toErrorMessages } from '../../app/errors.js';
 import { el, field, replaceChildren } from '../dom.js';
 import { toOptionalIntegerInput } from '../numeric.js';
+import { MAX_TEXT_LENGTH } from '../../config.js';
 
 /**
  * テンプレート画面を作る。
@@ -201,6 +202,7 @@ export function createTemplateView({ container, store, actions, isActive = () =>
                 type: 'text',
                 class: 'input',
                 value: task.name ?? '',
+                maxlength: MAX_TEXT_LENGTH,
                 'aria-label': `作業項目${index + 1}の名称`,
                 dataset: { testid: 'task-name' },
                 on: {
@@ -215,6 +217,7 @@ export function createTemplateView({ container, store, actions, isActive = () =>
                 type: 'text',
                 class: 'input',
                 value: task.externalCode ?? '',
+                maxlength: MAX_TEXT_LENGTH,
                 'aria-label': `作業項目${index + 1}の外部項目コード`,
                 dataset: { testid: 'task-code' },
                 on: {
@@ -398,6 +401,7 @@ export function createTemplateView({ container, store, actions, isActive = () =>
             type: 'text',
             class: 'input',
             value: local.newDraft.targetType,
+            maxlength: MAX_TEXT_LENGTH,
             dataset: { testid: 'new-target-type' },
             on: {
               input: (event) => {
@@ -413,6 +417,7 @@ export function createTemplateView({ container, store, actions, isActive = () =>
             type: 'text',
             class: 'input',
             value: local.newDraft.variant,
+            maxlength: MAX_TEXT_LENGTH,
             dataset: { testid: 'new-variant' },
             on: {
               input: (event) => {

@@ -11,6 +11,7 @@
  * 一度だけ分単位へ切り上げる（仕様書8.6.4）。
  */
 
+import { MAX_EFFORT_SECONDS } from '../config.js';
 import { diffMs } from './datetime.js';
 
 /** 作業区間の種別（仕様書6.7）。 */
@@ -107,6 +108,50 @@ export function openIntervals(taskRecord) {
  */
 export function toTransferMinutes(totalSeconds) {
   return Math.ceil(totalSeconds / 60);
+}
+
+/**
+ * 合計工数が厳密に扱える範囲かを判定する（仕様書8.9.12）。
+ *
+ * 個々の入力に上限を置いても、派生する合計には効かない。区間数・作業項目数・
+ * 参加者数がそれぞれ上限内でも、積と和を重ねれば安全整数を超え、そこから先の
+ * 加算は静かに丸められる。集計値も転記値も「厳密な秒の合計」であることが
+ * 意味の前提なので、範囲外は値として認めない。
+ *
+ * 加算した後の値で判定してよい。加数はすべて非負の安全整数であり、合計が
+ * 上限（10^12）を超えたかどうかの判定は、丸めが始まる 2^53 のはるか手前で
+ * 決着する。
+ *
+ * @param {number} totalSeconds
+ * @returns {boolean}
+ */
+export function isEffortWithinRange(totalSeconds) {
+  return (
+    Number.isSafeInteger(totalSeconds) &&
+    totalSeconds >= 0 &&
+    totalSeconds <= MAX_EFFORT_SECONDS
+  );
+}
+
+/**
+ * 作業項目実績1件の合計工数を秒で返す。未終了区間は含めない（仕様書8.6.5）。
+ *
+ * @param {{intervals?: object[], directEntries?: object[]}} taskRecord
+ * @returns {number}
+ */
+export function taskTotalSeconds(taskRecord) {
+  return (
+    taskTimeSeconds({ intervals: taskRecord?.intervals ?? [] }) +
+    taskDirectSeconds({ directEntries: taskRecord?.directEntries ?? [] })
+  );
+}
+
+/** 実施回全体の合計工数を秒で返す。 */
+export function runTotalSeconds(workRun) {
+  return (workRun?.tasks ?? []).reduce(
+    (total, taskRecord) => total + taskTotalSeconds(taskRecord),
+    0,
+  );
 }
 
 /**

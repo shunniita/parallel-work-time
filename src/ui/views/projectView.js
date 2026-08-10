@@ -24,6 +24,7 @@ import { findActiveTemplate } from '../../app/actions/projectActions.js';
 import { QuantityOverflowError, toErrorMessages } from '../../app/errors.js';
 import { el, field, replaceChildren, setNote, setText } from '../dom.js';
 import { toIntegerInput } from '../numeric.js';
+import { MAX_QUANTITY } from '../../config.js';
 
 /**
  * 案件詳細を作る。
@@ -257,6 +258,7 @@ export function createProjectView({ container, store, actions, handlers, now, is
                 type: 'number',
                 class: 'input input--num',
                 min: '1',
+                max: String(MAX_QUANTITY),
                 step: '1',
                 value: local.totalQuantityDraft,
                 dataset: { testid: 'edit-total-quantity' },
@@ -353,6 +355,7 @@ export function createProjectView({ container, store, actions, handlers, now, is
                     type: 'number',
                     class: 'input input--num',
                     min: '1',
+                    max: String(MAX_QUANTITY),
                     step: '1',
                     value: local.runQuantityDraft,
                     'aria-label': '今回数量',
@@ -528,6 +531,7 @@ export function createProjectView({ container, store, actions, handlers, now, is
             type: 'number',
             class: 'input input--num',
             min: '1',
+            max: String(MAX_QUANTITY),
             step: '1',
             value: draft.runQuantity,
             dataset: { testid: 'run-quantity-input' },

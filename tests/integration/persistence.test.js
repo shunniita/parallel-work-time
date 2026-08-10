@@ -135,7 +135,8 @@ describe('createPersistence', () => {
     });
 
     it('割り込んだ保存は失われず、置換後の内容へ載る', async () => {
-      // 反例 ADV-01 に対応する。以前は退避JSONにも置換後にも残らなかった。
+      // 退避と全置換の隙間へ積まれた保存が、どちらにも残らないことを防ぐ
+      // （反例 ADV-01）。成功したのにどこにも無い書き込みを作らない。
       const { adapter, persistence } = await setup();
       const gate = deferred();
       let backupTemplates = null;

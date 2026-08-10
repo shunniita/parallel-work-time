@@ -48,7 +48,14 @@ import { RUN_STATUS } from '../../domain/schema.js';
 import { ENTITY_TYPE } from '../../storage/StorageAdapter.js';
 import { ResumeConfirmationRequiredError, ValidationError } from '../errors.js';
 import { resolveDeps } from './deps.js';
-import { assertEditable, findTask, locateTask, replaceTaskFields, taskOf } from './taskTarget.js';
+import {
+  assertEditable,
+  assertRunEffortWithinRange,
+  findTask,
+  locateTask,
+  replaceTaskFields,
+  taskOf,
+} from './taskTarget.js';
 
 /**
  * 作業項目実績の区間を差し替えた実施回を作る。
@@ -108,6 +115,7 @@ async function applyIntervalChange(deps, target, apply, options = {}) {
       // 同じ文書へ持つため、これで両方が成立するか、どちらも起きないかになる。
       nextRun = { ...nextRun, status: RUN_STATUS.WORKING };
     }
+    assertRunEffortWithinRange(nextRun);
 
     return {
       write: () => adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, nextRun),

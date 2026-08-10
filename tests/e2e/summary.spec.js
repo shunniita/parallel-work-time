@@ -11,7 +11,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { createProject, createRun, openFresh } from './helpers.js';
+import { createProject, createRun, openFresh, recordClipboard } from './helpers.js';
 
 /**
  * 作業項目の行を名前で引く。
@@ -175,9 +175,8 @@ test('外部項目コード順に並べ替えられ、未設定は末尾で警�
 
 test('表示順へ切り替えてもコピーは外部項目コード順になる（仕様書8.7.7、S8-2）', async ({
   page,
-  context,
 }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const clipboard = await recordClipboard(page);
   await openFresh(page);
   // 「拡張」は表示順と自然順が食い違う。
   await createProject(page, { projectId: 'PJ-COPYSORT', variant: '拡張', totalQuantity: 100 });
@@ -202,8 +201,8 @@ test('表示順へ切り替えてもコピーは外部項目コード順にな�
   await expect(page.getByTestId('summary-notice')).toContainText('コピーしました');
 
   // コピーは画面の並びに関わらず外部項目コード順である。
-  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
-  const codes = clipboard.split('\n').map((line) => line.split('\t')[0]);
+  const copied = await clipboard.read();
+  const codes = copied.split('\n').map((line) => line.split('\t')[0]);
   expect(codes).toEqual(['X-100', 'X-1000', 'X-1100', 'X-2000']);
 });
 
@@ -298,8 +297,8 @@ test('外部項目コード未設定を警告する（仕様書8.7.4）', async 
   await expect(summaryRow(page, '後片付け').getByTestId('summary-code')).toHaveText('（未設定）');
 });
 
-test('転記値をタブ区切りでコピーできる（仕様書8.7.7）', async ({ page, context }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+test('転記値をタブ区切りでコピーできる（仕様書8.7.7）', async ({ page }) => {
+  const clipboard = await recordClipboard(page);
   await setup(page, 'PJ-COPY');
 
   await addDirectEntry(page, { task: '受入確認', minutes: '10', note: '計測漏れ' });
@@ -311,9 +310,9 @@ test('転記値をタブ区切りでコピーできる（仕様書8.7.7）', asy
   // 外部項目コード未設定の「後片付け」は含めない。
   await expect(page.getByTestId('summary-notice')).toContainText('未設定の1件は含めていません');
 
-  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
-  expect(clipboard).toContain('X-100\t10');
-  expect(clipboard).not.toContain('後片付け');
+  const copied = await clipboard.read();
+  expect(copied).toContain('X-100\t10');
+  expect(copied).not.toContain('後片付け');
 });
 
 test('転記済みへ進め、理由を添えて取り消せる（仕様書7.1、8.7.6、11章）', async ({ page }) => {

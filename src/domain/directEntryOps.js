@@ -38,6 +38,13 @@
  * `intervalOps.js` / `validation.js` と共有する。
  */
 
+import {
+  MAX_DIRECT_ENTRY_SECONDS,
+  MAX_EFFORT_SECONDS,
+  MAX_TEXT_LENGTH,
+} from '../config.js';
+import { isEffortWithinRange, taskTotalSeconds } from './effort.js';
+import { normalizeParticipants, participantLimitErrors } from './participants.js';
 import { Problems } from './problems.js';
 
 /** 直接入力の検証で出る警告の種別。 */
@@ -61,47 +68,25 @@ function rejected(problems) {
 }
 
 /**
- * 変換に成功した結果を返す。
+ * 変換結果を返す。合計工数が範囲外なら拒否へ倒す。
  *
  * @param {Problems} problems
+ * @param {{intervals?: object[]}} taskRecord 変換前の作業項目実績
  * @param {object[]} directEntries 変換後の直接入力一覧
  * @param {object} [extra] `created` / `updated` などの補足
  */
-function accepted(problems, directEntries, extra = {}) {
+function accepted(problems, taskRecord, directEntries, extra = {}) {
+  // 合計工数の範囲は、変換後の一覧が揃ってからでないと判定できない
+  // （仕様書8.9.12、`intervalOps.js` と同じ扱い）。
+  const total = taskTotalSeconds({ ...taskRecord, directEntries });
+  if (!isEffortWithinRange(total)) {
+    problems.add(
+      '追加工数',
+      `作業項目の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える（仕様書8.9.12）。`,
+    );
+    return rejected(problems);
+  }
   return { ok: true, errors: [], warnings: problems.warnings, directEntries, ...extra };
-}
-
-/**
- * 参加者一覧を整える。
- *
- * `intervalOps.js` の同名関数と同じ規則で、前後空白を落とし、空文字を除き、
- * 完全一致の重複を1つにまとめる。表記ゆれは判断しない（仕様書8.9.9）。
- *
- * 直接入力の参加者は0人でよい。人数を掛けない値なので、`work` 区間のように
- * 0人を禁じる理由（仕様書8.9.4）が無い。誰の分か分からない計測漏れを、備考だけ
- * 添えて足せる必要がある。
- *
- * @param {unknown} value
- * @returns {string[]|null} 配列でなければ null
- */
-export function normalizeParticipants(value) {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const seen = new Set();
-  const result = [];
-  for (const item of value) {
-    if (typeof item !== 'string') {
-      return null;
-    }
-    const name = item.trim();
-    if (name === '' || seen.has(name)) {
-      continue;
-    }
-    seen.add(name);
-    result.push(name);
-  }
-  return result;
 }
 
 /**
@@ -117,7 +102,7 @@ export function normalizeParticipants(value) {
  * @returns {boolean}
  */
 function checkSeconds(problems, seconds, { allowZero = false } = {}) {
-  if (!Number.isInteger(seconds)) {
+  if (!Number.isSafeInteger(seconds)) {
     problems.add('追加工数', '秒数は整数で指定する');
     return false;
   }
@@ -127,6 +112,10 @@ function checkSeconds(problems, seconds, { allowZero = false } = {}) {
   }
   if (seconds === 0 && !allowZero) {
     problems.add('追加工数', '1秒以上を入力する');
+    return false;
+  }
+  if (seconds > MAX_DIRECT_ENTRY_SECONDS) {
+    problems.add('追加工数', `${MAX_DIRECT_ENTRY_SECONDS}秒（1年）以下で入力する`);
     return false;
   }
   return true;
@@ -145,17 +134,32 @@ function checkNote(problems, note) {
     problems.add('備考', '必須項目である（仕様書8.5.4）');
     return false;
   }
+  if (note.trim().length > MAX_TEXT_LENGTH) {
+    problems.add('備考', `${MAX_TEXT_LENGTH}文字以下で入力する`);
+    return false;
+  }
   return true;
 }
 
 /**
  * 参加者を確かめる。
  *
+ * 0人を許す。人数を掛けない値なので、`work` 区間のように0人を禁じる理由
+ * （仕様書8.9.4）が無い。誰の分か分からない計測漏れを、備考だけ添えて足せる
+ * 必要がある。
+ *
  * @returns {boolean}
  */
 function checkParticipants(problems, participants) {
   if (participants === null) {
     problems.add('参加者', '文字列の配列で指定する');
+    return false;
+  }
+  const errors = participantLimitErrors(participants);
+  for (const error of errors) {
+    problems.add('参加者', error);
+  }
+  if (errors.length > 0) {
     return false;
   }
   return true;
@@ -288,7 +292,7 @@ export function addDirectEntry(taskRecord, input, context) {
     { seconds: input.seconds, participants, note: input.note },
     context,
   );
-  return accepted(problems, [...taskRecord.directEntries, created], { created });
+  return accepted(problems, taskRecord, [...taskRecord.directEntries, created], { created });
 }
 
 /**
@@ -345,7 +349,7 @@ export function editDirectEntry(taskRecord, entryId, changes, context) {
   const directEntries = taskRecord.directEntries.map((entry) =>
     entry.entryId === entryId ? updated : entry,
   );
-  return accepted(problems, directEntries, { updated });
+  return accepted(problems, taskRecord, directEntries, { updated });
 }
 
 /**

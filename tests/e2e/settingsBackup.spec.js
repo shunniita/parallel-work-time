@@ -90,3 +90,30 @@ test('退避なしは取り消せない旨を再確認する（仕様書9.4）',
   await expect(page.getByTestId('import-skip-panel')).toContainText('取り消せません');
   await expect(page.getByTestId('import-skip-accept')).toHaveText('退避せず全置換する');
 });
+
+test('取り込みボタンを連打しても全置換は1回だけ走る（レビュー指摘 F12-06）', async ({ page }) => {
+  await createProject(page, { projectId: 'PJ-DOUBLE', totalQuantity: 100 });
+  await page.getByTestId('nav-settings').click();
+
+  const exportPromise = page.waitForEvent('download');
+  await page.getByTestId('export-json').click();
+  const exported = await exportPromise;
+
+  await page.getByTestId('import-file').setInputFiles(await exported.path());
+  await expect(page.getByTestId('import-choice')).toBeVisible();
+
+  // 退避ダウンロードの回数で、排他区間が何回走ったかを数える。
+  const backups = [];
+  page.on('download', (download) => backups.push(download.suggestedFilename()));
+
+  const button = page.getByTestId('import-with-backup');
+  await button.dblclick();
+
+  await expect(page.getByTestId('settings-message')).toContainText('置き換えました');
+  // 置換が終わると確認パネル自体が畳まれる。押し直す先が無い。
+  await expect(page.getByTestId('import-choice')).toHaveCount(0);
+  expect(backups).toHaveLength(1);
+
+  await page.getByTestId('nav-projects').click();
+  await expect(page.getByTestId('tree-project')).toHaveCount(1);
+});

@@ -14,6 +14,7 @@
  * 種別コードつきの `{code, path, message}` で返す（`problems.js`、D-15）。
  */
 
+import { MAX_QUANTITY, MAX_TEXT_LENGTH, isIntegerInRange } from '../config.js';
 import { normalizeProjectId } from './projectId.js';
 import { isValidDateKey } from './datetime.js';
 import { Problems } from './problems.js';
@@ -39,7 +40,23 @@ function isNonEmptyString(value) {
  * @returns {boolean}
  */
 function isPositiveInteger(value) {
-  return Number.isInteger(value) && value >= 1;
+  return isIntegerInRange(value, MAX_QUANTITY);
+}
+
+function checkRequiredText(problems, path, value) {
+  if (!isNonEmptyString(value)) {
+    problems.add(path, '必須項目である');
+  } else if (value.trim().length > MAX_TEXT_LENGTH) {
+    problems.add(path, `${MAX_TEXT_LENGTH}文字以下である必要がある`);
+  }
+}
+
+function checkOptionalText(problems, path, value) {
+  if (value !== null && value !== undefined && typeof value !== 'string') {
+    problems.add(path, '文字列または未設定である必要がある');
+  } else if (typeof value === 'string' && value.trim().length > MAX_TEXT_LENGTH) {
+    problems.add(path, `${MAX_TEXT_LENGTH}文字以下である必要がある`);
+  }
 }
 
 /**
@@ -56,12 +73,8 @@ export function validateTemplateDraft(draft) {
     return problems.toResult();
   }
 
-  if (!isNonEmptyString(draft.targetType)) {
-    problems.add('対象種別', '必須項目である');
-  }
-  if (!isNonEmptyString(draft.variant)) {
-    problems.add('バリエーション', '必須項目である');
-  }
+  checkRequiredText(problems, '対象種別', draft.targetType);
+  checkRequiredText(problems, 'バリエーション', draft.variant);
 
   if (!Array.isArray(draft.tasks)) {
     problems.add('作業項目', '一覧を読み取れない');
@@ -78,17 +91,9 @@ export function validateTemplateDraft(draft) {
       problems.add(path, '入力内容を読み取れない');
       return;
     }
-    if (!isNonEmptyString(task.name)) {
-      problems.add(`${path}の名称`, '必須項目である');
-    }
+    checkRequiredText(problems, `${path}の名称`, task.name);
     // 外部項目コードは未設定を許す。転記時の欠落は集計画面で警告する（8.7.4）。
-    if (
-      task.externalCode !== null &&
-      task.externalCode !== undefined &&
-      typeof task.externalCode !== 'string'
-    ) {
-      problems.add(`${path}の外部項目コード`, '文字列または未設定である必要がある');
-    }
+    checkOptionalText(problems, `${path}の外部項目コード`, task.externalCode);
     if (task.order !== undefined && task.order !== null && !Number.isInteger(task.order)) {
       problems.add(`${path}の表示順`, '整数である必要がある');
     }
@@ -147,17 +152,11 @@ export function validateProjectGroupDraft(draft) {
     return problems.toResult();
   }
 
-  if (!isNonEmptyString(draft.projectId)) {
-    problems.add('案件ID', '必須項目である');
-  }
-  if (!isNonEmptyString(draft.targetType)) {
-    problems.add('対象種別', '必須項目である');
-  }
-  if (!isNonEmptyString(draft.variant)) {
-    problems.add('バリエーション', '必須項目である');
-  }
+  checkRequiredText(problems, '案件ID', draft.projectId);
+  checkRequiredText(problems, '対象種別', draft.targetType);
+  checkRequiredText(problems, 'バリエーション', draft.variant);
   if (!isPositiveInteger(draft.totalQuantity)) {
-    problems.add('総予定数', '1以上の整数である');
+    problems.add('総予定数', `1以上 ${MAX_QUANTITY} 以下の整数である`);
   }
 
   return problems.toResult();
@@ -223,7 +222,7 @@ export function validateRunDraft(draft, context) {
     problems.add('作業日', 'YYYY-MM-DD 形式の日付である');
   }
   if (!isPositiveInteger(draft.runQuantity)) {
-    problems.add('今回数量', '1以上の整数である');
+    problems.add('今回数量', `1以上 ${MAX_QUANTITY} 以下の整数である`);
   }
 
   // 作業項目を全部除外すると、工数を記録する対象が無い実施回ができてしまう。
@@ -267,7 +266,7 @@ export function validateTotalQuantityChange(runs, nextTotalQuantity) {
   const problems = new Problems();
 
   if (!isPositiveInteger(nextTotalQuantity)) {
-    problems.add('総予定数', '1以上の整数である');
+    problems.add('総予定数', `1以上 ${MAX_QUANTITY} 以下の整数である`);
     return problems.toResult({ preview: null });
   }
 

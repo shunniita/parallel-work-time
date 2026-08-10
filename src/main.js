@@ -236,24 +236,29 @@ async function main() {
    * 共有フラグで見分けないのは、区間の実行中に利用者が別画面を操作した場合まで
    * 「内側」と誤判定するためである（`persistence.js` 参照）。
    *
-   * 画面は「何を壊すか」だけを決め、取引の境界はここが持つ。
+   * 区間内の `persistence` は `run` だけを持たせる。元の `persistence` を展開すると
+   * `runExclusive` が区間の中から見え、呼べば自分自身の完了を待つ列へ並んで保存
+   * キュー全体が止まる（再読み込みでしか復旧しない）。
+   *
+   * 画面は「何を壊すか」だけを決め、取引の境界はここが持つ。区間内で使うアクションは
+   * ここで閉じ込め、共有フロー（`safetyExport.js`）の公開契約へは出さない。
    *
    * @param {{backup: boolean, confirmedWithoutBackup?: boolean,
    *          destructiveAction: (scoped: object) => Promise<unknown>}} options
    */
   function runDestructive({ backup, confirmedWithoutBackup = false, destructiveAction }) {
     return persistence.runExclusive(({ run }) => {
-      const scopedDeps = { adapter, persistence: { ...persistence, run } };
+      const scopedDeps = { adapter, persistence: { run } };
+      const scoped = {
+        deleteRun: wrap(deleteRun, scopedDeps),
+        deleteProjectGroup: wrap(deleteProjectGroup, scopedDeps),
+        importData: wrap(importData, scopedDeps),
+      };
       return runDestructiveAction({
         backup,
         confirmedWithoutBackup,
         exportData: wrap(exportData, scopedDeps),
-        destructiveAction,
-        scoped: {
-          deleteRun: wrap(deleteRun, scopedDeps),
-          deleteProjectGroup: wrap(deleteProjectGroup, scopedDeps),
-          importData: wrap(importData, scopedDeps),
-        },
+        destructiveAction: () => destructiveAction(scoped),
       });
     });
   }

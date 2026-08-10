@@ -5,8 +5,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  MAX_DIRECT_ENTRY_SECONDS,
   MAX_LONG_RUNNING_THRESHOLD_HOURS,
+  MAX_PARTICIPANTS,
+  MAX_QUANTITY,
   MAX_RETENTION_DAYS,
+  MAX_TEXT_LENGTH,
   SCHEMA_VERSION,
   createDefaultSettings,
 } from '../../src/config.js';
@@ -433,7 +437,173 @@ describe('validateImportPayload()', () => {
     );
 
     expect(result.errors).toContain(
-      'projectGroups[1].totalQuantity: 1以上の整数である必要がある（仕様書8.9.2）',
+      `projectGroups[1].totalQuantity: 1以上 ${MAX_QUANTITY} 以下の整数である必要がある（仕様書8.9.2）`,
     );
+  });
+
+  /**
+   * 通常の書き込み経路が保存しない形の値を拒む（レビュー指摘 F12-01）。
+   *
+   * 受理してしまうと、画面の検索と重複判定は正規化した入力と保存済みの生値を
+   * 比べるため、取り込んだ案件・テンプレートを引けなくなる。
+   */
+  describe('正規化されていない文字列を拒否する（F12-01）', () => {
+    /** 1件だけ書き換えて、その項目のエラーだけを取り出す。 */
+    function errorsFor(path, mutate) {
+      const payload = validPayload();
+      mutate(payload);
+      return validateImportPayload(payload).errors.filter((message) =>
+        message.startsWith(`${path}:`),
+      );
+    }
+
+    it('テンプレートの対象種別', () => {
+      expect(
+        errorsFor('taskTemplates[0].targetType', (p) => {
+          p.taskTemplates[0].targetType = ' 対象種別A ';
+        }),
+      ).toHaveLength(1);
+    });
+
+    it('テンプレートのバリエーション', () => {
+      expect(
+        errorsFor('taskTemplates[0].variant', (p) => {
+          p.taskTemplates[0].variant = '標準 ';
+        }),
+      ).toHaveLength(1);
+    });
+
+    it('案件ID', () => {
+      expect(
+        errorsFor('projectGroups[0].projectId', (p) => {
+          p.projectGroups[0].projectId = '  PJ-0001  ';
+        }),
+      ).toHaveLength(1);
+    });
+
+    it('作業項目名', () => {
+      expect(
+        errorsFor('workRuns[0].tasks[0].name', (p) => {
+          p.workRuns[0].tasks[0].name = '作業項目A ';
+        }),
+      ).toHaveLength(1);
+    });
+
+    it('外部項目コード（null は許す）', () => {
+      expect(
+        errorsFor('taskTemplates[0].tasks[0].externalCode', (p) => {
+          p.taskTemplates[0].tasks[0].externalCode = ' X-100';
+        }),
+      ).toHaveLength(1);
+
+      const payload = validPayload();
+      payload.taskTemplates[0].tasks[0].externalCode = null;
+      expect(validateImportPayload(payload).ok).toBe(true);
+    });
+
+    it('直接入力の備考', () => {
+      expect(
+        errorsFor('workRuns[0].tasks[0].directEntries[0].note', (p) => {
+          p.workRuns[0].tasks[0].directEntries[0].note = '計測漏れ分を追加 ';
+        }),
+      ).toHaveLength(1);
+    });
+
+    it('変更履歴の理由', () => {
+      expect(
+        errorsFor('changeHistory[0].reason', (p) => {
+          p.changeHistory[0].reason = ' 転記先の誤りに気づいたため';
+        }),
+      ).toHaveLength(1);
+    });
+  });
+
+  /**
+   * 安全整数の外にある値を拒む（レビュー指摘 F12-05）。
+   *
+   * `9007199254740993` は `Number` へ変換された時点で1つ下の値へ丸められ、
+   * `Number.isInteger()` は丸めた後の値を整数と判定する。入力した値と保存される
+   * 値が違うことに利用者が気づけない。
+   */
+  describe('数値の安全な範囲（F12-05）', () => {
+    it('安全整数を超える数量を拒否する', () => {
+      const payload = validPayload();
+      payload.projectGroups[0].totalQuantity = 9007199254740993;
+
+      expect(validateImportPayload(payload).ok).toBe(false);
+    });
+
+    it('上限を超える数量を拒否する', () => {
+      const payload = validPayload();
+      payload.workRuns[0].runQuantity = MAX_QUANTITY + 1;
+
+      expect(validateImportPayload(payload).ok).toBe(false);
+    });
+
+    it('上限を超える直接入力の秒数を拒否する', () => {
+      const payload = validPayload();
+      payload.workRuns[0].tasks[0].directEntries[0].seconds = MAX_DIRECT_ENTRY_SECONDS + 1;
+
+      expect(validateImportPayload(payload).ok).toBe(false);
+    });
+
+    it('上限ちょうどは通す', () => {
+      const payload = validPayload();
+      payload.projectGroups[0].totalQuantity = MAX_QUANTITY;
+      payload.workRuns[0].tasks[0].directEntries[0].seconds = MAX_DIRECT_ENTRY_SECONDS;
+
+      expect(validateImportPayload(payload).ok).toBe(true);
+    });
+  });
+
+  /** 取り込みの規模上限（仕様書9.3、公開前チェックリスト3章）。 */
+  describe('取り込みの規模上限', () => {
+    it('参加者数の上限を超える区間を拒否する', () => {
+      const payload = validPayload();
+      payload.workRuns[0].tasks[0].intervals[0].participants = Array.from(
+        { length: MAX_PARTICIPANTS + 1 },
+        (_, index) => `参加者${index}`,
+      );
+
+      expect(validateImportPayload(payload).ok).toBe(false);
+    });
+
+    it('極端に長い文字列を拒否する', () => {
+      const payload = validPayload();
+      payload.projectGroups[0].projectId = 'A'.repeat(MAX_TEXT_LENGTH + 1);
+
+      expect(validateImportPayload(payload).ok).toBe(false);
+    });
+
+    it('内部識別子にも同じ長さの上限を適用する（F12-32）', () => {
+      // 識別子はDOMのid属性や変更履歴の `targetId` として使い回される。
+      // 形は問わないが、長さは他の文字列と同じ上限に収める。
+      const overLong = 'A'.repeat(MAX_TEXT_LENGTH + 1);
+      const cases = [
+        ['taskTemplates[0].templateId', (p) => { p.taskTemplates[0].templateId = overLong; }],
+        ['projectGroups[0].projectGroupId', (p) => { p.projectGroups[0].projectGroupId = overLong; }],
+        ['workRuns[0].runId', (p) => { p.workRuns[0].runId = overLong; }],
+        ['workRuns[0].tasks[0].taskRecordId', (p) => { p.workRuns[0].tasks[0].taskRecordId = overLong; }],
+        [
+          'workRuns[0].tasks[0].intervals[0].intervalId',
+          (p) => { p.workRuns[0].tasks[0].intervals[0].intervalId = overLong; },
+        ],
+        ['changeHistory[0].historyId', (p) => { p.changeHistory[0].historyId = overLong; }],
+      ];
+
+      for (const [path, mutate] of cases) {
+        const payload = validPayload();
+        mutate(payload);
+        const errors = validateImportPayload(payload).errors;
+        expect(errors.some((message) => message.startsWith(`${path}:`)), path).toBe(true);
+      }
+    });
+
+    it('上限ちょうどの識別子は通す', () => {
+      const payload = validPayload();
+      payload.workRuns[0].runId = 'A'.repeat(MAX_TEXT_LENGTH);
+
+      expect(validateImportPayload(payload).ok).toBe(true);
+    });
   });
 });
