@@ -12,7 +12,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -63,6 +63,14 @@ function trackedFiles() {
   return trackedSourceFiles().map(distributionPath).sort();
 }
 
+function localTargets(markdownPath) {
+  const markdown = readFileSync(markdownPath, 'utf8');
+  return [...markdown.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)]
+    .map((match) => match[1].split('#')[0])
+    .filter((target) => target !== '' && !/^[a-z][a-z0-9+.-]*:/i.test(target))
+    .map((target) => resolve(dirname(markdownPath), decodeURIComponent(target)));
+}
+
 describe('配布物の組み立て', () => {
   /** @type {{fileCount: number, zipSha256: string}} */
   let result;
@@ -111,6 +119,32 @@ describe('配布物の組み立て', () => {
         `${sourcePath} の内容が移動時に変わった`,
       ).toBe(true);
     }
+  });
+
+  it('配布READMEの相対リンクは配布後の位置で機能する', () => {
+    const readme = join(STAGE_DIR, 'README.md');
+    const missing = localTargets(readme).filter((target) => !existsSync(target));
+
+    expect(missing).toEqual([]);
+  });
+
+  it('配布READMEは利用者向け情報を先に示し、開発手順を含めない', () => {
+    const readme = readFileSync(join(STAGE_DIR, 'README.md'), 'utf8');
+    const headings = [
+      '## まずはここだけ',
+      '## 説明書',
+      '## データを失わないために',
+      '## ポート番号を変更する場合',
+      '## 動作環境',
+      '## フォルダーについて',
+    ];
+    const positions = headings.map((heading) => readme.indexOf(heading));
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    expect(readme).not.toContain('## 開発環境');
+    expect(readme).not.toContain('## テスト');
+    expect(readme).not.toContain('npm run');
   });
 
   it('展開すると全ファイルがマニフェストと一致する（F12-23）', () => {
