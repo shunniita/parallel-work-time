@@ -32,6 +32,7 @@ const POWERSHELL = join(
 );
 const CMD = join(WINDOWS_ROOT, 'System32', 'cmd.exe');
 const READY = /PWT_SERVER_READY (http:\/\/127\.0\.0\.1:\d+\/)/;
+const INTERNAL_DIR = 'アプリ内部（変更しないでください）';
 
 function waitForExit(child, timeout = 5000) {
   return new Promise((resolveExit, reject) => {
@@ -77,7 +78,8 @@ function waitForMarker(child, pattern, timeout = 10000) {
   });
 }
 
-async function startPowerShellServer(root, ...extraArgs) {
+async function startPowerShellServer(distributionRoot, ...extraArgs) {
+  const internalRoot = join(distributionRoot, INTERNAL_DIR);
   const child = spawn(
     POWERSHELL,
     [
@@ -86,11 +88,11 @@ async function startPowerShellServer(root, ...extraArgs) {
       '-ExecutionPolicy',
       'Bypass',
       '-File',
-      join(root, '_local-server.ps1'),
+      join(internalRoot, '_local-server.ps1'),
       '-NoBrowser',
       ...extraArgs,
     ],
-    { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] },
+    { cwd: distributionRoot, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   const { match } = await waitForMarker(child, READY);
   return { child, url: match[1] };
@@ -130,21 +132,23 @@ function findFreePort() {
 describe.runIf(process.platform === 'win32')('Windowsローカル起動機能', () => {
   let tempRoot;
   let appRoot;
+  let internalRoot;
   let running;
 
   beforeAll(async () => {
     tempRoot = mkdtempSync(join(tmpdir(), 'pwt-launcher-'));
     appRoot = join(tempRoot, '日本語 を含む配布フォルダー');
-    mkdirSync(appRoot);
+    internalRoot = join(appRoot, INTERNAL_DIR);
+    mkdirSync(internalRoot, { recursive: true });
     copyFileSync(join(ROOT, 'start-local.cmd'), join(appRoot, 'start-local.cmd'));
-    copyFileSync(join(ROOT, '_local-server.ps1'), join(appRoot, '_local-server.ps1'));
+    copyFileSync(join(ROOT, '_local-server.ps1'), join(internalRoot, '_local-server.ps1'));
     copyFileSync(join(ROOT, 'local-settings.txt'), join(appRoot, 'local-settings.txt'));
-    writeFileSync(join(appRoot, 'index.html'), '<!doctype html><title>配布テスト</title>');
-    writeFileSync(join(appRoot, 'app.js'), 'export const ready = true;');
-    writeFileSync(join(appRoot, 'data.json'), '{"ready":true}');
-    writeFileSync(join(appRoot, 'manual.md'), '# manual');
-    writeFileSync(join(appRoot, 'blocked.exe'), 'not executable');
-    writeFileSync(join(tempRoot, 'secret.txt'), 'outside root');
+    writeFileSync(join(internalRoot, 'index.html'), '<!doctype html><title>配布テスト</title>');
+    writeFileSync(join(internalRoot, 'app.js'), 'export const ready = true;');
+    writeFileSync(join(internalRoot, 'data.json'), '{"ready":true}');
+    writeFileSync(join(internalRoot, 'manual.md'), '# manual');
+    writeFileSync(join(internalRoot, 'blocked.exe'), 'not executable');
+    writeFileSync(join(appRoot, 'secret.txt'), 'outside root');
     running = await startPowerShellServer(appRoot, '-Port', '0');
   }, 15000);
 
@@ -197,7 +201,7 @@ describe.runIf(process.platform === 'win32')('Windowsローカル起動機能', 
         '-ExecutionPolicy',
         'Bypass',
         '-File',
-        join(appRoot, '_local-server.ps1'),
+        join(internalRoot, '_local-server.ps1'),
         '-NoBrowser',
       ],
       { cwd: appRoot, stdio: ['ignore', 'pipe', 'pipe'] },
@@ -208,27 +212,31 @@ describe.runIf(process.platform === 'win32')('Windowsローカル起動機能', 
     expect((await fetch(running.url)).status).toBe(200);
   });
 
-  it('設定ファイルの形式や範囲が不正なら理由を示して終了する', async () => {
-    for (const invalid of ['port=abc\n', 'port=80\n', 'port=4173\nport=8080\n']) {
-      writeFileSync(join(appRoot, 'local-settings.txt'), invalid);
-      const child = spawn(
-        POWERSHELL,
-        [
-          '-NoLogo',
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          join(appRoot, '_local-server.ps1'),
-          '-NoBrowser',
-        ],
-        { cwd: appRoot, stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-      const { output } = await waitForMarker(child, /PWT_SETTINGS_INVALID/);
-      expect(await waitForExit(child)).toBe(3);
-      expect(output).toContain('PWT_SETTINGS_INVALID');
-    }
-  });
+  it(
+    '設定ファイルの形式や範囲が不正なら理由を示して終了する',
+    async () => {
+      for (const invalid of ['port=abc\n', 'port=80\n', 'port=4173\nport=8080\n']) {
+        writeFileSync(join(appRoot, 'local-settings.txt'), invalid);
+        const child = spawn(
+          POWERSHELL,
+          [
+            '-NoLogo',
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            join(internalRoot, '_local-server.ps1'),
+            '-NoBrowser',
+          ],
+          { cwd: appRoot, stdio: ['ignore', 'pipe', 'pipe'] },
+        );
+        const { output } = await waitForMarker(child, /PWT_SETTINGS_INVALID/);
+        expect(await waitForExit(child)).toBe(3);
+        expect(output).toContain('PWT_SETTINGS_INVALID');
+      }
+    },
+    15000,
+  );
 
   it('start-local.cmdをダブルクリック相当の経路で起動できる', async () => {
     const port = await findFreePort();

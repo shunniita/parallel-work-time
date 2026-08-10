@@ -305,15 +305,16 @@ mise exec -- npx playwright test --project=chromium --grep "性能目標"
 
 ```text
 start-local.cmd
-_local-server.ps1
 local-settings.txt
-index.html
-src/
-data/
-licenses/
 LICENSE
 README.md
 manual/
+アプリ内部（変更しないでください）/
+├─ _local-server.ps1
+├─ index.html
+├─ src/
+├─ data/
+└─ licenses/
 ```
 
 `tools/`、`tests/`、`docs/`、`node_modules/`、`package.json`は配布物へ含めません。開発時にだけ使います。
@@ -340,12 +341,12 @@ Windows 11では、ZIPを展開して `start-local.cmd` をダブルクリック
 
 既定ポートを変更する場合は、起動前に `local-settings.txt` の `port=4173` の数字だけを `1024`〜`65535` の範囲で編集します。指定値は次回以降も維持され、使用中でも別ポートへ自動変更しません。ポート変更はブラウザーの保存先URLも変えるため、変更前にJSONをエクスポートしてください。
 
-組織のサーバーで共有する場合は、従来どおり任意の静的配信サーバーで `parallel-work-time/` をHTTPまたはHTTPS配信できます（仕様書5.1.3）。配布ZIPには開発用の `tools/` は含めません。
+組織のサーバーで共有する場合は、従来どおり任意の静的配信サーバーで `parallel-work-time/アプリ内部（変更しないでください）/` をHTTPまたはHTTPS配信できます（仕様書5.1.3）。配布ZIPには開発用の `tools/` は含めません。
 
 ソースを取得している場合は、付属サーバーで展開先を配信して確認できます。
 
 ```powershell
-mise exec -- node tools/static-server.mjs --root dist/parallel-work-time
+mise exec -- node tools/static-server.mjs --root "dist/parallel-work-time/アプリ内部（変更しないでください）"
 ```
 
 ## 開発方針
