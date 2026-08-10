@@ -26,6 +26,9 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
   use: {
     baseURL: BASE_URL,
+    // 対応業務は日本時間を前提とする。runner のローカルタイムゾーンへ委ねると、
+    // 固定時計の現在時刻と datetime-local の壁時計入力がCI（UTC）で9時間ずれる。
+    timezoneId: 'Asia/Tokyo',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
