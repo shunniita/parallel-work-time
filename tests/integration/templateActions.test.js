@@ -18,8 +18,9 @@ import { SAVE_STATE, createPersistence } from '../../src/app/persistence.js';
 import { MemoryAdapter } from '../../src/storage/MemoryAdapter.js';
 import { IndexedDbAdapter } from '../../src/storage/IndexedDbAdapter.js';
 import { ENTITY_TYPE, STORAGE_ERROR_KIND, StorageError } from '../../src/storage/StorageAdapter.js';
-import { activeTemplates } from '../../src/domain/templateOps.js';
+import { toIsoSecond } from '../../src/domain/datetime.js';
 import { validateImportPayload } from '../../src/domain/schema.js';
+import { activeTemplates } from '../../src/domain/templateOps.js';
 import { SCHEMA_VERSION, createDefaultSettings } from '../../src/config.js';
 
 const FIXED_NOW = new Date('2026-07-31T01:00:00Z');
@@ -79,7 +80,7 @@ describe('templateActions', () => {
     it('createdAt に現在日時を入れる', async () => {
       const { template } = await createTemplate(deps, draft());
 
-      expect(template.createdAt).toBe('2026-07-31T10:00:00+09:00');
+      expect(template.createdAt).toBe(toIsoSecond(FIXED_NOW));
     });
 
     it('保存成功を通知する（仕様書9.1）', async () => {

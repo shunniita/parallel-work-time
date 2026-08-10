@@ -273,7 +273,7 @@ describe('createIntervalEntryForm', () => {
 
       expect(view.onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({
-          endAt: toIsoSecond(new Date(2026, 6, 30, 18, 0, 0)),
+          endAt: '2026-07-30T18:00:00+09:00',
         }),
       );
     });
