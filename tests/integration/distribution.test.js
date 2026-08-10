@@ -17,7 +17,9 @@ import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  CONTENT_MAPPINGS,
   CONTENTS,
+  INTERNAL_DIR,
   MANIFEST_PATH,
   ROOT,
   STAGE_DIR,
@@ -39,12 +41,26 @@ import { createZip, extractZip, readZipEntries } from '../../tools/zip.mjs';
  *
  * @returns {string[]} リポジトリルートからの相対パス（`/` 区切り、名前順）
  */
-function trackedFiles() {
+function trackedSourceFiles() {
   const listed = execFileSync('git', ['ls-files', '-z', '--', ...CONTENTS], {
     cwd: ROOT,
     encoding: 'utf8',
   });
   return listed.split('\0').filter((line) => line !== '').sort();
+}
+
+function distributionPath(sourcePath) {
+  const mapping = CONTENT_MAPPINGS.find(
+    ({ source }) => sourcePath === source || sourcePath.startsWith(`${source}/`),
+  );
+  if (mapping === undefined) {
+    throw new Error(`配布先が定義されていません: ${sourcePath}`);
+  }
+  return `${mapping.destination}${sourcePath.slice(mapping.source.length)}`;
+}
+
+function trackedFiles() {
+  return trackedSourceFiles().map(distributionPath).sort();
 }
 
 describe('配布物の組み立て', () => {
@@ -71,7 +87,8 @@ describe('配布物の組み立て', () => {
   it('収録するのは採用リストのものだけである（F12-15）', () => {
     // 除外すべきものを列挙するのではなく、置いたものが採用リストと一致することを
     // 断定する。新しい開発時ファイルが増えても自動的に落ちる。
-    expect(readdirSync(STAGE_DIR).sort()).toEqual([...CONTENTS].sort());
+    const rootEntries = CONTENT_MAPPINGS.map(({ destination }) => destination.split('/')[0]);
+    expect(readdirSync(STAGE_DIR).sort()).toEqual([...new Set(rootEntries)].sort());
   });
 
   it('採用ディレクトリの配下まで、Git管理下のファイルと一致する（F12-31）', () => {
@@ -84,6 +101,16 @@ describe('配布物の組み立て', () => {
     );
 
     expect(staged).toEqual(tracked);
+  });
+
+  it('移動したファイルの内容は配布元と同一である', () => {
+    for (const sourcePath of trackedSourceFiles()) {
+      const stagedPath = join(STAGE_DIR, ...distributionPath(sourcePath).split('/'));
+      expect(
+        readFileSync(stagedPath).equals(readFileSync(join(ROOT, sourcePath))),
+        `${sourcePath} の内容が移動時に変わった`,
+      ).toBe(true);
+    }
   });
 
   it('展開すると全ファイルがマニフェストと一致する（F12-23）', () => {
@@ -127,7 +154,7 @@ describe('段取りのみの実行（F12-23）', () => {
   it('stage() はZIPを作らずに配信できる状態を作る', () => {
     stage();
 
-    expect(existsSync(join(STAGE_DIR, 'index.html'))).toBe(true);
+    expect(existsSync(join(STAGE_DIR, INTERNAL_DIR, 'index.html'))).toBe(true);
     expect(existsSync(ZIP_PATH)).toBe(false);
   });
 });
