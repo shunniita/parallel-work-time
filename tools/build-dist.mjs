@@ -54,6 +54,7 @@ export const MANIFEST_PATH = join(OUT_DIR, 'manifest.json');
 export const CONTENTS = [
   'start-local.cmd',
   '_local-server.ps1',
+  'local-settings.txt',
   'index.html',
   'src',
   'data',
@@ -203,6 +204,7 @@ function main() {
   console.log(`SHA-256: ${result.zipSha256}`);
   console.log(`マニフェスト: ${MANIFEST_PATH}`);
   console.log('Windows 11では、展開後に start-local.cmd をダブルクリックして起動できます。');
+  console.log('ポートを変える場合は、起動前に local-settings.txt の数字を変更してください。');
 }
 
 // 直接実行されたときだけ組み立てる。試験は関数として呼ぶ。

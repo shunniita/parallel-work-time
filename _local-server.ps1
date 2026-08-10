@@ -12,6 +12,41 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($PSScriptRoot)
 $rootPrefix = $root.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+$settingsPath = Join-Path $root 'local-settings.txt'
+
+function Read-ConfiguredPort {
+    if (-not (Test-Path -LiteralPath $settingsPath -PathType Leaf)) {
+        return 4173
+    }
+
+    $settings = @(
+        Get-Content -LiteralPath $settingsPath -Encoding UTF8 |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -ne '' -and -not $_.StartsWith('#') }
+    )
+    if ($settings.Count -ne 1 -or $settings[0] -notmatch '^port\s*=\s*([0-9]{1,5})$') {
+        throw 'port=数字 の行を1行だけ指定してください。'
+    }
+
+    $configuredPort = [int]$Matches[1]
+    if ($configuredPort -lt 1024 -or $configuredPort -gt 65535) {
+        throw 'ポートは1024～65535の範囲で指定してください。'
+    }
+    return $configuredPort
+}
+
+if (-not $PSBoundParameters.ContainsKey('Port')) {
+    try {
+        $Port = Read-ConfiguredPort
+    } catch {
+        Write-Host 'PWT_SETTINGS_INVALID'
+        Write-Host 'local-settings.txt の内容が正しくありません。'
+        Write-Host $_.Exception.Message
+        Write-Host '設定を直してから、start-local.cmd をもう一度ダブルクリックしてください。'
+        exit 3
+    }
+}
+
 $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, $Port)
 
 $mimeTypes = @{
@@ -167,6 +202,7 @@ try {
     $url = "http://127.0.0.1:$actualPort/"
     Write-Host "PWT_SERVER_READY $url"
     Write-Host 'Parallel Work Time を起動しました。'
+    Write-Host "使用ポート: $actualPort（設定ファイル: local-settings.txt）"
     Write-Host "ブラウザーが開かない場合は、次のURLを開いてください: $url"
     Write-Host 'この黒い画面を閉じると、アプリも終了します。利用中は閉じないでください。'
 

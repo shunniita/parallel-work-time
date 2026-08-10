@@ -87,7 +87,7 @@ A-15 の後半「サンプル以外のデータがリポジトリへ保存され
 | 性能目標の実測（区間2,000件の集計を含む） | 13章 | `performance.spec.js` |
 | 配布物だけでの起動・保存・エクスポート | 14章、5.1.3 | `distribution.spec.js` |
 | 配布ZIPの存在・展開・マニフェスト照合・再現性 | 14章、5.1.5 | `distribution.test.js` |
-| Windows標準機能でのローカル起動・固定ポート・配信範囲・パストラバーサル防止 | 5.1.3、5.1.5 | `localLauncher.test.js` |
+| Windows標準機能でのローカル起動・永続ポート設定・競合時の固定・配信範囲・パストラバーサル防止 | 5.1.3、5.1.5 | `localLauncher.test.js` |
 | 狭幅での崩壊回避 | 13章 | `warnings.spec.js` |
 | 未終了区間の警告領域としきい値再評価 | 8.8 | `warnings.spec.js` |
 | ツリーのキーボード操作 | 13章 | `warnings.spec.js`、`tree.test.js` |

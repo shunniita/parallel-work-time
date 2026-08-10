@@ -659,18 +659,18 @@ Fableが追加した `manual/` の4分冊、入口、スクリーンショット
 
 利用者向けの開始操作を「Pythonを用意してコマンドを入力する」から「ZIPを展開して `start-local.cmd` をダブルクリックする」へ変更した。実装はWindows 11標準のWindows PowerShellを内部で使用し、Python、Node.js、管理者権限を要求しない。サーバー実装の詳細は初心者向け手順から分離し、組織の実行ポリシーでPowerShellが禁止される環境には静的サーバー配置を代替手段として残した。
 
-データ保存先はオリジン単位であるため、ローカルURLは `http://127.0.0.1:4173/` に固定した。ポート使用中に別ポートへ自動変更すると保存済みデータが消えたように見えるため、理由を表示して終了する。配信はループバックに限定し、GET/HEAD以外、未知のファイル形式、配布フォルダー外へ正規化されるパスを拒否する。
+データ保存先はオリジン単位であるため、既定のローカルURLは `http://127.0.0.1:4173/` とした。利用者は `local-settings.txt` でポートを明示的・永続的に変更できるが、変更前のJSONバックアップと、更新時の設定引継ぎを説明書で要求する。ポート使用中に別ポートへ自動変更すると保存済みデータが消えたように見えるため、理由を表示して終了する。配信はループバックに限定し、GET/HEAD以外、未知のファイル形式、配布フォルダー外へ正規化されるパスを拒否する。
 
 ### 18.1 再検証
 
 | 種別 | 結果 |
 | ---- | ---- |
-| Windowsローカル起動 | Windows PowerShell 5.1とCMDを実際に起動する5件が成功。日本語・空白パス、GET/HEAD、MIME、ポート競合、パストラバーサル防止、Python/Node.js非依存を確認 |
-| 単体・結合・coverage | 62ファイル / 1,564件 成功。Statements 85.93% / Branches 82.71% / Functions 84.75% / Lines 85.76% |
+| Windowsローカル起動 | Windows PowerShell 5.1とCMDを実際に起動する6件が成功。日本語・空白パス、GET/HEAD、MIME、永続ポート設定、不正値・競合時の失敗、パストラバーサル防止、Python/Node.js非依存を確認 |
+| 単体・結合・coverage | 62ファイル / 1,565件 成功。Statements 85.93% / Branches 82.71% / Functions 84.75% / Lines 85.76% |
 | Playwright E2E（Chromium） | 140件 成功 |
 | Playwright E2E（Firefox） | 140件 成功 |
-| 配布物 | `npm run dist` 成功。起動ファイル2点を含む96ファイル。ZIP SHA-256 `3b994ac2fe057c1cd7a3ea683e5de70bb9c48bb2dcfc9d07b91e3a2054e68fea` |
-| Windows標準展開 | Windows PowerShell 5.1の `Expand-Archive` で展開し、manifestの件数・サイズ・SHA-256が96件すべて一致。不一致0件 |
+| 配布物 | `npm run dist` 成功。起動ファイル2点と設定ファイルを含む97ファイル。ZIP SHA-256 `4309482f1264354611965beaf5e5f2a97d9fa9ed94e564bd8c8c38261802284b` |
+| Windows標準展開 | Windows PowerShell 5.1の `Expand-Archive` で展開し、manifestの件数・サイズ・SHA-256が97件すべて一致。不一致0件。展開物が設定値4173を読み、HTTP 200を返すことを確認 |
 
 ### 18.2 版数 1.9 時点のレビュー判断
 

@@ -306,6 +306,7 @@ mise exec -- npx playwright test --project=chromium --grep "性能目標"
 ```text
 start-local.cmd
 _local-server.ps1
+local-settings.txt
 index.html
 src/
 data/
@@ -336,6 +337,8 @@ ZIPはNodeの標準機能だけで作ります。外部の圧縮コマンドを�
 ### 展開後の起動
 
 Windows 11では、ZIPを展開して `start-local.cmd` をダブルクリックします。Windows標準のPowerShellだけを使って `127.0.0.1:4173` へ配信し、ブラウザーを開きます。Python、Node.js、管理者権限は不要です。利用中は開いたコマンド画面を閉じないでください。
+
+既定ポートを変更する場合は、起動前に `local-settings.txt` の `port=4173` の数字だけを `1024`〜`65535` の範囲で編集します。指定値は次回以降も維持され、使用中でも別ポートへ自動変更しません。ポート変更はブラウザーの保存先URLも変えるため、変更前にJSONをエクスポートしてください。
 
 組織のサーバーで共有する場合は、従来どおり任意の静的配信サーバーで `parallel-work-time/` をHTTPまたはHTTPS配信できます（仕様書5.1.3）。配布ZIPには開発用の `tools/` は含めません。
 
