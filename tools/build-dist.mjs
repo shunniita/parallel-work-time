@@ -51,7 +51,15 @@ export const ZIP_PATH = join(OUT_DIR, `${STAGE_NAME}.zip`);
 export const MANIFEST_PATH = join(OUT_DIR, 'manifest.json');
 
 /** 配布物へ含めるもの。ここに無いものは入らない。 */
-export const CONTENTS = ['index.html', 'src', 'data', 'licenses', 'LICENSE', 'README.md'];
+export const CONTENTS = [
+  'index.html',
+  'src',
+  'data',
+  'licenses',
+  'LICENSE',
+  'README.md',
+  'manual',
+];
 
 /**
  * 配布物のファイルを `dist/parallel-work-time/` へ写す。
