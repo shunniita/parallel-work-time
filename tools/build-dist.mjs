@@ -52,6 +52,9 @@ export const MANIFEST_PATH = join(OUT_DIR, 'manifest.json');
 
 /** 配布物へ含めるもの。ここに無いものは入らない。 */
 export const CONTENTS = [
+  'start-local.cmd',
+  '_local-server.ps1',
+  'local-settings.txt',
   'index.html',
   'src',
   'data',
@@ -200,7 +203,8 @@ function main() {
   console.log(`収録ファイル数: ${result.fileCount}`);
   console.log(`SHA-256: ${result.zipSha256}`);
   console.log(`マニフェスト: ${MANIFEST_PATH}`);
-  console.log('展開後は file:// で開かず、静的配信サーバーで配信してください（仕様書5.1.3）。');
+  console.log('Windows 11では、展開後に start-local.cmd をダブルクリックして起動できます。');
+  console.log('ポートを変える場合は、起動前に local-settings.txt の数字を変更してください。');
 }
 
 // 直接実行されたときだけ組み立てる。試験は関数として呼ぶ。
