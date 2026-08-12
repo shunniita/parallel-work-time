@@ -450,7 +450,7 @@ export function createTaskDetailView({
       description:
         'この実施回は集計済みです。作業を再開すると未終了の区間ができるため、' +
         '実施回を作業中へ戻します。',
-      note: '転記値は作業を終了するまで未確定になります（仕様書8.6.5）。',
+      note: '転記値は作業を終了するまで未確定になります。',
       confirmLabel: '再開する',
       testidPrefix: 'resume',
       onConfirm: () => local.resumeConfirm.retry(),

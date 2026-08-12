@@ -59,7 +59,7 @@ export function createReasonConfirm({
   const verb = action.verb ?? '削除';
   const noun = action.noun ?? verb;
   const danger = action.danger ?? true;
-  const reasonHint = action.reasonHint ?? '必須です。変更履歴に記録されます（仕様書11章）。';
+  const reasonHint = action.reasonHint ?? '必須です。変更履歴に記録されます。';
 
   const reasonInput = el('textarea', {
     class: 'input',
@@ -118,7 +118,7 @@ export function createReasonConfirm({
   async function submit() {
     const reason = reasonInput.value.trim();
     if (reason === '') {
-      showErrors(['理由: 必須項目である（仕様書11章）']);
+      showErrors(['理由: 必須項目である']);
       reasonInput.focus();
       return;
     }

@@ -328,7 +328,7 @@ function validateProjectGroup(group, path, problems) {
   if (!isIntegerInRange(group.totalQuantity, MAX_QUANTITY)) {
     problems.add(
       `${path}.totalQuantity`,
-      `1以上 ${MAX_QUANTITY} 以下の整数である必要がある（仕様書8.9.2）`,
+      `1以上 ${MAX_QUANTITY} 以下の整数である必要がある`,
     );
   }
   validateTimestamps(group, path, problems);
@@ -347,7 +347,7 @@ function validateWorkRun(run, path, problems) {
   if (!isIntegerInRange(run.runQuantity, MAX_QUANTITY)) {
     problems.add(
       `${path}.runQuantity`,
-      `1以上 ${MAX_QUANTITY} 以下の整数である必要がある（仕様書8.9.2）`,
+      `1以上 ${MAX_QUANTITY} 以下の整数である必要がある`,
     );
   }
   if (!Object.values(RUN_STATUS).includes(run.status)) {
@@ -422,7 +422,7 @@ function validateInterval(interval, path, problems) {
     interval.participants.length === 0
   ) {
     // work のみ0人を禁止する。break は0人を許す（仕様書8.9.4）。
-    problems.add(`${path}.participants`, 'work 区間は1人以上必要（仕様書8.9.4）');
+    problems.add(`${path}.participants`, 'work 区間は1人以上必要');
   }
   validateTimestamps(interval, path, problems);
 }
@@ -435,12 +435,12 @@ function validateDirectEntry(entry, path, problems) {
   if (!isNonNegativeIntegerInRange(entry.seconds, MAX_DIRECT_ENTRY_SECONDS)) {
     problems.add(
       `${path}.seconds`,
-      `0以上 ${MAX_DIRECT_ENTRY_SECONDS} 以下の整数である必要がある（仕様書8.5.5）`,
+      `0以上 ${MAX_DIRECT_ENTRY_SECONDS} 以下の整数である必要がある`,
     );
   }
   validateParticipantArray(entry.participants, `${path}.participants`, problems);
   if (!isNormalizedString(entry.note)) {
-    problems.add(`${path}.note`, `備考は必須（仕様書8.5.4）。${NORMALIZED_STRING_MESSAGE}`);
+    problems.add(`${path}.note`, `備考は必須。${NORMALIZED_STRING_MESSAGE}`);
   }
   validateTimestamps(entry, path, problems);
 }
@@ -466,7 +466,7 @@ function validateHistoryEntry(entry, path, problems) {
     problems.add(`${path}.summary`, `${MAX_SUMMARY_LENGTH} 文字以内の文字列である必要がある`);
   }
   if (!isNormalizedString(entry.reason)) {
-    problems.add(`${path}.reason`, `理由は必須（仕様書11章）。${NORMALIZED_STRING_MESSAGE}`);
+    problems.add(`${path}.reason`, `理由は必須。${NORMALIZED_STRING_MESSAGE}`);
   }
 }
 

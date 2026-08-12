@@ -81,7 +81,7 @@ export function assertEditable(workRun) {
 export function assertRunEffortWithinRange(workRun) {
   if (!isEffortWithinRange(runTotalSeconds(workRun))) {
     throw new ValidationError([
-      `実施回: 合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える（仕様書8.9.12）`,
+      `実施回: 合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える`,
     ]);
   }
 }

@@ -127,14 +127,13 @@ describe('buildSeedTemplates()', () => {
     );
   });
 
-  it('externalCode 未設定は null になる（仕様書8.7.4）', async () => {
+  it('サンプルの作業項目には確認用の externalCode がすべて設定されている', async () => {
     const templates = buildSeedTemplates(await readSample(), '2026-07-30T18:00:00+09:00');
     const codes = templates.flatMap((template) =>
       template.tasks.map((task) => task.externalCode),
     );
 
-    expect(codes).toContain(null);
-    expect(codes.every((code) => code === null || typeof code === 'string')).toBe(true);
+    expect(codes.every((code) => typeof code === 'string' && code !== '')).toBe(true);
   });
 
   it('schemaVersion が現行値と違うサンプルは拒否する', () => {
