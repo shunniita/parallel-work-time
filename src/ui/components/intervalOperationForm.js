@@ -55,7 +55,7 @@ function describeOperation(operation, active) {
         return '進行中の休憩が見つかりません。画面を更新してからやり直してください。';
       }
       return inherited.length === 0
-        ? '直前の休憩は参加者0人です。作業区間は1人以上必要なため、再開する参加者を入力してください（仕様書8.9.4）。'
+        ? '直前の休憩は参加者0人です。作業区間は1人以上必要なため、再開する参加者を入力してください。'
         : `進行中の休憩をこの日時で終了し、同じ日時から作業を再開します。参加者（${inherited.join('、')}）を引き継ぎます。`;
     case TASK_OPERATION.FINISH:
       return '進行中の区間をこの日時で終了します。新しい区間は作りません。';
@@ -63,7 +63,7 @@ function describeOperation(operation, active) {
       if (active === null) {
         return '進行中の区間が見つかりません。画面を更新してからやり直してください。';
       }
-      return '進行中の区間をこの日時で終了し、新しい参加者一覧で同じ種別の区間を同じ日時から開始します（仕様書8.4.10）。';
+      return '進行中の区間をこの日時で終了し、新しい参加者一覧で同じ種別の区間を同じ日時から開始します。';
     default:
       return '';
   }

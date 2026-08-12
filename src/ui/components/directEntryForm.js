@@ -56,7 +56,7 @@ export function createDirectEntryForm({
     id: `${idPrefix}-participants`,
     testid: 'direct-participants',
     label: '参加者',
-    hint: '任意です。誰の分かを後から照合するために残します（仕様書6.8）。',
+    hint: '任意です。誰の分かを後から照合するために残します。',
     candidates,
     value: entry?.participants ?? [],
   });
@@ -158,7 +158,7 @@ export function createDirectEntryForm({
         : el('p', {
             class: 'note',
             text:
-              '計測し損ねた工数を後から足します（仕様書8.5）。' +
+              '計測し損ねた工数を後から足します。' +
               '入力した値に参加者数は掛けません。',
           }),
       duration.element,
@@ -166,7 +166,7 @@ export function createDirectEntryForm({
       field({
         id: `${idPrefix}-note`,
         label: '備考',
-        hint: '必須です。何の工数を足したのかを残します（仕様書8.5.4）。',
+        hint: '必須です。何の工数を足したのかを残します。',
         input: noteInput,
       }),
       el('div', { class: 'actions' }, [submitButton, cancelButton]),

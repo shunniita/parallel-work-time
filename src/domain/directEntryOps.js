@@ -82,7 +82,7 @@ function accepted(problems, taskRecord, directEntries, extra = {}) {
   if (!isEffortWithinRange(total)) {
     problems.add(
       '追加工数',
-      `作業項目の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える（仕様書8.9.12）。`,
+      `作業項目の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える。`,
     );
     return rejected(problems);
   }
@@ -107,7 +107,7 @@ function checkSeconds(problems, seconds, { allowZero = false } = {}) {
     return false;
   }
   if (seconds < 0) {
-    problems.add('追加工数', '負の値は登録できない（仕様書8.5.5）');
+    problems.add('追加工数', '負の値は登録できない');
     return false;
   }
   if (seconds === 0 && !allowZero) {
@@ -131,7 +131,7 @@ function checkSeconds(problems, seconds, { allowZero = false } = {}) {
  */
 function checkNote(problems, note) {
   if (typeof note !== 'string' || note.trim() === '') {
-    problems.add('備考', '必須項目である（仕様書8.5.4）');
+    problems.add('備考', '必須項目である');
     return false;
   }
   if (note.trim().length > MAX_TEXT_LENGTH) {
@@ -228,7 +228,7 @@ function addDuplicateWarning(problems, taskRecord, candidate, excludeEntryId) {
     DIRECT_ENTRY_WARNING.DUPLICATE_CANDIDATE,
     '直接入力',
     `同じ参加者（${who}）・同じ追加工数（${formatSeconds(candidate.seconds)}）の記録が` +
-      `既に ${duplicates.length} 件ある。二重登録でなければ、そのままでよい（仕様書8.9.8）。`,
+      `既に ${duplicates.length} 件ある。二重登録でなければ、そのままでよい。`,
   );
 }
 

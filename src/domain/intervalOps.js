@@ -97,7 +97,7 @@ function checkEffortRange(problems, taskRecord) {
   problems.add(
     '作業区間',
     `作業項目の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える。` +
-      '期間または参加者数を見直す（仕様書8.9.12）。',
+      '期間または参加者数を見直す。',
   );
   return false;
 }
@@ -120,7 +120,7 @@ function addOverlapWarning(problems, intervals) {
     INTERVAL_WARNING.OVERLAP,
     '作業区間',
     `時間帯が重なる組が ${pairs.length} 組ある。別のグループが同じ作業項目を` +
-      '同時並行で実施した記録であれば、そのままでよい（仕様書8.9.5）。',
+      '同時並行で実施した記録であれば、そのままでよい。',
   );
 }
 
@@ -131,7 +131,7 @@ function addOverlapWarning(problems, intervals) {
  */
 function checkIso(problems, path, value) {
   if (!isValidIsoSecond(value)) {
-    problems.add(path, 'オフセット付きISO 8601（秒精度）の日時が必要である（仕様書8.4.4）');
+    problems.add(path, 'オフセット付きISO 8601（秒精度）の日時が必要である');
     return false;
   }
   return true;
@@ -172,7 +172,7 @@ function checkParticipants(problems, type, participants, path = '参加者') {
     return false;
   }
   if (type === INTERVAL_TYPE.WORK && participants.length === 0) {
-    problems.add(path, '作業区間は1人以上必要である（仕様書8.9.4）');
+    problems.add(path, '作業区間は1人以上必要である');
     return false;
   }
   // 人数は工数へそのまま掛かる（仕様書8.6.1）。
@@ -208,7 +208,7 @@ function checkType(problems, type, path = '区間種別') {
  */
 function checkOrder(problems, startAt, endAt, path = '終了日時') {
   if (compareIso(endAt, startAt) < 0) {
-    problems.add(path, '開始日時以降である必要がある（仕様書8.9.3）');
+    problems.add(path, '開始日時以降である必要がある');
     return false;
   }
   return true;
@@ -457,7 +457,7 @@ export function addInterval(taskRecord, input, context) {
   if (input.endAt === null || input.endAt === undefined) {
     problems.add(
       '終了日時',
-      '手動追加では必須である。未終了の区間はボタン操作でのみ生じる（仕様書8.4 補足1）',
+      '手動追加では必須である。未終了の区間はボタン操作でのみ生じる',
     );
   } else {
     endValid = checkIso(problems, '終了日時', input.endAt);

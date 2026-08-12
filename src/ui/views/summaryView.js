@@ -286,7 +286,7 @@ export function createSummaryView({
         verb: '取り消',
         noun: '取り消し',
         reasonHint:
-          '必須です。変更履歴に記録されます（仕様書11章）。外部の記録先を直した理由を残します。',
+          '必須です。変更履歴に記録されます。外部の記録先を直した理由を残します。',
       },
       preview: {
         description:
@@ -438,7 +438,7 @@ export function createSummaryView({
           dataset: { testid: 'inconsistent-state-warning' },
           text:
             `集計済みですが未終了の作業区間が ${aggregate.openCount} 件あります。` +
-            '「作業中へ戻す」を押してから区間を終了してください（仕様書7.1）。',
+            '「作業中へ戻す」を押してから区間を終了してください。',
         }),
       );
     }
@@ -449,7 +449,7 @@ export function createSummaryView({
           dataset: { testid: 'missing-code-warning' },
           text:
             `外部項目コードが未設定の作業項目が ${aggregate.missingExternalCodeCount} 件あります` +
-            '（仕様書8.7.4）。転記先を決められないため、コピーには含めません。',
+            '。転記先を決められないため、コピーには含めません。',
         }),
       );
     }
@@ -570,7 +570,7 @@ export function createSummaryView({
           dataset: { testid: 'check-note' },
           text:
             '右端のチェックは転記作業の目印です。保存しないため、再読み込みすると消えます'
-            + '（仕様書8.7.5）。',
+            + '。',
         }),
         renderTotals(aggregate),
       ]),

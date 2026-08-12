@@ -139,7 +139,7 @@ export function canDeleteRun(run, options) {
     return {
       ok: false,
       reason:
-        '実施回: アーカイブ済みのものだけ削除できる（仕様書7.1）。' +
+        '実施回: アーカイブ済みのものだけ削除できる。' +
         '先に転記済みからアーカイブへ移す。',
     };
   }
@@ -148,7 +148,7 @@ export function canDeleteRun(run, options) {
     return {
       ok: false,
       reason:
-        `実施回: 保持期間が残っているため削除できない（仕様書7.1、10.3）。` +
+        '実施回: 保持期間が残っているため削除できない。' +
         `削除候補になるまであと${remaining}日。設定で保持期間を短くすれば早められる。`,
     };
   }
@@ -175,7 +175,7 @@ export function canDeleteProjectGroup(runs, options) {
       ok: false,
       reason:
         `案件: アーカイブ済みでない実施回が ${active.length} 件ある。` +
-        'すべてアーカイブしてから案件を削除する（仕様書10.4）。',
+        'すべてアーカイブしてから案件を削除する。',
     };
   }
   const keeping = runs.filter((run) => !isDeletable(run, options));
@@ -184,7 +184,7 @@ export function canDeleteProjectGroup(runs, options) {
       ok: false,
       reason:
         `案件: 保持期間が残っている実施回が ${keeping.length} 件ある。` +
-        'すべて削除候補になってから案件を削除する（仕様書7.1、10.3）。',
+        'すべて削除候補になってから案件を削除する。',
     };
   }
   return { ok: true, reason: null };
