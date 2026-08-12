@@ -256,8 +256,33 @@ describe.runIf(process.platform === 'win32')('Windowsローカル起動機能', 
     expect(await waitForExit(child)).toBe(0);
   });
 
+  it('コードページ932でも日本語の内部フォルダーを文字化けさせず起動できる', async () => {
+    const port = await findFreePort();
+    const settings = readFileSync(join(ROOT, 'local-settings.txt'), 'utf8').replace(
+      'port=4173',
+      `port=${port}`,
+    );
+    writeFileSync(join(appRoot, 'local-settings.txt'), settings);
+    const child = spawn(
+      CMD,
+      [
+        '/d',
+        '/s',
+        '/c',
+        'chcp 932 > nul & call .\\start-local.cmd -NoBrowser -Once',
+      ],
+      { cwd: appRoot, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const { match } = await waitForMarker(child, READY);
+    expect(new URL(match[1]).port).toBe(String(port));
+    expect((await fetch(match[1])).status).toBe(200);
+    expect(await waitForExit(child)).toBe(0);
+  });
+
   it('利用者にPythonやNode.jsのインストールを要求しない', () => {
-    const cmd = readFileSync(join(ROOT, 'start-local.cmd'), 'utf8').toLowerCase();
+    const source = readFileSync(join(ROOT, 'start-local.cmd'));
+    expect(source.every((byte) => byte <= 0x7f)).toBe(true);
+    const cmd = source.toString('ascii').toLowerCase();
     expect(cmd).toContain('powershell.exe');
     expect(cmd).not.toContain('python');
     expect(cmd).not.toContain('node');
