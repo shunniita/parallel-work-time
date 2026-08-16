@@ -39,7 +39,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createZip, extractZip } from './zip.mjs';
@@ -50,6 +50,9 @@ export const STAGE_NAME = 'parallel-work-time';
 export const STAGE_DIR = join(OUT_DIR, STAGE_NAME);
 export const ZIP_PATH = join(OUT_DIR, `${STAGE_NAME}.zip`);
 export const MANIFEST_PATH = join(OUT_DIR, 'manifest.json');
+// manifest.json はZIP「の中身」を照合するためのもので、ダウンロードしたZIP自体が
+// 途中で壊れていないかは確かめられない。配布先へ添える照合用にZIPのハッシュを別に出す。
+export const SHA256SUMS_PATH = join(OUT_DIR, 'SHA256SUMS.txt');
 export const INTERNAL_DIR = 'アプリ内部（変更しないでください）';
 export const MANUAL_PDF_SOURCE = 'output/pdf/parallel-work-time-manual.pdf';
 export const MANUAL_PDF_DESTINATION = '取扱説明書.pdf';
@@ -184,11 +187,15 @@ export function buildDistribution() {
 
   verifyZip(zip, manifest);
 
+  const zipSha256 = sha256(zip);
+  // `sha256sum -c` がそのまま読める形（ハッシュ、空白2つ、ファイル名）で書く。
+  writeFileSync(SHA256SUMS_PATH, `${zipSha256}  ${basename(ZIP_PATH)}\n`);
+
   return {
     stageDir,
     zipPath: ZIP_PATH,
     fileCount: files.length,
-    zipSha256: sha256(zip),
+    zipSha256,
   };
 }
 
@@ -230,6 +237,7 @@ function main() {
   console.log(`収録ファイル数: ${result.fileCount}`);
   console.log(`SHA-256: ${result.zipSha256}`);
   console.log(`マニフェスト: ${MANIFEST_PATH}`);
+  console.log(`ZIPの照合用ハッシュ: ${SHA256SUMS_PATH}`);
   console.log('Windows 11では、展開後に start-local.cmd をダブルクリックして起動できます。');
   console.log('ポートを変える場合は、起動前に local-settings.txt の数字を変更してください。');
 }
