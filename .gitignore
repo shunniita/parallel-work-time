@@ -17,6 +17,10 @@ blob-report/
 # 配布ZIPの組み立て先（仕様書14章）。生成物なのでコミットしない。
 dist/
 
+# 説明書PDFと、その生成途中のHTML・Markdown。
+output/
+tmp/
+
 # 開発者ごとの設定。共有しない
 .claude/settings.local.json
 

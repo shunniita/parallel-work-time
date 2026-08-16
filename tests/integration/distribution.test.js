@@ -20,6 +20,7 @@ import {
   CONTENT_MAPPINGS,
   CONTENTS,
   INTERNAL_DIR,
+  MANUAL_PDF_DESTINATION,
   MANIFEST_PATH,
   ROOT,
   STAGE_DIR,
@@ -63,6 +64,13 @@ function trackedFiles() {
   return trackedSourceFiles().map(distributionPath).sort();
 }
 
+function generatedFiles() {
+  return CONTENT_MAPPINGS
+    .filter(({ generated }) => generated === true)
+    .map(({ destination }) => destination)
+    .sort();
+}
+
 function localTargets(markdownPath) {
   const markdown = readFileSync(markdownPath, 'utf8');
   return [...markdown.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)]
@@ -79,11 +87,12 @@ describe('配布物の組み立て', () => {
   /** @type {{fileCount: number, files: {path: string, bytes: number, sha256: string}[]}} */
   let manifest;
 
+  // 取扱説明書PDFの生成（Chromium起動）を含むため、既定の10秒では足りない。
   beforeAll(() => {
     result = buildDistribution();
     zip = readFileSync(ZIP_PATH);
     manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-  });
+  }, 120_000);
 
   it('ZIPとマニフェストを作る', () => {
     expect(existsSync(ZIP_PATH)).toBe(true);
@@ -108,7 +117,7 @@ describe('配布物の組み立て', () => {
       file.name.slice(`${STAGE_NAME}/`.length),
     );
 
-    expect(staged).toEqual(tracked);
+    expect(staged).toEqual([...tracked, ...generatedFiles()].sort());
   });
 
   it('移動したファイルの内容は配布元と同一である', () => {
@@ -126,6 +135,13 @@ describe('配布物の組み立て', () => {
     const missing = localTargets(readme).filter((target) => !existsSync(target));
 
     expect(missing).toEqual([]);
+  });
+
+  it('ルート直下にPDFの取扱説明書を収録する', () => {
+    const manual = readFileSync(join(STAGE_DIR, MANUAL_PDF_DESTINATION));
+
+    expect(manual.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(manual.length).toBeGreaterThan(50_000);
   });
 
   it('配布READMEは利用者向け情報を先に示し、開発手順を含めない', () => {

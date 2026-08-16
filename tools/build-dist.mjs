@@ -26,6 +26,7 @@
  * 自分自身を記述できないうえ、配布物の中身を変えてしまう。
  */
 
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   cpSync,
@@ -50,6 +51,8 @@ export const STAGE_DIR = join(OUT_DIR, STAGE_NAME);
 export const ZIP_PATH = join(OUT_DIR, `${STAGE_NAME}.zip`);
 export const MANIFEST_PATH = join(OUT_DIR, 'manifest.json');
 export const INTERNAL_DIR = 'アプリ内部（変更しないでください）';
+export const MANUAL_PDF_SOURCE = 'output/pdf/parallel-work-time-manual.pdf';
+export const MANUAL_PDF_DESTINATION = '取扱説明書.pdf';
 
 /** 配布元と配布先の対応。ここに無いものは入らない。 */
 export const CONTENT_MAPPINGS = [
@@ -57,6 +60,7 @@ export const CONTENT_MAPPINGS = [
   { source: 'local-settings.txt', destination: 'local-settings.txt' },
   { source: 'LICENSE', destination: 'LICENSE' },
   { source: 'distribution/README.md', destination: 'README.md' },
+  { source: MANUAL_PDF_SOURCE, destination: MANUAL_PDF_DESTINATION, generated: true },
   { source: 'manual', destination: 'manual' },
   { source: '_local-server.ps1', destination: `${INTERNAL_DIR}/_local-server.ps1` },
   { source: 'index.html', destination: `${INTERNAL_DIR}/index.html` },
@@ -66,7 +70,23 @@ export const CONTENT_MAPPINGS = [
 ];
 
 /** Git管理下の配布元を列挙するときに使う採用リスト。 */
-export const CONTENTS = CONTENT_MAPPINGS.map(({ source }) => source);
+export const CONTENTS = CONTENT_MAPPINGS
+  .filter(({ generated }) => generated !== true)
+  .map(({ source }) => source);
+
+let manualPdfBuilt = false;
+
+/** Markdown原本から、その時点の取扱説明書PDFを作る。 */
+export function ensureManualPdf() {
+  if (manualPdfBuilt && existsSync(join(ROOT, MANUAL_PDF_SOURCE))) {
+    return;
+  }
+  execFileSync(process.execPath, [join(ROOT, 'tools', 'build-manual.mjs')], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  manualPdfBuilt = true;
+}
 
 /**
  * 配布物のファイルを `dist/parallel-work-time/` へ写す。
@@ -74,6 +94,7 @@ export const CONTENTS = CONTENT_MAPPINGS.map(({ source }) => source);
  * @returns {string} ステージングディレクトリ
  */
 export function stage() {
+  ensureManualPdf();
   rmSync(OUT_DIR, { recursive: true, force: true });
   mkdirSync(STAGE_DIR, { recursive: true });
 
