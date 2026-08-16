@@ -37,7 +37,8 @@ import { el, field, replaceChildren } from '../dom.js';
  * @param {{preview: {description: string, deletable: boolean,
  *          blockedReason: string|null}, subject?: string,
  *          action?: {verb?: string, noun?: string, danger?: boolean,
- *                    reasonHint?: string},
+ *                    reasonHint?: string, confirmLabel?: string,
+ *                    cancelLabel?: string},
  *          idPrefix?: string, testidPrefix?: string,
  *          onConfirm: (reason: string) => Promise<unknown>,
  *          onCancel: () => void}} options
@@ -60,6 +61,8 @@ export function createReasonConfirm({
   const noun = action.noun ?? verb;
   const danger = action.danger ?? true;
   const reasonHint = action.reasonHint ?? '必須です。変更履歴に記録されます。';
+  const confirmLabel = action.confirmLabel ?? `${verb}する`;
+  const cancelLabel = action.cancelLabel ?? '取消';
 
   const reasonInput = el('textarea', {
     class: 'input',
@@ -78,7 +81,7 @@ export function createReasonConfirm({
   const confirmButton = el('button', {
     type: 'button',
     class: danger ? 'button button--danger' : 'button button--primary',
-    text: `${verb}する`,
+    text: confirmLabel,
     dataset: { testid: `${testidPrefix}-confirm` },
     disabled: !preview.deletable,
     on: { click: submit },
@@ -87,7 +90,7 @@ export function createReasonConfirm({
   const cancelButton = el('button', {
     type: 'button',
     class: 'button',
-    text: '取消',
+    text: cancelLabel,
     dataset: { testid: `${testidPrefix}-cancel` },
     on: { click: () => onCancel() },
   });

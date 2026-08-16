@@ -27,7 +27,7 @@ import {
 
 /** サンプルの対象種別A / 標準の作業項目（版1）。 */
 const VERSION_1_NAMES = ['受入確認', '前処理', '本作業', '検査', '後片付け'];
-const VERSION_1_CODES = ['X-100', 'X-200', 'X-1000', 'X-1100', '（未設定）'];
+const VERSION_1_CODES = ['X-100', 'X-200', 'X-1000', 'X-1100', 'X-1200'];
 
 test.beforeEach(async ({ page }) => {
   await openFresh(page);
@@ -175,7 +175,7 @@ test('手順4: 外部項目コードの変更も反映される', async ({ page 
     'X-101',
     'X-1000',
     'X-1100',
-    '（未設定）',
+    'X-1200',
     'X-2000',
   ]);
 });

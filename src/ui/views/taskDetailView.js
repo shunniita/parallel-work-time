@@ -983,12 +983,14 @@ export function createTaskDetailView({
               text: task.externalCode ?? '外部項目コード未設定',
             }),
             el('span', { text: ' ／ ' }),
+            el('span', { text: '作業項目 ' }),
             el('span', {
               class: `badge badge--${state}`,
               dataset: { testid: 'task-detail-state' },
               text: TASK_STATE_LABEL[state],
             }),
             el('span', { text: ' ／ ' }),
+            el('span', { text: '実施回 ' }),
             el('span', {
               class: `badge badge--${run.status}`,
               dataset: { testid: 'task-detail-run-status' },

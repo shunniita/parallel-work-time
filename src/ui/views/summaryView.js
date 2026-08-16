@@ -252,7 +252,7 @@ export function createSummaryView({
         el('button', {
           type: 'button',
           class: 'button button--danger',
-          text: '転記済みを取り消す',
+          text: '転記済み状態を解除する',
           dataset: { testid: 'revert-transfer' },
           disabled: local.busy,
           on: {
@@ -281,10 +281,12 @@ export function createSummaryView({
       return null;
     }
     confirmForm = createReasonConfirm({
-      subject: '転記済み',
+      subject: '転記済み状態',
       action: {
-        verb: '取り消',
-        noun: '取り消し',
+        verb: '解除',
+        noun: '解除',
+        confirmLabel: '転記済み状態を解除する',
+        cancelLabel: '戻る',
         reasonHint:
           '必須です。変更履歴に記録されます。外部の記録先を直した理由を残します。',
       },
@@ -300,7 +302,7 @@ export function createSummaryView({
       onConfirm: (reason) =>
         submit(
           () => actions.revertTransfer(run.runId, { reason }),
-          '転記済みを取り消し、集計済みへ戻しました。',
+          '転記済み状態を解除し、集計済みへ戻しました。',
         ),
       onCancel: () => {
         local.reverting = false;

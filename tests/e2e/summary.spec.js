@@ -287,14 +287,14 @@ test('集計済みのまま終了済み区間や直接入力は編集できる�
   await expect(page.getByTestId('mark-transferred')).toBeEnabled();
 });
 
-test('外部項目コード未設定を警告する（仕様書8.7.4）', async ({ page }) => {
-  await setup(page, 'PJ-MISSING');
+test('サンプルの作業項目は外部項目コードを確認できる', async ({ page }) => {
+  await setup(page, 'PJ-CODES');
 
   await openSummary(page);
 
-  // サンプルの「後片付け」は外部項目コードが未設定。
-  await expect(page.getByTestId('missing-code-warning')).toContainText('1 件');
-  await expect(summaryRow(page, '後片付け').getByTestId('summary-code')).toHaveText('（未設定）');
+  // 動作確認中のノイズを避けるため、配布サンプルは全項目にコードを設定している。
+  await expect(page.getByTestId('missing-code-warning')).toHaveCount(0);
+  await expect(summaryRow(page, '後片付け').getByTestId('summary-code')).toHaveText('X-1200');
 });
 
 test('転記値をタブ区切りでコピーできる（仕様書8.7.7）', async ({ page }) => {
@@ -306,13 +306,11 @@ test('転記値をタブ区切りでコピーできる（仕様書8.7.7）', asy
   await openSummary(page);
   await page.getByTestId('copy-transfer').click();
 
-  await expect(page.getByTestId('summary-notice')).toContainText('コピーしました');
-  // 外部項目コード未設定の「後片付け」は含めない。
-  await expect(page.getByTestId('summary-notice')).toContainText('未設定の1件は含めていません');
+  await expect(page.getByTestId('summary-notice')).toHaveText('5件をコピーしました。');
 
   const copied = await clipboard.read();
   expect(copied).toContain('X-100\t10');
-  expect(copied).not.toContain('後片付け');
+  expect(copied).toContain('X-1200\t0');
 });
 
 test('転記済みへ進め、理由を添えて取り消せる（仕様書7.1、8.7.6、11章）', async ({ page }) => {
@@ -338,6 +336,9 @@ test('転記済みへ進め、理由を添えて取り消せる（仕様書7.1�
   await page.getByTestId('revert-transfer').click();
   const confirm = page.getByTestId('revert-confirm-panel');
   await expect(confirm).toBeVisible();
+  await expect(confirm).toContainText('転記済み状態を解除します');
+  await expect(confirm.getByTestId('revert-confirm')).toHaveText('転記済み状態を解除する');
+  await expect(confirm.getByTestId('revert-cancel')).toHaveText('戻る');
   await confirm.getByTestId('revert-confirm').click();
   await expect(confirm.getByTestId('revert-errors')).toContainText('理由');
 
