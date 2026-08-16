@@ -208,11 +208,16 @@ test.describe('作業項目の生成（仕様書8.3、A-01）', () => {
     await expect(page.getByTestId('task-state').first()).toHaveText('未着手');
   });
 
-  test('外部項目コード未設定は注記して表示する（仕様書8.7.4）', async ({ page }) => {
+  test('サンプルの作業項目は外部項目コードを表示する', async ({ page }) => {
     await createRun(page, { workDate: '2026-08-01', runQuantity: 50 });
 
-    // サンプルの「後片付け」は外部項目コードが未設定。
-    await expect(page.getByTestId('task-list')).toContainText('（未設定）');
+    await expect(page.getByTestId('task-code')).toHaveText([
+      'X-100',
+      'X-200',
+      'X-1000',
+      'X-1100',
+      'X-1200',
+    ]);
   });
 
   test('外部項目コード順へ並べ替えられる（仕様書8.7.3）', async ({ page }) => {

@@ -196,6 +196,15 @@ describe('createTaskDetailView', () => {
 
       expect(view.query('task-detail-state').textContent).toBe('休憩中');
     });
+
+    it('作業項目と実施回の状態を区別して示す', () => {
+      const view = mount({ task: TASKS.working() });
+
+      expect(view.query('task-detail-state').previousSibling.textContent).toBe('作業項目 ');
+      expect(view.query('task-detail-run-status').previousSibling.textContent).toBe('実施回 ');
+      expect(view.query('task-detail-state').textContent).toBe('作業中');
+      expect(view.query('task-detail-run-status').textContent).toBe('作業中');
+    });
   });
 
   describe('状態ガード（仕様書7.2）', () => {

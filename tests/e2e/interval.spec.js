@@ -102,11 +102,25 @@ test('T-07 作業・休憩・再開を入力すると休憩が工数へ含まれ
     participants: ['甲', '乙'],
   });
   await operate(page, { task: '受入確認', operation: 'break', at: '2026-08-01T12:00:00' });
-  await operate(page, { task: '受入確認', operation: 'resume', at: '2026-08-01T13:00:00' });
+  const row = taskRow(page, '受入確認');
+  await row.getByTestId('row-op-resume').click();
+  const resumeForm = page.getByTestId('op-form');
+  await expect(
+    resumeForm.locator('[data-testid="op-participants-item"] > span'),
+  ).toHaveText(['甲', '乙']);
+  await resumeForm
+    .getByTestId('op-participants-item')
+    .filter({ hasText: '乙' })
+    .getByTestId('op-participants-remove')
+    .click();
+  await resumeForm.getByTestId('op-participants').fill('丙');
+  await resumeForm.getByTestId('op-participants-add').click();
+  await fillDateTime(resumeForm.getByTestId('op-at'), '2026-08-01T13:00:00');
+  await resumeForm.getByTestId('op-submit').click();
+  await expect(resumeForm).toBeHidden();
   await operate(page, { task: '受入確認', operation: 'finish', at: '2026-08-01T18:00:00' });
 
   // (3時間 + 5時間) × 2人 = 960分。休憩の1時間は入らない。
-  const row = taskRow(page, '受入確認');
   await expect(row.getByTestId('task-state')).toHaveText('完了');
   await expect(row.getByTestId('task-time')).toHaveText('960分');
   await expect(row.getByTestId('task-transfer')).toHaveText('960分');
@@ -115,6 +129,11 @@ test('T-07 作業・休憩・再開を入力すると休憩が工数へ含まれ
   await row.getByTestId('open-task').click();
   await expect(page.getByTestId('interval-row')).toHaveCount(3);
   await expect(page.getByTestId('interval-type')).toHaveText(['作業', '休憩', '作業']);
+  await expect(page.getByTestId('interval-participants')).toHaveText([
+    '甲、乙',
+    '甲、乙',
+    '甲、丙',
+  ]);
   await expect(page.getByTestId('interval-effort')).toHaveText(['360分', '0分', '600分']);
   await expect(page.getByTestId('summary-transfer')).toHaveText('960分');
 });

@@ -389,21 +389,24 @@ describe('createSummaryView', () => {
       });
     });
 
-    it('取消で閉じる', () => {
+    it('確定と中止を区別できる文言にする', () => {
       const view = mount({ status: 'transferred' });
       view.query('revert-transfer').click();
+
+      expect(view.query('revert-confirm').textContent).toBe('転記済み状態を解除する');
+      expect(view.query('revert-cancel').textContent).toBe('戻る');
 
       view.query('revert-cancel').click();
 
       expect(view.query('revert-confirm-panel')).toBeNull();
     });
 
-    it('見出しは削除ではなく取り消しにする', () => {
+    it('見出しは転記済み状態の解除と明示する', () => {
       const view = mount({ status: 'transferred' });
 
       view.query('revert-transfer').click();
 
-      expect(view.container.textContent).toContain('転記済みを取り消します');
+      expect(view.container.textContent).toContain('転記済み状態を解除します');
       expect(view.container.textContent).not.toContain('削除します');
     });
   });
