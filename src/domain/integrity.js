@@ -148,7 +148,7 @@ function checkProjectIdUnique(problems, groups) {
     if (seen.has(projectId)) {
       problems.add(
         `projectGroups[${index}].projectId`,
-        `案件IDが重複している（${projectId}）。案件IDは一意である（仕様書8.2.6）`,
+        `案件IDが重複している（${projectId}）。案件IDは一意である`,
       );
       return;
     }
@@ -171,7 +171,7 @@ function checkTemplateActiveVersions(problems, templates) {
     if (activeByKey.has(key)) {
       problems.add(
         `taskTemplates[${index}]`,
-        `${key} の有効版が2つ以上ある。有効版は1つである（仕様書8.1.1）`,
+        `${key} の有効版が2つ以上ある。有効版は1つである`,
       );
       return;
     }
@@ -397,7 +397,7 @@ function checkEffortRange(problems, run, path) {
       problems.add(
         `${path}.tasks[${taskIndex}]`,
         `合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える。` +
-          '期間または参加者数が現実的な範囲を外れている（仕様書8.9.12）。',
+          '期間または参加者数が現実的な範囲を外れている。',
       );
     }
     runTotal += total;
@@ -406,7 +406,7 @@ function checkEffortRange(problems, run, path) {
   if (!isEffortWithinRange(runTotal)) {
     problems.add(
       path,
-      `実施回の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える（仕様書8.9.12）。`,
+      `実施回の合計工数が上限（${MAX_EFFORT_SECONDS}秒）を超える。`,
     );
   }
 }
@@ -476,10 +476,10 @@ function checkParticipantList(problems, participants, path, requireAtLeastOne) {
     problems.add(path, '空の参加者名が含まれている');
   }
   if (duplicated) {
-    problems.add(path, '同じ参加者が重複している。人数として二重に数えられる（仕様書8.6.1）');
+    problems.add(path, '同じ参加者が重複している。人数として二重に数えられる');
   }
   if (requireAtLeastOne && normalized.length === 0) {
-    problems.add(path, '作業区間は参加者が1名以上必要である（仕様書8.9.4）');
+    problems.add(path, '作業区間は参加者が1名以上必要である');
   }
 }
 
@@ -538,7 +538,7 @@ function checkIntervalOrder(problems, run, path) {
       if (compareIso(interval.endAt, interval.startAt) < 0) {
         problems.add(
           `${path}.tasks[${taskIndex}].intervals[${intervalIndex}].endAt`,
-          '終了日時が開始日時より前である（仕様書8.9.3）',
+          '終了日時が開始日時より前である',
         );
       }
     });
@@ -571,7 +571,7 @@ function checkStatusConsistency(problems, run, path) {
   if (openCount > 0 && requiresClosed) {
     problems.add(
       `${path}.status`,
-      `${status} でありながら未終了の作業区間が ${openCount} 件ある（仕様書7章）`,
+      `${status} でありながら未終了の作業区間が ${openCount} 件ある`,
     );
   }
 

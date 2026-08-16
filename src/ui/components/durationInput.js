@@ -42,7 +42,7 @@ export function createDurationInput({
   idPrefix,
   testidPrefix = idPrefix,
   legend = '追加工数',
-  hint = '参加人数を含んだ総工数（人×時間）を入力します。参加者数は掛けません（仕様書8.5.6）。',
+  hint = '参加人数を含んだ総工数（人×時間）を入力します。参加者数は掛けません。',
   seconds,
 }) {
   const hasInitial = Number.isInteger(seconds);

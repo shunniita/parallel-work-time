@@ -192,7 +192,7 @@ export function canAggregate(workRun) {
     openCount,
     reason:
       `未終了の作業区間が ${openCount} 件ある。終了時刻を入れるか区間を削除すると` +
-      '集計済みへ進める（仕様書8.9.6）。',
+      '集計済みへ進める。',
   };
 }
 

@@ -102,11 +102,12 @@ describe('createIntervalOperationForm', () => {
       expect(view.note.textContent).toContain('新しい区間は作りません');
     });
 
-    it('再開は引き継ぎがあれば入力させない', () => {
+    it('再開は休憩中の参加者を初期値として入力させる', () => {
       const view = mount({ operation: TASK_OPERATION.RESUME, taskRecord: breakingTask() });
 
-      expect(view.participants).toBeNull();
-      expect(view.note.textContent).toContain('甲、乙');
+      expect(view.participants).not.toBeNull();
+      expect(view.participantChips()).toEqual(['甲', '乙']);
+      expect(view.note.textContent).toContain('再開時の参加者に合わせて変更');
     });
 
     it('0人の休憩からの再開では入力させる（設計メモ §2.1）', () => {
@@ -215,6 +216,26 @@ describe('createIntervalOperationForm', () => {
       expect(view.onSubmit).toHaveBeenCalledWith({
         at: toIsoSecond(FIXED_NOW),
         participants: ['甲', '乙'],
+      });
+    });
+
+    it('再開は休憩中の参加者を変更して渡せる（乙が離脱、丙が参加）', async () => {
+      const view = mount({
+        operation: TASK_OPERATION.RESUME,
+        taskRecord: breakingTask(['甲', '乙']),
+      });
+      view.form.element
+        .querySelector('[data-testid="op-participants-item"]:last-child')
+        .querySelector('[data-testid="op-participants-remove"]')
+        .click();
+      view.participants.value = '丙';
+
+      view.submit();
+      await vi.waitFor(() => expect(view.onSubmit).toHaveBeenCalled());
+
+      expect(view.onSubmit).toHaveBeenCalledWith({
+        at: toIsoSecond(FIXED_NOW),
+        participants: ['甲', '丙'],
       });
     });
 

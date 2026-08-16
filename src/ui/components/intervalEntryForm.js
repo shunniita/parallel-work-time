@@ -191,7 +191,7 @@ export function createIntervalEntryForm({
         : el('p', {
             class: 'note',
             text:
-              '開始日時と終了日時を指定して区間を追加します（仕様書8.4.11）。' +
+              '開始日時と終了日時を指定して区間を追加します。' +
               '他の区間と時間帯が重なっても保存できます。',
           }),
       el('div', { class: 'field-row' }, [

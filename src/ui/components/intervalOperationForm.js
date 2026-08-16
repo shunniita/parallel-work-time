@@ -14,7 +14,7 @@
  * | ---------- | ------ |
  * | 開始       | 空欄から入力する（作業区間は0人を禁止、仕様書8.9.4） |
  * | 休憩       | 入力しない。直前の作業区間から引き継ぐ（仕様書8.9 補足） |
- * | 再開       | 直前の休憩から引き継ぐ。引き継ぎが0人のときだけ入力する（設計メモ §2.1） |
+ * | 再開       | 直前の休憩の参加者を初期値として入力する。再開時の参加者に変更できる |
  * | 終了       | 入力しない。新しい区間を作らない |
  * | 参加者変更 | 現在の参加者を初期値として入力する（仕様書8.4.10）。空欄からではなく、いま |
  * |            | の一覧を直す形にする。作業中は0人にできない（仕様書8.9.4）が、休憩中は |
@@ -55,15 +55,16 @@ function describeOperation(operation, active) {
         return '進行中の休憩が見つかりません。画面を更新してからやり直してください。';
       }
       return inherited.length === 0
-        ? '直前の休憩は参加者0人です。作業区間は1人以上必要なため、再開する参加者を入力してください（仕様書8.9.4）。'
-        : `進行中の休憩をこの日時で終了し、同じ日時から作業を再開します。参加者（${inherited.join('、')}）を引き継ぎます。`;
+        ? '直前の休憩は参加者0人です。作業区間は1人以上必要なため、再開する参加者を入力してください。'
+        : '進行中の休憩をこの日時で終了し、同じ日時から作業を再開します。' +
+          '休憩中の参加者を初期値として表示しています。再開時の参加者に合わせて変更してください。';
     case TASK_OPERATION.FINISH:
       return '進行中の区間をこの日時で終了します。新しい区間は作りません。';
     case TASK_OPERATION.CHANGE_PARTICIPANTS:
       if (active === null) {
         return '進行中の区間が見つかりません。画面を更新してからやり直してください。';
       }
-      return '進行中の区間をこの日時で終了し、新しい参加者一覧で同じ種別の区間を同じ日時から開始します（仕様書8.4.10）。';
+      return '進行中の区間をこの日時で終了し、新しい参加者一覧で同じ種別の区間を同じ日時から開始します。';
     default:
       return '';
   }
@@ -73,30 +74,30 @@ function describeOperation(operation, active) {
  * 参加者の入力が要るかを決める。
  *
  * @param {string} operation
- * @param {string[]} inherited
  * @returns {boolean}
  */
-function needsParticipants(operation, inherited) {
-  if (operation === TASK_OPERATION.START || operation === TASK_OPERATION.CHANGE_PARTICIPANTS) {
-    return true;
-  }
-  // 0人の休憩から再開すると引き継いだ結果が 8.9.4 違反になる。黙って0人の
-  // 作業区間を作らず、ここで入力を求める。
-  return operation === TASK_OPERATION.RESUME && inherited.length === 0;
+function needsParticipants(operation) {
+  return (
+    operation === TASK_OPERATION.START ||
+    operation === TASK_OPERATION.RESUME ||
+    operation === TASK_OPERATION.CHANGE_PARTICIPANTS
+  );
 }
 
 /**
  * 参加者入力欄の初期値を決める。
  *
- * 参加者変更は「いまの一覧を直す」操作なので、空欄からではなく現在の参加者を
- * 初期値にする（仕様書8.4.10）。開始は空欄から入力する。
+ * 参加者変更と再開は「いまの一覧を直す」操作なので、空欄からではなく現在の
+ * 参加者を初期値にする。開始は空欄から入力する。
  *
  * @param {string} operation
  * @param {string[]} inherited
  * @returns {string[]}
  */
 function initialParticipants(operation, inherited) {
-  return operation === TASK_OPERATION.CHANGE_PARTICIPANTS ? inherited : [];
+  return operation === TASK_OPERATION.RESUME || operation === TASK_OPERATION.CHANGE_PARTICIPANTS
+    ? inherited
+    : [];
 }
 
 /**
@@ -128,7 +129,7 @@ export function createIntervalOperationForm({
     now,
   });
 
-  const participants = needsParticipants(operation, inherited)
+  const participants = needsParticipants(operation)
     ? createParticipantsInput({
         id: `${idPrefix}-participants`,
         testid: 'op-participants',

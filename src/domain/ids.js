@@ -20,7 +20,7 @@
 export function newId() {
   if (typeof globalThis.crypto?.randomUUID !== 'function') {
     throw new Error(
-      'crypto.randomUUID() が利用できない。HTTPまたはHTTPSで配信して利用する（仕様書5.1.3）。',
+      'crypto.randomUUID() が利用できない。HTTPまたはHTTPSで配信して利用する。',
     );
   }
   return globalThis.crypto.randomUUID();
