@@ -437,7 +437,7 @@ describe('validateImportPayload()', () => {
     );
 
     expect(result.errors).toContain(
-      `projectGroups[1].totalQuantity: 1以上 ${MAX_QUANTITY} 以下の整数である必要がある（仕様書8.9.2）`,
+      `projectGroups[1].totalQuantity: 1以上 ${MAX_QUANTITY} 以下の整数である必要がある`,
     );
   });
 

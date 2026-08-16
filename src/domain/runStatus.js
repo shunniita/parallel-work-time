@@ -71,7 +71,7 @@ export function isRunEditable(run) {
  */
 export function describeNotEditable(run) {
   const label = run?.status === RUN_STATUS.ARCHIVED ? 'アーカイブ済み' : '転記済み';
-  return `実施回: ${label}のため変更できない。閲覧のみ可能である（仕様書7.2）。`;
+  return `実施回: ${label}のため変更できない。閲覧のみ可能である。`;
 }
 
 /**
@@ -153,7 +153,7 @@ export function canTransition(from, to) {
       ok: false,
       reason:
         `実施回: ${statusLabel(from)}から${statusLabel(to)}へは変更できない` +
-        `（仕様書7.1）。${describeAllowed(allowed)}`,
+        `。${describeAllowed(allowed)}`,
     };
   }
   return { ok: true, reason: null };

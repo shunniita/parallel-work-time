@@ -252,7 +252,7 @@ export function createSummaryView({
         el('button', {
           type: 'button',
           class: 'button button--danger',
-          text: '転記済みを取り消す',
+          text: '転記済み状態を解除する',
           dataset: { testid: 'revert-transfer' },
           disabled: local.busy,
           on: {
@@ -281,12 +281,14 @@ export function createSummaryView({
       return null;
     }
     confirmForm = createReasonConfirm({
-      subject: '転記済み',
+      subject: '転記済み状態',
       action: {
-        verb: '取り消',
-        noun: '取り消し',
+        verb: '解除',
+        noun: '解除',
+        confirmLabel: '転記済み状態を解除する',
+        cancelLabel: '戻る',
         reasonHint:
-          '必須です。変更履歴に記録されます（仕様書11章）。外部の記録先を直した理由を残します。',
+          '必須です。変更履歴に記録されます。外部の記録先を直した理由を残します。',
       },
       preview: {
         description:
@@ -300,7 +302,7 @@ export function createSummaryView({
       onConfirm: (reason) =>
         submit(
           () => actions.revertTransfer(run.runId, { reason }),
-          '転記済みを取り消し、集計済みへ戻しました。',
+          '転記済み状態を解除し、集計済みへ戻しました。',
         ),
       onCancel: () => {
         local.reverting = false;
@@ -438,7 +440,7 @@ export function createSummaryView({
           dataset: { testid: 'inconsistent-state-warning' },
           text:
             `集計済みですが未終了の作業区間が ${aggregate.openCount} 件あります。` +
-            '「作業中へ戻す」を押してから区間を終了してください（仕様書7.1）。',
+            '「作業中へ戻す」を押してから区間を終了してください。',
         }),
       );
     }
@@ -449,7 +451,7 @@ export function createSummaryView({
           dataset: { testid: 'missing-code-warning' },
           text:
             `外部項目コードが未設定の作業項目が ${aggregate.missingExternalCodeCount} 件あります` +
-            '（仕様書8.7.4）。転記先を決められないため、コピーには含めません。',
+            '。転記先を決められないため、コピーには含めません。',
         }),
       );
     }
@@ -570,7 +572,7 @@ export function createSummaryView({
           dataset: { testid: 'check-note' },
           text:
             '右端のチェックは転記作業の目印です。保存しないため、再読み込みすると消えます'
-            + '（仕様書8.7.5）。',
+            + '。',
         }),
         renderTotals(aggregate),
       ]),

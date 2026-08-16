@@ -199,6 +199,7 @@ cmd.exe /d /c "mise exec -- npm audit --omit=dev --audit-level=high"
 - [x] 配布対象ディレクトリ配下の意図しないファイルを、再帰的な収録物検査で検出する（未追跡ファイルを置いて実測）。
 - [ ] クリーンなブラウザープロファイルで、起動・保存・再読込・エクスポート・インポートを通しで確認する。
   - 自動試験は毎回新しいプロファイルで走るが、実ブラウザー（Chrome / Edge / Firefox）での目視確認は未実施。
+  - 手順は [manual/05-browser-smoke-checklist.md](../manual/05-browser-smoke-checklist.md) を使い、ブラウザーごとに1周して記録欄を残す。
 
 ### 検証証跡
 

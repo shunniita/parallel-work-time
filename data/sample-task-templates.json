@@ -41,7 +41,7 @@
         {
           "taskDefinitionId": "3c7e5a02-8b14-4d59-a7f6-9e2c1b330d05",
           "name": "後片付け",
-          "externalCode": null,
+          "externalCode": "X-1200",
           "order": 5,
           "active": true
         }

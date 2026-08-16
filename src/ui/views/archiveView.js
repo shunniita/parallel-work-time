@@ -173,7 +173,7 @@ export function createArchiveView({
         blockedReason: null,
       },
       subject: isRun ? '実施回' : '案件',
-      action: { verb: '削除', reasonHint: '必須です。変更履歴に記録されます（仕様書11章）。' },
+      action: { verb: '削除', reasonHint: '必須です。変更履歴に記録されます。' },
       idPrefix: 'archive-delete',
       testidPrefix: 'archive-delete',
       onConfirm: async (reason) => acceptReason(reason),
@@ -423,7 +423,7 @@ export function createArchiveView({
       el('p', {
         class: 'note',
         text:
-          '保持期間を過ぎても自動では削除しません（仕様書10.6）。' +
+          '保持期間を過ぎても自動では削除しません。' +
           '完全削除は取り消せないため、必要ならJSONへ退避してから実行してください。',
       }),
     ]);

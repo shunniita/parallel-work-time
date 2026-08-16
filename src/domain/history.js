@@ -115,7 +115,7 @@ export function buildHistoryEntry(draft, meta) {
     errors.push(`要約: ${MAX_SUMMARY_LENGTH}文字以下である`);
   }
   if (!isNonEmptyString(draft.reason)) {
-    errors.push('理由: 必須項目である（仕様書11章）');
+    errors.push('理由: 必須項目である');
   } else if (draft.reason.trim().length > MAX_TEXT_LENGTH) {
     errors.push(`理由: ${MAX_TEXT_LENGTH}文字以下である`);
   }
