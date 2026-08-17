@@ -9,7 +9,7 @@
  * `QuantityOverflowError` を投げ、画面は警告文を出して確認を求める。
  *
  * 差し戻すのは累計超過の警告だけである。警告があること自体を確認要求とみなすと、
- * 別種の警告を足した瞬間に無関係な確認ダイアログが出る（レビュー指摘 D-15）。
+ * 別種の警告を足した瞬間に無関係な確認ダイアログが出る（過去のレビュー指摘）。
  * 種別コードで絞り込み、それ以外の警告は返り値へ載せて画面へ渡す。
  *
  * 読み込みから書き込みまでは `persistence.run()` の中で行う。累計の判定は他の
@@ -173,7 +173,7 @@ export async function createWorkRun(deps, projectGroupId, draft) {
 /**
  * 総予定数を修正する（仕様書8.2.7）。
  *
- * 累計と残数は保存しない導出値なので（実装計画3.4）、総予定数を書き換えるだけで
+ * 累計と残数は保存しない導出値なので（過去の実装計画）、総予定数を書き換えるだけで
  * 表示は再計算される。
  *
  * @param {{adapter: object, persistence: object, now?: () => Date}} deps
@@ -283,7 +283,7 @@ export async function updateRunQuantity(deps, runId, change) {
 /**
  * 対象種別×バリエーションの有効版テンプレートを返す（仕様書8.3.1）。
  *
- * 有効版は1つだけ存在する（実装計画3.1）。見つからなければ null。
+ * 有効版は1つだけ存在する（過去の実装計画）。見つからなければ null。
  *
  * @param {object[]} taskTemplates
  * @param {string} targetType
@@ -308,7 +308,7 @@ export function findActiveTemplate(taskTemplates, targetType, variant) {
  * あちらは索引を引き直すため、`persistence.run()` が渡すデータセットの外を読む。
  * 検証と書き込みの間に別の操作が割り込む隙間ができるので、アクション層は
  * 受け取った一覧の中だけで判断する。名前を分けて取り違えを防ぐ
- * （レビュー指摘 F-28）。
+ * （過去のレビュー指摘）。
  *
  * @param {object[]} projectGroups `persistence.run()` が渡した一覧
  * @param {string} projectId

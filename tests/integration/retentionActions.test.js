@@ -133,7 +133,7 @@ describe('retentionActions', () => {
       expect(saved.archivedAt).toBe(NOW_ISO);
     });
 
-    it('転記完了日時は消さない（仕様書10.1、S9-1）', async () => {
+    it('転記完了日時は消さない（仕様書10.1）', async () => {
       await toTransferred();
       const transferredAt = (await reloadRun()).transferredAt;
 
@@ -228,7 +228,7 @@ describe('retentionActions', () => {
       expect((await adapter.loadAll()).changeHistory).toEqual([]);
     });
 
-    describe('削除候補であることを要求する（仕様書7.1、レビュー指摘 S10-1）', () => {
+    describe('削除候補であることを要求する（仕様書7.1、過去のレビュー指摘）', () => {
       it('保持期間内は削除できない', async () => {
         // 仕様書7.1 の遷移表は アーカイブ → 削除候補 → 完全削除 であり、
         // アーカイブ済みから直接消す辺は無い。
@@ -340,7 +340,7 @@ describe('retentionActions', () => {
       expect(projectGroups.map((item) => item.projectId)).toEqual(['PJ-0001']);
     });
 
-    it('保持期間内の実施回があれば拒否する（レビュー指摘 S10-1）', async () => {
+    it('保持期間内の実施回があれば拒否する（過去のレビュー指摘）', async () => {
       // 1件ずつ消せない記録を、案件ごとならまとめて消せる抜け道を作らない。
       await toArchived();
 
@@ -459,7 +459,7 @@ describe('retentionActions', () => {
       expect(result.retentionDays).toBe(1);
     });
 
-    it('範囲外の保持期間が保存されていても既定値で動く（レビュー指摘 S10-5）', async () => {
+    it('範囲外の保持期間が保存されていても既定値で動く（過去のレビュー指摘）', async () => {
       // 保存の入口は弾くが、読み取りは画面が開けなくなるより既定値で動く方がよい。
       await toArchived();
       const dataset = await adapter.loadAll();
@@ -478,7 +478,7 @@ describe('retentionActions', () => {
       expect(summarizeArchive(dataset, { now: NOW_ISO }).archived).toEqual([]);
     });
 
-    describe('案件の束ね（レビュー指摘 S10-2）', () => {
+    describe('案件の束ね（過去のレビュー指摘）', () => {
       /** 実施回を持たない案件を作る。 */
       async function createEmptyGroup(projectId = 'PJ-0002') {
         return (
@@ -543,7 +543,7 @@ describe('retentionActions', () => {
         expect(result.groups[0].deletion.reason).toContain('保持期間');
       });
 
-      it('番号は案件の全実施回を通して振る（レビュー指摘 D-14）', async () => {
+      it('番号は案件の全実施回を通して振る（過去のレビュー指摘）', async () => {
         const second = (
           await createWorkRun(deps, group.projectGroupId, {
             workDate: '2026-08-02',

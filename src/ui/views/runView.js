@@ -17,7 +17,7 @@
  * 共通である。
  *
  * 行に出るのは開始・休憩・再開・終了・参加者変更である。区間追加・履歴編集は
- * 作業項目詳細のみ（PR-B2）、直接入力は Step 7 で足す。行を短く保つため、行には
+ * 作業項目詳細のみに置く。行を短く保つため、行には
  * 有効な操作だけを出す。まだ無い操作は作業項目詳細側で無効なボタンとして見える。
  */
 
@@ -80,7 +80,7 @@ export function createRunView({ container, store, actions, handlers, now, isActi
    *
    * `operation` は開いている操作フォームの対象（作業項目と操作の組）である。
    * `busy` は保存中かどうかで、その間は行の操作ボタンを止める
-   * （レビュー指摘 FB-10。詳細は `taskDetailView.js` の冒頭）。
+   * （過去のレビュー指摘。詳細は `taskDetailView.js` の冒頭）。
    */
   const local = {
     sort: SORT.ORDER,
@@ -135,7 +135,7 @@ export function createRunView({ container, store, actions, handlers, now, isActi
    * 表示順を決める。
    *
    * 外部項目コード順は自然順で、未設定は末尾へ置く（仕様書8.7.3）。集計・転記
-   * 画面（Step 8）と同じ並びをここでも選べるようにしてある。
+   * 画面と同じ並びをここでも選べるようにしてある。
    *
    * @param {object[]} tasks
    */
@@ -172,7 +172,7 @@ export function createRunView({ container, store, actions, handlers, now, isActi
    * この実施回がいま案件画面の中で表示されているかを確かめる。
    *
    * 保存を待つあいだに利用者が別の実施回・別の作業項目・別の画面へ移った場合、
-   * ここでの局所描画は `detailPane` を上書きしてしまう（レビュー指摘 FB-7）。
+   * ここでの局所描画は `detailPane` を上書きしてしまう（過去のレビュー指摘）。
    * `wrap()` の `store.setState()` が既にストア購読経由で現在の画面を正しく
    * 描いているため、対象が変わっていれば局所描画をしない。
    *
@@ -198,7 +198,7 @@ export function createRunView({ container, store, actions, handlers, now, isActi
     const run = selectedRun();
     const runId = run.runId;
     // 保存中は行の操作ボタンを止める。押せたままだと、この await の間に別の行の
-    // フォームが開き、下の畳み込みがそれを消す（レビュー指摘 FB-10）。
+    // フォームが開き、下の畳み込みがそれを消す（過去のレビュー指摘）。
     local.busy = true;
     applyBusy();
 
@@ -429,7 +429,7 @@ export function createRunView({ container, store, actions, handlers, now, isActi
 
   function render() {
     // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
-    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    // いれば、共有している詳細ペインを奪い返してはいけない（過去のレビュー指摘）。
     if (!isActive()) {
       return;
     }
@@ -459,8 +459,8 @@ export function createRunView({ container, store, actions, handlers, now, isActi
     ) {
       local.operation = null;
     }
-    // 実施回が閲覧のみへ変わったら閉じる（レビュー指摘 FB-2）。Step 8 で転記済み化を
-    // 画面へ足したため、フォームを開いたまま同じ画面の操作で転記済みへ進める。
+    // 実施回が閲覧のみへ変わったら閉じる（過去のレビュー指摘）。フォームを開いたまま
+    // 同じ画面の操作で転記済みへ進めるためである。
     // 保存はアクション層が拒むので誤記録にはならないが、「閲覧のみ」の注記と入力欄が
     // 同居して見えるのはそれ自体が矛盾した表示である。
     if (!editable) {

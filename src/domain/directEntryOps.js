@@ -28,7 +28,7 @@
  *
  * ただし「取り込めるが直せない」レコードを作ってはならない。編集はレコード全体を
  * 検証するため、0秒を一律に拒むと、取り込んだ0秒レコードの備考や参加者だけを
- * 直すこともできなくなる（レビュー指摘 S7-2）。そこで編集では、**もともと0秒
+ * 直すこともできなくなる（過去のレビュー指摘）。そこで編集では、**もともと0秒
  * だったものを0秒のまま保存する場合に限り**通す。1秒以上のものを0秒へ変える
  * ことは、新規入力と同じく拒む。
  *
@@ -94,7 +94,7 @@ function accepted(problems, taskRecord, directEntries, extra = {}) {
  *
  * `allowZero` は「もともと0秒だったものを0秒のまま保存する」場合に立てる。
  * 0秒を新しく作ることは拒むが、既にある0秒レコードを editable でなくすると、
- * 備考や参加者だけを直す手段が無くなる（レビュー指摘 S7-2）。
+ * 備考や参加者だけを直す手段が無くなる（過去のレビュー指摘）。
  *
  * @param {Problems} problems
  * @param {unknown} seconds
@@ -178,7 +178,7 @@ function checkParticipants(problems, participants) {
  *
  * 制御文字を区切りに使う手もあるが、採らない。ソースの上で空白と見分けが付かず、
  * NUL を含むファイルは Git がバイナリとして扱って差分を出さなくなる
- * （レビュー指摘 S7-3。実際にそうなっていた）。
+ * （過去のレビュー指摘。実際にそうなっていた）。
  *
  * @param {string[]} participants
  * @returns {string}
@@ -323,7 +323,7 @@ export function editDirectEntry(taskRecord, entryId, changes, context) {
       : normalizeParticipants(changes.participants);
 
   // もともと0秒のレコードは、0秒のままなら保存できる。インポートは0秒を通す
-  // ため（`schema.js`）、拒み切ると備考や参加者だけを直せなくなる（S7-2）。
+  // ため（`schema.js`）、拒み切ると備考や参加者だけを直せなくなる（過去のレビュー指摘）。
   // 1秒以上のものを0秒へ変えることは、新規入力と同じく拒む。
   const secondsValid = checkSeconds(problems, seconds, { allowZero: current.seconds === 0 });
   const participantsValid = checkParticipants(problems, participants);

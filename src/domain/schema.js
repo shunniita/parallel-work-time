@@ -70,7 +70,7 @@ function isNonEmptyString(value) {
 }
 
 /**
- * 通常の書き込み経路が保存する形の文字列か（レビュー指摘 F12-01）。
+ * 通常の書き込み経路が保存する形の文字列か（過去のレビュー指摘）。
  *
  * 案件ID・対象種別・バリエーション・作業項目名・外部項目コード・備考・理由は、
  * いずれも保存の直前に前後空白を落としている（`templateOps.js`、
@@ -101,7 +101,7 @@ const NORMALIZED_STRING_MESSAGE =
  * 形は問わない——過去に別の採番規則で作られたエクスポートも取り込めるようにする
  * ためである。ただし長さは他の文字列と同じ上限に収める。識別子はDOMのid属性や
  * 変更履歴の `targetId` として使い回され、際限のない長さは比較と表示の費用に
- * そのまま乗る（レビュー指摘 F12-32）。
+ * そのまま乗る（過去のレビュー指摘）。
  */
 function isBoundedId(value) {
   return isNonEmptyString(value) && value.length <= MAX_TEXT_LENGTH;
@@ -116,7 +116,7 @@ function isStringArray(value) {
 /**
  * 参加者一覧の形を確かめる（仕様書6.7、8.6.1）。
  *
- * 前後空白・重複・実質0人は `integrity.js` が業務的整合性として見る（GAR-2）。
+ * 前後空白・重複・実質0人は `integrity.js` が業務的整合性として見る（過去のレビュー指摘）。
  * ここで見るのは形と規模だけである。
  *
  * @param {unknown} participants

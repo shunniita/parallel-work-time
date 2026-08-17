@@ -159,7 +159,7 @@ describe('実施回の並びと採番', () => {
     ]);
   });
 
-  it('アーカイブ済みの実施回は出さない（実装計画2.2(1)）', () => {
+  it('アーカイブ済みの実施回は出さない（過去の実装計画）', () => {
     const { container, tree } = renderTree({
       projectGroups: groups,
       workRuns: [
@@ -389,7 +389,7 @@ describe('操作の通知', () => {
   });
 });
 
-describe('キーボード操作（仕様書13章、レビュー指摘 D-18）', () => {
+describe('キーボード操作（仕様書13章、過去のレビュー指摘）', () => {
   /** フォーカスを扱うため、document.body へ実際に取り付けて描く。 */
   function renderAttached(state) {
     const rendered = renderTree(state);
@@ -521,7 +521,7 @@ describe('キーボード操作（仕様書13章、レビュー指摘 D-18）', 
     expect(container.querySelectorAll('[role="treeitem"]').length).toBeGreaterThan(2);
   });
 
-  describe('親子の所有関係（レビュー指摘 S11-2）', () => {
+  describe('親子の所有関係（過去のレビュー指摘）', () => {
     it('すべての group が親 treeitem に所有される', () => {
       // treeitem は button なので子の ul を内側へ置けない。DOM では兄弟に
       // なるため、`aria-owns` が無いと階層として読まれない。
@@ -561,7 +561,7 @@ describe('キーボード操作（仕様書13章、レビュー指摘 D-18）', 
     });
   });
 
-  describe('現在地は1つだけ（レビュー指摘 S11-3）', () => {
+  describe('現在地は1つだけ（過去のレビュー指摘）', () => {
     /** 作業項目まで選択した状態のツリー。 */
     function selectedTask() {
       const rendered = renderAttached({
@@ -607,7 +607,7 @@ describe('キーボード操作（仕様書13章、レビュー指摘 D-18）', 
     });
   });
 
-  describe('マウスで折りたたんだ後のフォーカス（レビュー指摘 S11-5）', () => {
+  describe('マウスで折りたたんだ後のフォーカス（過去のレビュー指摘）', () => {
     it('折りたたみボタンを押してもフォーカスがツリーに残る', () => {
       // ボタンは treeitem の兄弟なので focusin の経路に乗らず、再描画で自身も
       // 消える。放っておくとフォーカスが body へ落ち、矢印キーへ移れない。
@@ -648,7 +648,7 @@ describe('キーボード操作（仕様書13章、レビュー指摘 D-18）', 
   });
 });
 
-describe('取り込み可能な識別子でDOM参照を壊さない（GAR-5）', () => {
+describe('取り込み可能な識別子でDOM参照を壊さない（過去のレビュー指摘）', () => {
   /** 記号を含む識別子。JSONの契約では非空文字列であればよい（仕様書9.3）。 */
   function trickyFixture() {
     return {

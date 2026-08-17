@@ -13,7 +13,7 @@ import { createConfirmPanel } from '../components/confirmPanel.js';
 
 /**
  * `runDestructive` は必須である。退避と全置換を1つの排他区間へ入れるのは呼び出し元
- * （`main.js`）の役目であり（GAR-1）、既定値を置くと注入を忘れた画面が排他区間の
+ * （`main.js`）の役目であり（過去のレビュー指摘）、既定値を置くと注入を忘れた画面が排他区間の
  * 外で全置換を走らせる。
  *
  * @param {{container: HTMLElement, store: object,
@@ -36,12 +36,12 @@ export function createSettingsView({
     errors: [],
     message: '',
     /**
-     * 排他区間の実行中か（レビュー指摘 F12-06）。
+     * 排他区間の実行中か（過去のレビュー指摘）。
      *
      * 区間の途中で退避エクスポートが `store.setState` を呼び、その購読が画面を
      * 描き直す。busy を持たないと取り込みボタンが活性のまま再構築され、ダブル
      * クリックや退避ダウンロード後の再クリックで排他区間が2つ直列に並ぶ。
-     * 区間の隙間に入った保存は2回目の置換で消える（GAR-1 と同種の喪失）。
+     * 区間の隙間に入った保存は2回目の置換で消える（過去のレビュー指摘と同種の喪失）。
      */
     busy: false,
   };
@@ -98,7 +98,7 @@ export function createSettingsView({
    *
    * 読込は非同期であり、完了の順序は選択の順序と一致しない。大きいファイルを
    * 選んだ直後に小さいファイルを選ぶと、先に選んだ方が後から完了して、確認画面の
-   * 内容とファイル名を上書きする。利用者の最新の操作と食い違う（F12-30）。
+   * 内容とファイル名を上書きする。利用者の最新の操作と食い違う（過去のレビュー指摘）。
    */
   let selectionToken = 0;
 
@@ -143,7 +143,7 @@ export function createSettingsView({
         confirmedWithoutBackup: !backup,
         // 退避と全置換は1つの排他区間で行う。別々に積むと、退避JSONを取った後・
         // 全置換の前に別の保存が割り込み、その内容が退避にも置換後にも残らない
-        // （敵対的レビュー GAR-1）。
+        // （過去の敵対的レビュー）。
         destructiveAction: (scoped) => scoped.importData(payload),
       });
       if (result.executed) {
@@ -233,7 +233,7 @@ export function createSettingsView({
 
   function render() {
     // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
-    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    // いれば、共有している詳細ペインを奪い返してはいけない（過去のレビュー指摘）。
     if (!isActive()) {
       return;
     }

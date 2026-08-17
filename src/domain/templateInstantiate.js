@@ -20,7 +20,7 @@ import { activeTaskDefinitions } from './templateOps.js';
  * 実施回の初期状態（仕様書7.1「新規 → 作業中」）。
  *
  * 文字列を書かず `RUN_STATUS` から取る。「初期状態」という意味は残しつつ、
- * `'working'` の正を1か所に保つ（レビュー指摘 F-26）。
+ * `'working'` の正を1か所に保つ（過去のレビュー指摘）。
  */
 export const INITIAL_RUN_STATUS = RUN_STATUS.WORKING;
 
@@ -43,7 +43,7 @@ export function generatableTasks(template) {
  * テンプレートの定義値を複製する。`intervals` と `directEntries` は空で始める。
  *
  * `manuallyAdded` は常に false。実施回作成後の作業項目手動追加（仕様書8.3.3）は
- * 任意要件であり初版では見送っている（実装計画1.6）。
+ * 任意要件であり初版では見送っている（過去の実装計画）。
  *
  * @param {object} definition テンプレート内の作業項目定義
  * @param {{taskRecordId: string}} context

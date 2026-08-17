@@ -20,7 +20,7 @@ import {
 } from '../../src/domain/datetime.js';
 
 describe('formatOffset', () => {
-  it('ISO 8601 と同じ符号（東が正）で表記する（レビュー指摘 F-25）', () => {
+  it('ISO 8601 と同じ符号（東が正）で表記する（過去のレビュー指摘）', () => {
     expect(formatOffset(540)).toBe('+09:00');
     expect(formatOffset(-540)).toBe('-09:00');
   });
@@ -243,7 +243,7 @@ describe('toDateTimeLocal / fromDateTimeLocal', () => {
     expect(() => fromDateTimeLocal(null, 540)).toThrow(TypeError);
   });
 
-  describe('オフセットを省略した場合（レビュー指摘 SOL-1）', () => {
+  describe('オフセットを省略した場合（過去のレビュー指摘）', () => {
     it('入力された壁時計日時に対応するローカルオフセットを使う', () => {
       // 現在日時のオフセットではなく、入力日そのもののオフセットで保存する。
       // 夏時間のある環境で、入力日と現在日の適用状態が違っても瞬間がずれない。
@@ -268,7 +268,7 @@ describe('toDateTimeLocal / fromDateTimeLocal', () => {
     });
   });
 
-  describe('妥当性判定と変換の一致（レビュー指摘 SOL-3）', () => {
+  describe('妥当性判定と変換の一致（過去のレビュー指摘）', () => {
     const values = [
       '2026-07-30T09:00',
       '2026-07-30T09:00:00',

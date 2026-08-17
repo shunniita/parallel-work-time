@@ -7,7 +7,7 @@
  * 実ブラウザでの往復は E2E（T-14）が確かめる。
  *
  * `pagehide` / `pageshow` を投げるため happy-dom で動かす。タブの寿命は
- * 「起動と終了」だけではなく、BFCache への退避と復帰を含む（レビュー指摘 S11-1）。
+ * 「起動と終了」だけではなく、BFCache への退避と復帰を含む（過去のレビュー指摘）。
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -167,7 +167,7 @@ describe('startTabGuard（仕様書8.10）', () => {
   });
 });
 
-describe('BFCache への退避と復帰（レビュー指摘 S11-1）', () => {
+describe('BFCache への退避と復帰（過去のレビュー指摘）', () => {
   it('退避すると相手から外れる', () => {
     // 退避中のページは操作できないため、相手の一覧から外れるのは正しい。
     const bus = createBus();

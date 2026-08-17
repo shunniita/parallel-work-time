@@ -25,14 +25,14 @@
  * フォーム自身は送信中に自分の確定・取消を無効にするが、それだけでは足りない。
  * 保存を待つ間に上部のボタンや別の行から次のフォームを開けてしまうと、先の
  * 保存の完了処理が `activeForm` を畳み、開いたばかりの入力を消す
- * （レビュー指摘 FB-10）。`local.busy` の間は外側のボタンをすべて無効にし、
+ * （過去のレビュー指摘）。`local.busy` の間は外側のボタンをすべて無効にし、
  * 開いているフォームが常に1つだけという前提を保存中も崩さない。
  *
  * 無効化は `render()` ではなく {@link applyBusy} で行う。保存中に描き直すと、
  * まさに送信中のフォームが作り直され、入力内容と「保存中」の表示が失われる。
  *
  * 経過時間の1分ごとの再評価（仕様書8.8）は警告領域（`src/ui/warningBar.js`）が
- * 持つ。ここでは未終了区間であることを表示するにとどめる（設計メモ §5）。
+ * 持つ。ここでは未終了区間であることを表示するにとどめる（過去の設計メモ）。
  */
 
 import { compareIso, formatIsoForHuman } from '../../domain/datetime.js';
@@ -107,7 +107,7 @@ export function createTaskDetailView({
    *   `null`。承諾されたら同じ入力で呼び直す。
    * - `warnings`: 直前の保存で出た警告（区間の重複は仕様書8.9.5、直接入力の
    *   重複候補は8.9.8）。
-   * - `busy`: 保存中かどうか。外側のボタンを止める（レビュー指摘 FB-10）。
+   * - `busy`: 保存中かどうか。外側のボタンを止める（過去のレビュー指摘）。
    *
    * 保存を拒否したエラーは各フォーム自身が出す。
    */
@@ -151,7 +151,7 @@ export function createTaskDetailView({
     return button;
   }
 
-  /** 保存中かどうかを、いま画面にあるボタンへ反映する（レビュー指摘 FB-10）。 */
+  /** 保存中かどうかを、いま画面にあるボタンへ反映する（過去のレビュー指摘）。 */
   function applyBusy() {
     for (const { button, baseDisabled } of outerControls) {
       button.disabled = baseDisabled || local.busy;
@@ -189,7 +189,7 @@ export function createTaskDetailView({
    * この作業項目がいま案件画面の中で表示されているかを確かめる。
    *
    * 保存を待つあいだに利用者が別の作業項目・別の実施回・別の画面へ移った場合、
-   * ここでの局所描画は `detailPane` を上書きしてしまう（レビュー指摘 FB-7）。
+   * ここでの局所描画は `detailPane` を上書きしてしまう（過去のレビュー指摘）。
    * `wrap()` の `store.setState()` が既にストア購読経由で現在の画面を正しく
    * 描いているため、対象が変わっていれば局所描画をしない。
    *
@@ -217,7 +217,7 @@ export function createTaskDetailView({
     const { selection } = store.getState();
     const target = { runId: selection.runId, taskRecordId: selection.taskRecordId };
     // 保存中は外側のボタンを止める。押せたままだと、この await の間に次の
-    // フォームが開き、下の畳み込みがそれを消す（レビュー指摘 FB-10）。
+    // フォームが開き、下の畳み込みがそれを消す（過去のレビュー指摘）。
     local.busy = true;
     applyBusy();
 
@@ -258,7 +258,7 @@ export function createTaskDetailView({
     // 保存が成功するとストア購読の再描画が走るが、それはこの行より前、まだ
     // ローカル状態が残っている時点で起きる。閉じた状態を映すために、対象が
     // いまも表示中であればここで描き直す（`src/app/store.js` の規約2、
-    // レビュー指摘 FB-7）。
+    // 過去のレビュー指摘）。
     if (isShowingTask(target.runId, target.taskRecordId)) {
       render();
     }
@@ -419,7 +419,7 @@ export function createTaskDetailView({
             local.activeForm = formFor(operation);
             render();
             // 開いた入力欄へ移す。押したボタンは再描画で作り直されるため、
-            // フォーカスを戻す先が無くなる（レビュー指摘 D-18 の (a) と同じ形）。
+            // フォーカスを戻す先が無くなる（過去のレビュー指摘の (a) と同じ形）。
             form?.focus();
           },
         },
@@ -466,7 +466,7 @@ export function createTaskDetailView({
    * 直近に描いた行内フォーム（区間・直接入力の編集と削除確認）。
    *
    * 上部の `form` と同じくフォーカス移動のために持つ。行の中で作るため、
-   * 呼び出し側からは局所変数へ届かない（レビュー指摘 FB-11）。
+   * 呼び出し側からは局所変数へ届かない（過去のレビュー指摘）。
    */
   let rowForm = null;
 
@@ -536,7 +536,7 @@ export function createTaskDetailView({
    * どちらの行からも同じ関数で作る。
    *
    * 押した後に開いたフォームへフォーカスを移す。押したボタン自体が再描画で
-   * 捨てられるため、移さないとフォーカスが画面先頭側へ戻る（レビュー指摘 FB-11）。
+   * 捨てられるため、移さないとフォーカスが画面先頭側へ戻る（過去のレビュー指摘）。
    *
    * @param {{editTestid: string, deleteTestid: string,
    *          onEdit: () => void, onDelete: () => void}} options
@@ -707,9 +707,9 @@ export function createTaskDetailView({
       });
     }
     // 開始が早い順に並べる。記録した順ではなく時間の順で読む。文字列の辞書順
-    // ではなく実時刻で比べる（レビュー指摘 FB-1）。記録経路は常にローカル
+    // ではなく実時刻で比べる（過去のレビュー指摘）。記録経路は常にローカル
     // オフセットで書くため実害は無いが、インポートJSON（仕様書9.3）は異なる
-    // オフセットの区間を許すため、`compareIso` を通す（F-25 の集約方針）。
+    // オフセットの区間を許すため、`compareIso` を通す。
     const ordered = [...task.intervals].sort((left, right) =>
       compareIso(left.startAt, right.startAt),
     );
@@ -903,7 +903,7 @@ export function createTaskDetailView({
    * 直前の保存で出た警告を出す（仕様書8.9.5）。
    *
    * 保存は済んでいる。確認を求めて差し戻すのではなく、記録したうえで知らせる。
-   * 固定警告領域（仕様書8.8.1）は Step 11 の範囲であり、ここでは画面内に出す。
+   * 固定警告領域（仕様書8.8.1）は別に持つため、ここでは画面内に出す。
    */
   function renderWarnings() {
     if (local.warnings.length === 0) {
@@ -925,7 +925,7 @@ export function createTaskDetailView({
 
   function render() {
     // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
-    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    // いれば、共有している詳細ペインを奪い返してはいけない（過去のレビュー指摘）。
     if (!isActive()) {
       return;
     }
@@ -951,8 +951,8 @@ export function createTaskDetailView({
     const state = taskState(task);
     const editable = isRunEditable(run);
     // 実施回が閲覧のみへ変わったら、開いていた入力をすべて閉じる
-    // （レビュー指摘 FB-2 とその追記）。Step 8 で転記済み化を画面へ足したため、
-    // フォームを開いたまま同じ画面の操作で転記済みへ進める。保存はアクション層が
+    // （過去のレビュー指摘）。フォームを開いたまま同じ画面の
+    // 操作で転記済みへ進めるためである。保存はアクション層が
     // 拒むので誤記録にはならないが、「閲覧のみ」の注記と入力欄が同居して見えるのは
     // それ自体が矛盾した表示である。区間の追加・編集、直接入力、削除確認のいずれも
     // 対象にする。

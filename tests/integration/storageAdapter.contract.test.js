@@ -1,5 +1,5 @@
 /**
- * 保存アダプターの契約テスト（実装計画8.2「アダプター契約」）。
+ * 保存アダプターの契約テスト（過去の実装計画「アダプター契約」）。
  *
  * 仕様書5.3 の6操作を `MemoryAdapter` と `IndexedDbAdapter` の両方へ同一の
  * スイートで通す。片方だけ通る差異を残さないため、実装ごとに書き分けない。
@@ -109,7 +109,7 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
       expect(dataset.workRuns[0].tasks[0].intervals[1].endAt).toBeNull();
     });
 
-    describe('並び順の契約（レビュー指摘 C-9）', () => {
+    describe('並び順の契約（過去のレビュー指摘）', () => {
       /** 主キーを明示した案件グループ。ビルダーは採番を握るためここでは使わない。 */
       function groupWithId(projectGroupId, projectId, overrides = {}) {
         return { ...projectGroup({ projectId }), projectGroupId, ...overrides };
@@ -735,7 +735,7 @@ describe.each(implementations)('$name（仕様書5.3 の6操作）', ({ create }
   });
 });
 
-describe('IndexedDbAdapter の接続管理（レビュー指摘 C-13）', () => {
+describe('IndexedDbAdapter の接続管理（過去のレビュー指摘）', () => {
   function freshName() {
     dbSequence += 1;
     return `pwt-connection-${dbSequence}`;
@@ -797,10 +797,10 @@ describe('IndexedDbAdapter の接続管理（レビュー指摘 C-13）', () => 
     });
   }
 
-  it('blocked で拒否した後、遅れて開いた接続を残さない（レビュー指摘 S11-4）', async () => {
+  it('blocked で拒否した後、遅れて開いた接続を残さない（過去のレビュー指摘）', async () => {
     // `onblocked` で Promise を拒否しても要求は取り消せない。塞いでいた接続が
     // 閉じれば `onsuccess` が遅れて発生し、その接続は誰の手にも渡らないまま
-    // 開き続ける。C-13 で防ごうとした「閉じられずに残る接続」が別経路で生じる。
+    // 開き続ける。「閉じられずに残る接続」が別経路で生じる。
     const dbName = freshName();
     const blocker = await openRaw(dbName, 1);
 

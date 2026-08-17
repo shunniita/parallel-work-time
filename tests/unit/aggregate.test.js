@@ -356,7 +356,7 @@ describe('buildTransferText()（仕様書8.7.7）', () => {
     expect(result.copiedCount).toBe(0);
   });
 
-  describe('画面の並び順に依存しない（レビュー指摘 S8-2）', () => {
+  describe('画面の並び順に依存しない（過去のレビュー指摘）', () => {
     /** 表示順と自然順が食い違う実施回。 */
     function mixedRun() {
       return workRun({

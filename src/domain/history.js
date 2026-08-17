@@ -11,14 +11,11 @@
  * したかを1行で言い表す」ことだけを持つ純関数である。書き込みは
  * `src/app/actions/` が行い、削除本体と同一の保存へまとめる。
  *
- * ## Step 6 で作る理由
+ * ## 削除と同時に書く
  *
- * 計画上は変更履歴が Step 10 で、区間削除が Step 6 である。履歴を後から足すと
- * その間「履歴を残さずに削除できる」期間が生まれ、仕様書11章を満たさない記録が
- * 実データへ残る。`changeHistory` のスキーマと検証（`schema.js`）は既にあるため、
- * 削除と同時に書き込む（設計メモ PWT-DESIGN-006 §6.1 の案B）。
- *
- * Step 10 で残る3操作を足すときも、入口はこのモジュールにする。
+ * 履歴を後から足すと、その間「履歴を残さずに削除できる」期間が生まれ、
+ * 仕様書11章を満たさない記録が実データへ残る。削除と同時に書き込み、
+ * 履歴を残す操作の入口は、すべてこのモジュールにする。
  */
 
 import {
@@ -51,7 +48,7 @@ export const HISTORY_OP = {
 };
 
 /**
- * 操作と対象種別の対応（レビュー指摘 SOL-2）。
+ * 操作と対象種別の対応（過去のレビュー指摘）。
  *
  * 仕様書11章は対象種別と操作をそれぞれ列挙するが、**組み合わせの表は無い**。
  * 列挙値どうしを自由に組めると、`projectGroup` を対象にした `intervalDeleted`
@@ -102,7 +99,7 @@ export function buildHistoryEntry(draft, meta) {
   if (!HISTORY_OPERATION.includes(draft.operation)) {
     errors.push(`操作: ${HISTORY_OPERATION.join(' / ')} のいずれかである`);
   } else {
-    // 操作が既知なら、対象種別との組み合わせも確かめる（レビュー指摘 SOL-2）。
+    // 操作が既知なら、対象種別との組み合わせも確かめる（過去のレビュー指摘）。
     // 操作が未知の場合は上の指摘だけで足り、対応表を引いても意味がない。
     const expected = HISTORY_ENTITY_BY_OP[draft.operation];
     if (draft.entityType !== expected) {

@@ -97,7 +97,7 @@ test('T-10 転記済み→アーカイブ→保持期間経過で削除候補（
   await expect(page.getByTestId('archive-row')).toHaveCount(1);
 });
 
-test('保持期間内は完全削除できない（仕様書7.1、レビュー指摘 S10-1）', async ({ page }) => {
+test('保持期間内は完全削除できない（仕様書7.1、過去のレビュー指摘）', async ({ page }) => {
   await page.clock.install({ time: START_TIME });
   await toTransferred(page, 'PJ-KEEP');
   await page.getByTestId('archive-run').click();
@@ -133,7 +133,7 @@ test('アーカイブへ移すと通常の一覧から消える（仕様書10.1�
   await expect(page.getByTestId('archive-row')).toHaveCount(1);
 });
 
-test('アーカイブ済みは番号を保つ（レビュー指摘 D-14）', async ({ page }) => {
+test('アーカイブ済みは番号を保つ（過去のレビュー指摘）', async ({ page }) => {
   await openFresh(page);
   await createProject(page, { projectId: 'PJ-NUM', totalQuantity: 100 });
   await createRun(page, { workDate: '2026-08-01', runQuantity: 10 });
@@ -190,7 +190,7 @@ test('退避してから完全削除し、変更履歴が残る（仕様書10.4�
   await expect(page.getByTestId('archive-notice')).toContainText('削除しました');
   await expect(page.getByTestId('archive-row')).toHaveCount(0);
 
-  // 実施回が0件になった案件は一覧に残り、案件ごと消せる（レビュー指摘 S10-2）。
+  // 実施回が0件になった案件は一覧に残り、案件ごと消せる（過去のレビュー指摘）。
   await expect(page.getByTestId('archive-group-empty')).toBeVisible();
   await expect(page.getByTestId('delete-group')).toBeEnabled();
 
@@ -244,7 +244,7 @@ test('案件は配下がすべてアーカイブ済みのときだけ削除で�
   await expect(groupButton).toHaveAttribute('title', /アーカイブ済みでない実施回が 1 件/);
 });
 
-test('実施回を作っていない案件を削除できる（レビュー指摘 S10-2）', async ({ page }) => {
+test('実施回を作っていない案件を削除できる（過去のレビュー指摘）', async ({ page }) => {
   // 案件削除を呼べる画面はアーカイブしかない。実施回から案件を逆引きして一覧を
   // 作ると、この案件へ到達できなくなる。
   await openFresh(page);

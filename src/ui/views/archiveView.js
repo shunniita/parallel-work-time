@@ -44,7 +44,7 @@ const TARGET = {
  * アーカイブ画面を作る。
  *
  * `runDestructive` は必須である。退避と削除を1つの排他区間へ入れるのは呼び出し元
- * （`main.js`）の役目であり（GAR-1）、既定値を置くと注入を忘れた画面が排他区間の
+ * （`main.js`）の役目であり（過去のレビュー指摘）、既定値を置くと注入を忘れた画面が排他区間の
  * 外で削除を走らせる。
  *
  * @param {{container: HTMLElement, store: object,
@@ -150,7 +150,7 @@ export function createArchiveView({
           backup,
           confirmedWithoutBackup: true,
           // 退避と削除は1つの排他区間で行う。区間の中で使うアクションは
-          // 呼び出し元から渡される（敵対的レビュー GAR-1）。
+          // 呼び出し元から渡される（過去の敵対的レビュー）。
           destructiveAction: (scoped) =>
             target.kind === TARGET.RUN
               ? scoped.deleteRun(target.id, { reason: target.reason })
@@ -368,7 +368,7 @@ export function createArchiveView({
 
   function render() {
     // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
-    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    // いれば、共有している詳細ペインを奪い返してはいけない（過去のレビュー指摘）。
     if (!isActive()) {
       return;
     }

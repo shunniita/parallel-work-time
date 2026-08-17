@@ -4,7 +4,7 @@
  * 数量サマリ（総予定数・累計・残数）、総予定数の修正、実施回の一覧、実施回の
  * 追加を扱う。
  *
- * 累計と残数は保存しない導出値である（実装計画3.4）。総予定数や今回数量を
+ * 累計と残数は保存しない導出値である（過去の実装計画）。総予定数や今回数量を
  * 修正すると、保存後のデータセットから再計算されて表示が更新される。
  *
  * 累計超過は警告であって拒否ではない（仕様書8.9.7）。確認を求めたうえで
@@ -88,7 +88,7 @@ export function createProjectView({ container, store, actions, handlers, now, is
    *
    * 数量の累計はアーカイブ済みも数える（仕様書8.2.5）。一覧へ出すのは
    * `activeRuns()` で絞った分だけである（10.1）。並べ替えと採番は
-   * `runOrder.js` が持つ（レビュー指摘 D-14）。
+   * `runOrder.js` が持つ（過去のレビュー指摘）。
    */
   function runsOf(group) {
     return sortRuns(
@@ -151,7 +151,7 @@ export function createProjectView({ container, store, actions, handlers, now, is
     const group = selectedGroup();
     const template = group === null ? null : templateOf(group);
     local.runDraft = {
-      // 作業日の初期値は今日（実装計画2.2(2)）。
+      // 作業日の初期値は今日（過去の実装計画）。
       workDate: toDateKey(currentDate()),
       runQuantity: '',
       // 生成対象は既定で全選択（仕様書8.3.1、8.3.2）。
@@ -315,7 +315,7 @@ export function createProjectView({ container, store, actions, handlers, now, is
    */
   function renderRunList(group, runs) {
     // アーカイブ済みは通常一覧から分離する（仕様書10.1）。番号は全件を通して
-    // 振ってから絞るので、アーカイブしても他の回の番号は動かない（D-14）。
+    // 振ってから絞るので、アーカイブしても他の回の番号は動かない（過去のレビュー指摘）。
     const visible = activeRuns(runs);
     const archivedCount = runs.length - visible.length;
 
@@ -691,7 +691,7 @@ export function createProjectView({ container, store, actions, handlers, now, is
 
   function render() {
     // 非同期処理の完了後に呼ばれることがある。その間に利用者が別画面へ移って
-    // いれば、共有している詳細ペインを奪い返してはいけない（GAR-4）。
+    // いれば、共有している詳細ペインを奪い返してはいけない（過去のレビュー指摘）。
     if (!isActive()) {
       return;
     }

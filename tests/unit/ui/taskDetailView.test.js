@@ -215,9 +215,8 @@ describe('createTaskDetailView', () => {
       expect(view.query('task-not-editable').textContent).toContain('転記済み');
     });
 
-    it('閲覧のみへ変わったら開いていた入力を閉じる（レビュー指摘 FB-2）', () => {
-      // Step 8 で転記済み化が画面へ入ったため、フォームを開いたまま同じ画面の
-      // 操作で転記済みへ進める。「閲覧のみ」の注記と入力欄が同居してはならない。
+    it('閲覧のみへ変わったら開いていた入力を閉じる（過去のレビュー指摘）', () => {
+      // フォームを開いたまま同じ画面の操作で転記済みへ進める。「閲覧のみ」の注記と入力欄が同居してはならない。
       const view = mount({ task: TASKS.working() });
       view.query('op-break').click();
       expect(view.query('op-form')).not.toBeNull();
@@ -229,7 +228,7 @@ describe('createTaskDetailView', () => {
       expect(view.query('task-not-editable')).not.toBeNull();
     });
 
-    it('閲覧のみへ変わったら直接入力の編集も閉じる（レビュー指摘 FB-2 の追記）', () => {
+    it('閲覧のみへ変わったら直接入力の編集も閉じる（過去のレビュー指摘の追記）', () => {
       const view = mount({
         task: taskRecord({ name: '受入確認', directEntries: [directEntry(600)] }),
       });
@@ -396,7 +395,7 @@ describe('createTaskDetailView', () => {
       await vi.waitFor(() => expect(view.query('op-form')).toBeNull());
     });
 
-    it('保存を待つ間に別の作業項目へ移っていた場合は上書きしない（レビュー指摘 FB-7）', async () => {
+    it('保存を待つ間に別の作業項目へ移っていた場合は上書きしない（過去のレビュー指摘）', async () => {
       const view = mount({ task: TASKS.working() });
       let resolveAction;
       view.actions.recordFinish.mockImplementation(
@@ -421,7 +420,7 @@ describe('createTaskDetailView', () => {
       expect(view.container.textContent).toBe('マーカー');
     });
 
-    it('保存を待つ間に実施回一覧へ戻っていた場合は上書きしない（レビュー指摘 FB-7）', async () => {
+    it('保存を待つ間に実施回一覧へ戻っていた場合は上書きしない（過去のレビュー指摘）', async () => {
       const view = mount({ task: TASKS.working() });
       let resolveAction;
       view.actions.recordFinish.mockImplementation(
@@ -516,7 +515,7 @@ describe('createTaskDetailView', () => {
       });
     });
 
-    describe('保存中の多重操作（レビュー指摘 FB-10）', () => {
+    describe('保存中の多重操作（過去のレビュー指摘）', () => {
       /**
        * 保存を止めたまま送信した状態を作る。
        *
@@ -800,7 +799,7 @@ describe('createTaskDetailView', () => {
       });
     });
 
-    describe('フォーカス（レビュー指摘 FB-11）', () => {
+    describe('フォーカス（過去のレビュー指摘）', () => {
       it('編集を押すと編集フォームの先頭入力欄へフォーカスが移る', () => {
         const view = mount({ task: taskWithInterval() });
         view.query('op-editHistory').click();

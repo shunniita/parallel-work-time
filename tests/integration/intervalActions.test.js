@@ -105,14 +105,14 @@ describe('intervalActions', () => {
     return saved.tasks[index];
   }
 
-  /** 実施回の状態を直接書き換える（状態遷移の操作は Step 10）。 */
+  /** 実施回の状態を直接書き換える。画面の状態遷移操作は経由しない。 */
   async function setRunStatus(status) {
     const { workRuns } = await adapter.loadAll();
     const saved = workRuns.find((item) => item.runId === run.runId);
     await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, { ...saved, status });
   }
 
-  it('別作業項目との合計で実施回上限を超える区間は保存しない（F12-36）', async () => {
+  it('別作業項目との合計で実施回上限を超える区間は保存しない（過去のレビュー指摘）', async () => {
     const { workRuns } = await adapter.loadAll();
     const saved = workRuns.find((item) => item.runId === run.runId);
     const participants = Array.from(
@@ -417,7 +417,7 @@ describe('intervalActions', () => {
       expect((await reloadTask()).intervals).toHaveLength(2);
     });
 
-    it('終了日時を欠く手動追加は拒否する（設計メモ §2.2）', async () => {
+    it('終了日時を欠く手動追加は拒否する（過去の設計メモ）', async () => {
       await expect(
         addIntervalManually(deps, target(), {
           type: INTERVAL_TYPE.WORK,
@@ -477,7 +477,7 @@ describe('intervalActions', () => {
     });
   });
 
-  describe('区間削除と変更履歴（仕様書11章、設計メモ §6.1 案B）', () => {
+  describe('区間削除と変更履歴（仕様書11章、過去の設計メモ 案B）', () => {
     /** 削除対象の区間を1件用意する。 */
     async function seedInterval() {
       await addIntervalManually(deps, target(), {
@@ -684,7 +684,7 @@ describe('intervalActions', () => {
     });
   });
 
-  describe('集計済みからの作業再開（仕様書7.1、レビュー指摘 S8-1）', () => {
+  describe('集計済みからの作業再開（仕様書7.1、過去のレビュー指摘）', () => {
     // 集計済みは「未終了区間がない」状態である。作業を再開すればその前提は崩れる
     // ため、確認を取ってから実施回を作業中へ戻す。集計済み→作業中は利用者の確認
     // 操作によると定められている（7.1）ので、黙って戻すことはできない。

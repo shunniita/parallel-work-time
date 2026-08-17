@@ -37,7 +37,7 @@ import { createParticipantsInput } from './participantsInput.js';
  * （多重タブでの競合など）フォームが開かれた場合だけである。その場合は
  * 「引き継ぐ参加者が0人」ではなく「引き継ぐ区間そのものが無い」と区別して
  * 伝える。0人の休憩からの再開と取り違えると、原因の見当がつかなくなる
- * （レビュー指摘 FB-5）。
+ * （過去のレビュー指摘）。
  *
  * @param {string} operation
  * @param {object|null} active 進行中区間。無ければ null

@@ -375,7 +375,7 @@ describe('templateActions / IndexedDbAdapter での往復', () => {
   });
 });
 
-describe('改訂で有効版の一意性を破れない（GAR-6）', () => {
+describe('改訂で有効版の一意性を破れない（過去のレビュー指摘）', () => {
   let adapter;
   let deps;
 

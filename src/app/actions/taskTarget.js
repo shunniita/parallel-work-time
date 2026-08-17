@@ -7,7 +7,7 @@
  * 集約する。
  *
  * WorkRun は `tasks[] → intervals[] / directEntries[]` を内包する単一ドキュメント
- * である（実装計画3.1）。配下を1件変えても WorkRun 全体を書き戻す粒度になる。
+ * である（過去の実装計画）。配下を1件変えても WorkRun 全体を書き戻す粒度になる。
  */
 
 import { describeNotEditable, isRunEditable } from '../../domain/runStatus.js';

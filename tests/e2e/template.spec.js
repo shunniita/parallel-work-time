@@ -1,8 +1,7 @@
 /**
  * 作業テンプレート画面のE2E（仕様書8.1、6.3、12.1）。
  *
- * 受入試験 T-01〜T-18（仕様書16章）は実装計画 Step 12 で追加する。本ファイルは
- * Step 4 の完了条件「テンプレートを登録・改訂でき、旧版レコードが残る」を
+ * 本ファイルは「テンプレートを登録・改訂でき、旧版レコードが残る」ことを
  * 実ブラウザで確認するものであり、試験IDは持たない。
  */
 
@@ -27,7 +26,6 @@ test.describe('画面の骨格（仕様書12.1）', () => {
   });
 
   test('仕様書12.2 の画面がすべて押せる', async ({ page }) => {
-    // Step 10 でアーカイブが入り、未実装の画面は無くなった。
     await expect(page.getByTestId('nav-projects')).toBeEnabled();
     await expect(page.getByTestId('nav-summary')).toBeEnabled();
     await expect(page.getByTestId('nav-templates')).toBeEnabled();

@@ -159,7 +159,7 @@ describe('createParticipantsInput', () => {
     expect([...view.component.element.querySelectorAll('option')]).toHaveLength(3);
   });
 
-  it('ラベルが入力欄と結び付いている（レビュー指摘 D-17）', () => {
+  it('ラベルが入力欄と結び付いている（過去のレビュー指摘）', () => {
     const view = mount();
 
     const label = view.component.element.querySelector('label');

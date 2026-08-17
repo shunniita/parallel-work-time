@@ -107,7 +107,7 @@ describe('isDeletable()（仕様書10.3、A-10）', () => {
     expect(isDeletable(run, { ...OPTIONS, now: daysAfter(30) })).toBe(true);
   });
 
-  describe('残り日数と判定が食い違わない（レビュー指摘 S10-4）', () => {
+  describe('残り日数と判定が食い違わない（過去のレビュー指摘）', () => {
     // 別々の比較を持つと、境界のちょうど1点で「残り0日と出ているのに候補では
     // ない」という説明できない状態ができる。
     it.each([
@@ -217,7 +217,7 @@ describe('canDeleteRun()（仕様書7.1、10.3、10.4）', () => {
     expect(result.reason).toContain('あと20日');
   });
 
-  it('保持期限ちょうどは削除できる（レビュー指摘 S10-4）', () => {
+  it('保持期限ちょうどは削除できる（過去のレビュー指摘）', () => {
     expect(canDeleteRun(archivedRun(), { ...OPTIONS, now: daysAfter(30) }).ok).toBe(true);
   });
 
@@ -249,7 +249,7 @@ describe('canDeleteProjectGroup()（仕様書10.4）', () => {
     expect(result).toEqual({ ok: true, reason: null });
   });
 
-  it('実施回が0件の案件は削除できる（レビュー指摘 S10-2）', () => {
+  it('実施回が0件の案件は削除できる（過去のレビュー指摘）', () => {
     // 消える記録が無いので、保持期間が守る対象も無い。登録しただけの案件を
     // 消す唯一の経路である。
     expect(canDeleteProjectGroup([], LATE)).toEqual({ ok: true, reason: null });

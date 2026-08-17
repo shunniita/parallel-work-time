@@ -97,7 +97,7 @@ export class IndexedDbAdapter extends StorageAdapter {
 
   async initialize() {
     if (this.db === null) {
-      // 並行して呼ばれても接続は1つにする（レビュー指摘 C-13）。null 確認と
+      // 並行して呼ばれても接続は1つにする（過去のレビュー指摘）。null 確認と
       // await の間に別の呼び出しが入ると、データベースを二重に開いてしまう。
       this.opening ??= this.openDatabase();
       try {
@@ -126,7 +126,7 @@ export class IndexedDbAdapter extends StorageAdapter {
       // `onblocked` で Promise を拒否しても、要求そのものは取り消せない。塞いで
       // いた接続が後から閉じれば `onsuccess` が遅れて発生する。その接続は誰の
       // 手にも渡らないまま開き続けるため、決着済みかどうかを覚えておく
-      // （レビュー指摘 S11-4）。
+      // （過去のレビュー指摘）。
       let settled = false;
 
       request.onupgradeneeded = () => upgradeSchema(request.result);
@@ -134,14 +134,14 @@ export class IndexedDbAdapter extends StorageAdapter {
         const db = request.result;
         if (settled) {
           // 拒否済みの要求が遅れて成功した。呼び出し元へ渡す先が無いので、
-          // ここで閉じる。放置すると `close()` できない接続が残り、C-13 で
-          // 防ごうとした状態が別経路で生じる。
+          // ここで閉じる。放置すると `close()` できない接続が残り、別タブの
+          // upgrade を塞ぐ。
           db.close();
           return;
         }
         settled = true;
-        // 別タブが新しい版で開こうとしたら、こちらの接続を手放す（レビュー指摘
-        // C-13）。放置すると相手の upgrade が永久にブロックされる。閉じた後の
+        // 別タブが新しい版で開こうとしたら、こちらの接続を手放す（過去のレビュー指摘）。
+        // 放置すると相手の upgrade が永久にブロックされる。閉じた後の
         // 操作は assertOpen() が明確な文言で拒む。
         db.onversionchange = () => {
           db.close();
@@ -437,7 +437,7 @@ export class IndexedDbAdapter extends StorageAdapter {
  * 索引に boolean を含めない。IndexedDB の有効なキー型は number / string /
  * Date / ArrayBuffer / Array であり、キーパスが boolean を返すとそのレコードは
  * 索引へ入らない。`active`（作業テンプレートの有効版）と `manuallyAdded` が
- * 該当するため、いずれも索引にしていない（実装計画3.1）。
+ * 該当するため、いずれも索引にしていない（過去の実装計画）。
  *
  * @param {IDBDatabase} db
  */

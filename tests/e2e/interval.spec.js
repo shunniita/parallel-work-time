@@ -328,7 +328,7 @@ test('作業項目詳細から実施回へ戻れる（仕様書12.2）', async (
 test('転記済みの実施回では記録できない（仕様書7.2）', async ({ page }) => {
   await setup(page, 'PJ-LOCK');
 
-  // 状態遷移の操作は Step 10 で実装する。ここでは保存層へ直接書いて作る。
+  // 画面の状態遷移操作は経由せず、保存層へ直接書いて作る。
   await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('parallel-work-time');

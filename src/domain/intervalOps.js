@@ -2,7 +2,7 @@
  * 作業区間の変換（仕様書8.4）。
  *
  * 7つの操作すべてを「進行中区間を閉じる」と「新しい区間を開く」の組み合わせと
- * して表す（設計メモ PWT-DESIGN-006 §2）。
+ * して表す（過去の設計メモ）。
  *
  * | 操作         | 前提状態      | 進行中区間  | 新規区間                  |
  * | ------------ | ------------- | ----------- | ------------------------- |
@@ -29,7 +29,7 @@
  *
  * `{ok, errors, warnings, intervals}` を返す。`errors` は保存を止める不備で
  * 「場所: 説明」の文字列、`warnings` は種別コードつきの
- * `{code, path, message}` である（設計メモ §3.1、レビュー指摘 D-15）。
+ * `{code, path, message}` である（過去の設計メモ、過去のレビュー指摘）。
  * 入れ物は `problems.js` を `validation.js` と共有する。
  */
 
@@ -46,7 +46,7 @@ import { normalizeParticipants, participantLimitErrors } from './participants.js
 import { Problems } from './problems.js';
 import { TASK_STATE, TASK_STATE_LABEL, activeInterval, taskState } from './taskState.js';
 
-/** 区間の検証で出る警告の種別（設計メモ §3.1）。 */
+/** 区間の検証で出る警告の種別（過去の設計メモ）。 */
 export const INTERVAL_WARNING = {
   /** 同一作業項目内で時間帯が重なる（仕様書8.9.5）。保存は止めない。 */
   OVERLAP: 'intervalOverlap',
@@ -358,7 +358,7 @@ export function startBreak(taskRecord, input, context) {
  *
  * 参加者は直前の休憩区間から引き継ぐ。ただし休憩は0人を許す一方で作業は
  * 0人を禁じるため（仕様書8.9.4）、引き継いだ結果が0人になる場合は入力を
- * 求めて拒否する。黙って0人の作業区間を作らない（設計メモ §2.1）。
+ * 求めて拒否する。黙って0人の作業区間を作らない（過去の設計メモ）。
  * `input.participants` を渡せば引き継ぎより優先する。
  *
  * @param {{intervals: object[]}} taskRecord
@@ -438,7 +438,7 @@ export function changeParticipants(taskRecord, input, context) {
  * `endAt` は必須である。仕様が未終了を許すのはボタン操作の場合だけであり
  * （仕様書8.4 補足1）、未終了区間を任意個作れると「進行中は高々1つ」という
  * 前提が崩れる。手動追加の目的は後からの実績修正なので、終了時刻が分かって
- * いる場合しか使わない（設計メモ §2.2）。
+ * いる場合しか使わない（過去の設計メモ）。
  *
  * @param {{intervals: object[]}} taskRecord
  * @param {{type: string, startAt: string, endAt: string, participants: string[]}} input
@@ -488,7 +488,7 @@ export function addInterval(taskRecord, input, context) {
  *
  * 終了済みの区間を未終了へ戻すことはできない。仕様書8.8.4 が求めるのは
  * 未終了区間へ終了時刻を補うことであり、その逆は「進行中は高々1つ」の前提を
- * 崩すだけである（設計メモ §2.2）。もともと未終了の区間は未終了のまま保存できる。
+ * 崩すだけである（過去の設計メモ）。もともと未終了の区間は未終了のまま保存できる。
  *
  * @param {{intervals: object[]}} taskRecord
  * @param {string} intervalId

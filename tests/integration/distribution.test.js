@@ -1,5 +1,5 @@
 /**
- * 配布物の生成契約（仕様書14章、5.1.4、5.1.5、レビュー指摘 F12-02、F12-15、F12-23）。
+ * 配布物の生成契約（仕様書14章、5.1.4、5.1.5、過去のレビュー指摘）。
  *
  * 「dist が成功した」と「有効なZIPができた」を同値にする。ZIP の存在・展開可能性・
  * 中身までをここで確かめ、E2E（`tests/e2e/distribution.spec.js`）は配信して動くこと
@@ -108,14 +108,14 @@ describe('配布物の組み立て', () => {
     expect(sums).toBe(`${sha256(zip)}  ${STAGE_NAME}.zip\n`);
   });
 
-  it('収録するのは採用リストのものだけである（F12-15）', () => {
+  it('収録するのは採用リストのものだけである（過去のレビュー指摘）', () => {
     // 除外すべきものを列挙するのではなく、置いたものが採用リストと一致することを
     // 断定する。新しい開発時ファイルが増えても自動的に落ちる。
     const rootEntries = CONTENT_MAPPINGS.map(({ destination }) => destination.split('/')[0]);
     expect(readdirSync(STAGE_DIR).sort()).toEqual([...new Set(rootEntries)].sort());
   });
 
-  it('採用ディレクトリの配下まで、Git管理下のファイルと一致する（F12-31）', () => {
+  it('採用ディレクトリの配下まで、Git管理下のファイルと一致する（過去のレビュー指摘）', () => {
     // 直下の一致だけでは、`src/` や `data/` の中へ紛れたファイルを見つけられない。
     // 「配布物 = Git管理下の採用リスト配下」を断定すれば、作業ツリーに残った
     // エクスポートJSONや編集中の一時ファイルが混入した時点で落ちる。
@@ -170,7 +170,7 @@ describe('配布物の組み立て', () => {
     expect(readme).not.toContain('npm run');
   });
 
-  it('展開すると全ファイルがマニフェストと一致する（F12-23）', () => {
+  it('展開すると全ファイルがマニフェストと一致する（過去のレビュー指摘）', () => {
     const extracted = extractZip(zip);
 
     expect(extracted.size).toBe(manifest.fileCount);
@@ -192,7 +192,7 @@ describe('配布物の組み立て', () => {
     }
   });
 
-  it('ZIP内のパス区切りはスラッシュで、先頭ディレクトリは1つである（F12-10）', () => {
+  it('ZIP内のパス区切りはスラッシュで、先頭ディレクトリは1つである（過去のレビュー指摘）', () => {
     const names = readZipEntries(zip).map((entry) => entry.name);
 
     expect(names.every((name) => !name.includes('\\'))).toBe(true);
@@ -207,7 +207,7 @@ describe('配布物の組み立て', () => {
 
 });
 
-describe('段取りのみの実行（F12-23）', () => {
+describe('段取りのみの実行（過去のレビュー指摘）', () => {
   it('stage() はZIPを作らずに配信できる状態を作る', () => {
     stage();
 
@@ -216,7 +216,7 @@ describe('段取りのみの実行（F12-23）', () => {
   });
 });
 
-describe('直接実行の判定（F12-39）', () => {
+describe('直接実行の判定（過去のレビュー指摘）', () => {
   it.runIf(process.platform === 'win32')('junction 経由のスクリプトも直接実行と判定する', () => {
     const temporary = mkdtempSync(join(tmpdir(), 'pwt-dist-junction-'));
     const junction = join(temporary, 'repository');

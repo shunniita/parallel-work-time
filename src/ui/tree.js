@@ -8,11 +8,11 @@
  * 作業項目ノードには現在状態を出す（仕様書7.2）。状態は保存せず区間から導出する
  * 派生値なので、`src/domain/taskState.js` を通して求める。
  *
- * アーカイブ済みの実施回は既定で表示しない（実装計画2.2(1)）。アーカイブ画面が
+ * アーカイブ済みの実施回は既定で表示しない（過去の実装計画）。アーカイブ画面が
  * 扱う対象であり、通常一覧から分離するのがアーカイブの目的である（仕様書10.1）。
  * 数量の累計には含める（仕様書8.2.5）ため、非表示と集計対象は別物である。
  *
- * ## キーボード操作（仕様書13章、レビュー指摘 D-18）
+ * ## キーボード操作（仕様書13章、過去のレビュー指摘）
  *
  * ARIA の tree パターンに従い、ノード間は矢印キーで移動する。Tab はツリー全体を
  * 1つの停留所として扱い（roving tabindex）、ツリー内の全ノードを Tab で辿らせ
@@ -27,7 +27,7 @@
  *
  * 展開・折りたたみは再描画を伴うため、直前に触っていたノードへフォーカスを
  * 戻す。戻さないと矢印キーを1回押すたびにフォーカスが body へ飛ぶ。マウスで
- * 折りたたみボタンを押した場合も同じ（レビュー指摘 S11-5）。
+ * 折りたたみボタンを押した場合も同じ（過去のレビュー指摘）。
  *
  * 「現在地」は経路上の最深ノード1つだけに置く（{@link currentKeyOf}）。子ノードを
  * 束ねる `ul` は `aria-owns` で親 treeitem に結ぶ（{@link childrenId}）。
@@ -43,10 +43,10 @@ import { el, replaceChildren } from './dom.js';
  * 作業項目の状態を表す記号（仕様書7.2）。
  *
  * 語そのものは `TASK_STATE_LABEL`（`domain/taskState.js`）を使う。ここが持つのは
- * ツリーでしか使わない記号だけである（レビュー指摘 D-16）。
+ * ツリーでしか使わない記号だけである（過去のレビュー指摘）。
  *
- * 記号は語の代わりではなく添え物である。`title` に語を入れてあり、記号だけで
- * 意味を取らせない。記号を支援技術へ伝える対応は Step 11（D-18 の (c)）。
+ * 記号は語の代わりではなく添え物である。記号そのものは `aria-hidden` で伏せ、
+ * 語を `aria-label` と `title` へ入れてある。
  */
 const TASK_STATE_MARK = {
   [TASK_STATE.NOT_STARTED]: '○',
@@ -56,7 +56,7 @@ const TASK_STATE_MARK = {
 };
 
 /**
- * 子ノードの入れ物（`role="group"`）に振る ID（レビュー指摘 S11-2、GAR-5）。
+ * 子ノードの入れ物（`role="group"`）に振る ID（過去のレビュー指摘）。
  *
  * treeitem は `button` なので、その内側へ子の `ul` を入れられない（対話要素の
  * 入れ子になる）。DOM では兄弟に置き、所有関係だけ `aria-owns` で示す。これが
@@ -75,7 +75,7 @@ function childrenId(sequence) {
 }
 
 /**
- * いま選択している最深のノードのキーを求める（レビュー指摘 S11-3）。
+ * いま選択している最深のノードのキーを求める（過去のレビュー指摘）。
  *
  * 選択は案件→実施回→作業項目と積み上がるため、各段が自分の ID だけを見て
  * 「現在地」を決めると、経路上の3つすべてに `aria-current` が立つ。そうなると
@@ -116,7 +116,7 @@ export function createTree({ container, store, handlers }) {
   /** 最後にフォーカスしていたノードのキー。roving tabindex の停留所になる。 */
   let focusedKey = null;
 
-  /** `aria-owns` 用の通し番号。描画のたびに0へ戻す（GAR-5）。 */
+  /** `aria-owns` 用の通し番号。描画のたびに0へ戻す（過去のレビュー指摘）。 */
   let childrenSequence = 0;
 
   function toggle(key) {
@@ -154,7 +154,7 @@ export function createTree({ container, store, handlers }) {
           // このボタンは `treeitem` の子ではなく兄弟なので、押しても `focusin` の
           // 経路に乗らず `focusedKey` が動かない。加えて `toggle()` の再描画で
           // ボタン自身が消えるため、そのままではフォーカスが body へ落ちて、
-          // マウスで展開した直後に矢印キーへ移れない（レビュー指摘 S11-5）。
+          // マウスで展開した直後に矢印キーへ移れない（過去のレビュー指摘）。
           const restore = container.contains(document.activeElement);
           focusedKey = key;
           toggle(key);
@@ -182,14 +182,14 @@ export function createTree({ container, store, handlers }) {
     }
     // 属性セレクターへ識別子を埋め込まない。取り込むJSONの識別子は非空文字列で
     // ありさえすればよく（9.3）、引用符や角括弧が入ると別要素に当たるか
-    // `SyntaxError` になる（GAR-5）。既に手元にある要素から完全一致で探す。
+    // `SyntaxError` になる（過去のレビュー指摘）。既に手元にある要素から完全一致で探す。
     visibleItems()
       .find((item) => item.dataset.treeKey === key)
       ?.focus();
   }
 
   /**
-   * 矢印キーによるノード移動（仕様書13章、レビュー指摘 D-18）。
+   * 矢印キーによるノード移動（仕様書13章、過去のレビュー指摘）。
    *
    * 展開・折りたたみは `toggle()` が再描画するため、その後に同じノードへ
    * フォーカスを戻す。
@@ -289,7 +289,7 @@ export function createTree({ container, store, handlers }) {
         },
         'aria-current': current ? 'true' : 'false',
         // 状態記号（●/○/◐/✓）は支援技術へ渡らないため、語を名前に含める
-        // （レビュー指摘 D-18）。
+        // （過去のレビュー指摘）。
         'aria-label': `${task.name}（${TASK_STATE_LABEL[state]}）`,
         title: `${task.name}（${TASK_STATE_LABEL[state]}）`,
         on: { click: () => handlers.onSelectTask(run.runId, task.taskRecordId) },
@@ -346,7 +346,7 @@ export function createTree({ container, store, handlers }) {
     const key = `group:${group.projectGroupId}`;
     // アーカイブ済みはツリーへ出さないが、数量の累計には含める（仕様書8.2.5）。
     // 番号は全件を通して振ってから絞る。表示中だけで数えると、第1回をアーカイブ
-    // した瞬間に第2回が繰り上がる（レビュー指摘 D-14）。
+    // した瞬間に第2回が繰り上がる（過去のレビュー指摘）。
     const visible = activeRuns(runs);
     const summary = summarizeQuantity(group, runs);
     const open = visible.length > 0 && expanded.has(key);
@@ -397,7 +397,7 @@ export function createTree({ container, store, handlers }) {
     );
 
     // 案件ごとに束ねるだけにする。並べ替えと採番は `runOrder.js` が持つ
-    // （レビュー指摘 D-14）。
+    // （過去のレビュー指摘）。
     const runsByProject = new Map();
     for (const run of dataset.workRuns) {
       const list = runsByProject.get(run.projectGroupId) ?? [];
