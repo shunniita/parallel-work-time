@@ -23,6 +23,7 @@ import {
   MANUAL_PDF_DESTINATION,
   MANIFEST_PATH,
   ROOT,
+  SHA256SUMS_PATH,
   STAGE_DIR,
   STAGE_NAME,
   ZIP_PATH,
@@ -99,6 +100,12 @@ describe('配布物の組み立て', () => {
     expect(existsSync(MANIFEST_PATH)).toBe(true);
     expect(result.fileCount).toBeGreaterThan(0);
     expect(result.zipSha256).toBe(sha256(zip));
+  });
+
+  it('配布先でZIP自体を照合できるSHA256SUMSを作る', () => {
+    const sums = readFileSync(SHA256SUMS_PATH, 'utf8');
+
+    expect(sums).toBe(`${sha256(zip)}  ${STAGE_NAME}.zip\n`);
   });
 
   it('収録するのは採用リストのものだけである（F12-15）', () => {

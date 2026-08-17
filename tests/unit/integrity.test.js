@@ -167,6 +167,23 @@ describe('validateImport（構造＋業務整合性）', () => {
     })).toContain('未終了の作業区間');
   });
 
+  // 通常の生成経路では作れない（ボタン操作による未終了区間は作業項目ごとに1つ、
+  // 仕様書8.4 補足1）。それでも通すのは、開始が最新の1件を進行中とみなして画面が
+  // 動き（`taskState.js`）、残りは終了時刻の補完（8.8.4）で閉じられるためである。
+  it('同一作業項目に未終了区間が複数あっても通す', () => {
+    const payload = validPayload();
+    payload.workRuns[0].tasks[0].intervals = [
+      workInterval('2026-08-01T09:00:00+09:00', null),
+      workInterval('2026-08-01T10:00:00+09:00', null),
+    ];
+
+    expect(validateImport(payload)).toEqual({
+      ok: true,
+      schemaMismatch: false,
+      errors: [],
+    });
+  });
+
   it('アーカイブ日時と状態の不一致を拒否する', () => {
     expect(errorsOf((p) => {
       p.workRuns[0].archivedAt = '2026-08-01T12:00:00+09:00';

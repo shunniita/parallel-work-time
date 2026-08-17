@@ -22,7 +22,11 @@ export default defineConfig({
   fullyParallel: false,
   // 落ちた試験を通ったことにしないため、CI では .only を禁止する。
   forbidOnly: Boolean(process.env.CI),
-  retries: 0,
+  // CIだけ再試行する。windows-latest はネットワークバッファ枯渇
+  // （`ERR_NO_BUFFER_SPACE`）や接続タイムアウトを不定期に起こし、製品ではなく
+  // ランナー起因の赤が混ざる。再試行しても Playwright は flaky として報告するため、
+  // 頻度は追跡できる。手元は0のままにし、不安定さにその場で気づけるようにする。
+  retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
   use: {
     baseURL: BASE_URL,

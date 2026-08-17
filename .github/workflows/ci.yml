@@ -53,6 +53,7 @@ jobs:
           path: |
             dist/parallel-work-time.zip
             dist/manifest.json
+            dist/SHA256SUMS.txt
           if-no-files-found: error
 
       - name: Upload test results
