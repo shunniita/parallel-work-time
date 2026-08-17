@@ -12,7 +12,7 @@
 
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -66,10 +66,32 @@ function decodeUrlPath(urlPath) {
 }
 
 /**
+ * 絶対パスがルート配下かを判定する。
+ *
+ * 末尾へ区切りを足してから比べる。付けずに前方一致を見ると、ルートが
+ * `/srv/app` のとき `/srv/application` まで配下と誤判定する。
+ *
+ * @param {string} root
+ * @param {string} absolute
+ * @returns {boolean}
+ */
+function isWithinRoot(root, absolute) {
+  if (absolute === root) {
+    return true;
+  }
+  const rootWithSep = root.endsWith(sep) ? root : root + sep;
+  return absolute.startsWith(rootWithSep);
+}
+
+/**
  * デコード済みのパスをルート配下の実ファイルへ解決する。
  *
- * `..` を含む要求でルート外へ出られないよう、正規化後の絶対パスがルートで
- * 始まることを確認する。
+ * `..` を含む要求でルート外へ出られないよう、正規化後の絶対パスがルート配下で
+ * あることを確認する。
+ *
+ * ここで通っても実体がルート内とは限らない。判定はパス文字列の上だけで行って
+ * おり、シンボリックリンクは解けないためである。実体の確認は開く直前に行う
+ * （{@link createStaticServer}）。
  *
  * @param {string} root
  * @param {string} decodedPath
@@ -78,11 +100,7 @@ function decodeUrlPath(urlPath) {
 function resolveWithinRoot(root, decodedPath) {
   const relative = normalize(decodedPath).replace(/^([/\\])+/, '');
   const absolute = resolve(join(root, relative));
-  const rootWithSep = root.endsWith(sep) ? root : root + sep;
-  if (absolute !== root && !absolute.startsWith(rootWithSep)) {
-    return null;
-  }
-  return absolute;
+  return isWithinRoot(root, absolute) ? absolute : null;
 }
 
 function send(response, status, body, headers = {}) {
@@ -96,6 +114,14 @@ function send(response, status, body, headers = {}) {
 }
 
 export function createStaticServer(root) {
+  /**
+   * ルートの実体パス。初回の要求で1度だけ解決して使い回す。
+   *
+   * ルート自体がシンボリックリンクやジャンクションの下にある場合、実体どうしで
+   * 比べないと配下のファイルまでルート外と判定してしまう。
+   */
+  let realRoot;
+
   return createServer(async (request, response) => {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       send(response, 405, 'GET と HEAD のみ対応する');
@@ -121,8 +147,19 @@ export function createStaticServer(root) {
         filePath = join(filePath, 'index.html');
         await stat(filePath);
       }
+      // 実体で解決し直す。`resolve()` はシンボリックリンクを解かないため、
+      // ルート内に置かれた外部へのリンクをここまで素通ししてしまう。
+      realRoot ??= await realpath(root);
+      filePath = await realpath(filePath);
     } catch {
       send(response, 404, `見つからない: ${request.url}`);
+      return;
+    }
+
+    // 実体がルート外なら配信しない。文字列上の判定（`resolveWithinRoot`）を
+    // 通っていても、リンクをたどった先までは保証されていない。
+    if (!isWithinRoot(realRoot, filePath)) {
+      send(response, 403, 'ルート外は配信しない');
       return;
     }
 

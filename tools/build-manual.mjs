@@ -39,10 +39,32 @@ function documentId(file) {
   return `doc-${basename(file, '.md').toLowerCase()}`;
 }
 
-/** GitHub風の見出し断片。既存Markdownのリンク先を明示アンカーへ対応させる。 */
+/**
+ * インラインHTMLのタグを取り除く。
+ *
+ * 1回の置換では、除去した結果が新しいタグを組み立てる入力を取りこぼす。
+ * `<<b>b>` は1回で `<b>` になり、タグとして残る。変化しなくなるまで繰り返す。
+ */
+function stripHtmlTags(text) {
+  let result = text;
+  let previous;
+  do {
+    previous = result;
+    result = result.replace(/<[^>]+>/g, '');
+  } while (result !== previous);
+  return result;
+}
+
+/**
+ * GitHub風の見出し断片。既存Markdownのリンク先を明示アンカーへ対応させる。
+ *
+ * 戻り値は見出しを引き当てるための照合キーであり、HTMLへは出さない。PDFへ書く
+ * アンカーは `doc-<ファイル名>-h<連番>` の生成IDである（{@link collectHeadingAnchors}）。
+ * タグの除去は、タグ名が断片へ紛れ込まないようにするためであって、出力を安全に
+ * するためのものではない。
+ */
 export function headingSlug(text) {
-  return text
-    .replace(/<[^>]+>/g, '')
+  return stripHtmlTags(text)
     .replace(/[`*_~]/g, '')
     .trim()
     .toLowerCase()
