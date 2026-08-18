@@ -49,7 +49,7 @@ function mount(options = {}) {
     exportData: vi.fn(async () => ({ dataset: null })),
   };
   // 排他区間の用意と、区間内で使うアクションを閉じ込めるのは `main.js` の役目で
-  // ある（GAR-1、F12-18）。ここでは順序だけを持つ本体（`runDestructiveAction`）へ
+  // ある（過去のレビュー指摘）。ここでは順序だけを持つ本体（`runDestructiveAction`）へ
   // 同じ形でモックを差し込む。
   const runDestructive =
     options.runDestructive ??
@@ -261,7 +261,7 @@ describe('createArchiveView', () => {
       expect(view.actions.deleteRun).not.toHaveBeenCalled();
     });
 
-    it('保持期間内は押せず、理由を添える（レビュー指摘 S10-1）', () => {
+    it('保持期間内は押せず、理由を添える（過去のレビュー指摘）', () => {
       // 仕様書7.1 の遷移表は アーカイブ → 削除候補 → 完全削除 である。
       const group = projectGroup({ projectId: 'PJ-0001' });
       const view = mount({
@@ -276,7 +276,7 @@ describe('createArchiveView', () => {
       expect(button.getAttribute('title')).toContain('あと20日');
     });
 
-    it('保持期限ちょうどは押せて、削除候補と出る（レビュー指摘 S10-4）', () => {
+    it('保持期限ちょうどは押せて、削除候補と出る（過去のレビュー指摘）', () => {
       // 表示と可否を別の述語から導くと、この1点だけ食い違う。
       const group = projectGroup({ projectId: 'PJ-0001' });
       const view = mount({
@@ -323,7 +323,7 @@ describe('createArchiveView', () => {
       expect(button.getAttribute('title')).toContain('1 件');
     });
 
-    it('保持期間内の実施回が残っていれば押せない（レビュー指摘 S10-1）', () => {
+    it('保持期間内の実施回が残っていれば押せない（過去のレビュー指摘）', () => {
       const group = projectGroup({ projectId: 'PJ-0001' });
       const view = mount({
         group,
@@ -337,7 +337,7 @@ describe('createArchiveView', () => {
       expect(button.getAttribute('title')).toContain('保持期間が残っている実施回が 1 件');
     });
 
-    describe('実施回が0件の案件（レビュー指摘 S10-2）', () => {
+    describe('実施回が0件の案件（過去のレビュー指摘）', () => {
       it('一覧へ出て削除できる', () => {
         // ここが案件削除を呼べる唯一の画面なので、出さないと通常操作では
         // 二度と消せなくなる。

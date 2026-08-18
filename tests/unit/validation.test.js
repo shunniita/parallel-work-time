@@ -425,7 +425,7 @@ describe('validateRunDraft()', () => {
       expect(warningText(result)).toContain('続行できる');
     });
 
-    it('警告に累計超過の種別コードを付ける（レビュー指摘 D-15）', () => {
+    it('警告に累計超過の種別コードを付ける（過去のレビュー指摘）', () => {
       const result = validateRunDraft(draft({ runQuantity: 80 }), context());
 
       expect(result.warnings).toEqual([

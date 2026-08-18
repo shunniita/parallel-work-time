@@ -1,5 +1,5 @@
 /**
- * インポートJSON検証の単体テスト（仕様書9.3、実装計画8.2）。
+ * インポートJSON検証の単体テスト（仕様書9.3、過去の実装計画）。
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -130,7 +130,7 @@ describe('validateImportPayload()', () => {
       expect(result.errors.join('\n')).toContain('settings.retentionDays');
     });
 
-    it('retentionDays が上限を超えると失敗する（レビュー指摘 S10-5）', () => {
+    it('retentionDays が上限を超えると失敗する（過去のレビュー指摘）', () => {
       // 取り込みも保存の入口と同じ範囲を課す。ここを通ると、画面が開けない
       // 設定を外部ファイルから流し込めてしまう。
       const result = validateImportPayload(
@@ -442,12 +442,12 @@ describe('validateImportPayload()', () => {
   });
 
   /**
-   * 通常の書き込み経路が保存しない形の値を拒む（レビュー指摘 F12-01）。
+   * 通常の書き込み経路が保存しない形の値を拒む（過去のレビュー指摘）。
    *
    * 受理してしまうと、画面の検索と重複判定は正規化した入力と保存済みの生値を
    * 比べるため、取り込んだ案件・テンプレートを引けなくなる。
    */
-  describe('正規化されていない文字列を拒否する（F12-01）', () => {
+  describe('正規化されていない文字列を拒否する（過去のレビュー指摘）', () => {
     /** 1件だけ書き換えて、その項目のエラーだけを取り出す。 */
     function errorsFor(path, mutate) {
       const payload = validPayload();
@@ -519,13 +519,13 @@ describe('validateImportPayload()', () => {
   });
 
   /**
-   * 安全整数の外にある値を拒む（レビュー指摘 F12-05）。
+   * 安全整数の外にある値を拒む（過去のレビュー指摘）。
    *
    * `9007199254740993` は `Number` へ変換された時点で1つ下の値へ丸められ、
    * `Number.isInteger()` は丸めた後の値を整数と判定する。入力した値と保存される
    * 値が違うことに利用者が気づけない。
    */
-  describe('数値の安全な範囲（F12-05）', () => {
+  describe('数値の安全な範囲（過去のレビュー指摘）', () => {
     it('安全整数を超える数量を拒否する', () => {
       const payload = validPayload();
       payload.projectGroups[0].totalQuantity = 9007199254740993;
@@ -575,7 +575,7 @@ describe('validateImportPayload()', () => {
       expect(validateImportPayload(payload).ok).toBe(false);
     });
 
-    it('内部識別子にも同じ長さの上限を適用する（F12-32）', () => {
+    it('内部識別子にも同じ長さの上限を適用する（過去のレビュー指摘）', () => {
       // 識別子はDOMのid属性や変更履歴の `targetId` として使い回される。
       // 形は問わないが、長さは他の文字列と同じ上限に収める。
       const overLong = 'A'.repeat(MAX_TEXT_LENGTH + 1);

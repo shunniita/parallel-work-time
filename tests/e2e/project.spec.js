@@ -1,8 +1,7 @@
 /**
  * 案件・実施回のE2E（仕様書8.2、8.3、8.9.2、8.9.7）。
  *
- * 受入試験 T-01〜T-18（仕様書16章）は実装計画 Step 12 でまとめて追加する。
- * ここでは Step 5 の完了条件（A-01、A-02）に相当する範囲を確認する。
+ * ここでは受入条件 A-01、A-02 に相当する範囲を確認する。
  */
 
 import { expect, test } from '@playwright/test';
@@ -223,7 +222,7 @@ test.describe('作業項目の生成（仕様書8.3、A-01）', () => {
   test('外部項目コード順へ並べ替えられる（仕様書8.7.3）', async ({ page }) => {
     // 「対象種別A / 標準」は表示順と自然順が一致するため、この試験には使えない。
     // 並べ替えを外しても通ってしまい、何も確かめていないことになる
-    // （レビュー指摘 E-21）。「拡張」は表示順と自然順が食い違う。
+    // （過去のレビュー指摘）。「拡張」は表示順と自然順が食い違う。
     //
     //   表示順: 受入確認(X-100) → 本作業(X-1000) → 追加加工(X-2000) → 検査(X-1100)
     //   自然順: X-100 < X-1000 < X-1100 < X-2000
@@ -528,8 +527,6 @@ test.describe('作業項目の選択（仕様書12.2、12.3）', () => {
     const firstRow = page.getByTestId('task-list').getByTestId('task-row').first();
     const name = await firstRow.getByTestId('task-name').textContent();
     await firstRow.getByTestId('task-name').click();
-
-    // Step 6 で作業項目詳細を足すまでは行の選択表示だけだった。いまは詳細へ移る。
     await expect(page.getByTestId('task-detail-title')).toHaveText(name);
     // 左ツリーでも同じ作業項目が選択として示される。
     await expect(page.getByTestId('tree-task').and(page.locator('[aria-current="true"]'))).toHaveCount(

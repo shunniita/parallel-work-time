@@ -1,8 +1,8 @@
 /**
- * メモリ上に保持する保存アダプター。テスト用（実装計画4.1）。
+ * メモリ上に保持する保存アダプター。テスト用（過去の実装計画）。
  *
  * {@link ./IndexedDbAdapter.js IndexedDbAdapter} と同一の契約を満たす。
- * 両者は同じ結合テストスイートへ通す（実装計画8.2）。
+ * 両者は同じ結合テストスイートへ通す（過去の実装計画）。
  *
  * IndexedDB は値を構造化複製して保存するため、呼び出し側が後から
  * オブジェクトを書き換えても保存内容は変わらない。この振る舞いの差が
@@ -34,7 +34,7 @@ function clone(value) {
  * ストアの中身を主キーの昇順で返す（`StorageAdapter.loadAll()` の契約）。
  *
  * IndexedDB の `getAll()` はキー昇順で返す。`Map` は挿入順なので、そのままでは
- * 2つの実装で並びが食い違う（レビュー指摘 C-9）。キーはすべて文字列である。
+ * 2つの実装で並びが食い違う（過去のレビュー指摘）。キーはすべて文字列である。
  *
  * @param {Map<string, object>} store
  * @returns {object[]}
@@ -88,13 +88,13 @@ export class MemoryAdapter extends StorageAdapter {
     const dataset = createEmptyDataset();
     // 設定が無ければ `null` を返す。`Map#get` の `undefined` をそのまま流すと
     // `IndexedDbAdapter`（`?? null`）と形が違い、呼び出し側が両方を書き分ける
-    // ことになる（レビュー指摘 C-9）。
+    // ことになる（過去のレビュー指摘）。
     const settings = this.stores.get(ENTITY_TYPE.SETTINGS).get(SETTINGS_KEY);
     dataset.settings = settings === undefined ? null : clone(settings);
     for (const type of COLLECTION_TYPES) {
       // 主キーの昇順で返す。`Map` の挿入順のままだと IndexedDB の `getAll()` と
       // 並びが違い、`MemoryAdapter` で書いたテストが通るのに実装では別の順に
-      // なる差が残る（C-9）。
+      // なる差が残る（過去のレビュー指摘）。
       dataset[type] = sortedByKey(this.stores.get(type)).map(clone);
     }
     return dataset;
@@ -218,7 +218,7 @@ export class MemoryAdapter extends StorageAdapter {
    * 対象種別・バリエーションの作業テンプレートを引く。
    *
    * `activeOnly` は取得後のメモリ上で絞り込む。IndexedDbAdapter が boolean を
-   * 索引へ含められないため（実装計画3.1）、同じ絞り込み方に揃えてある。
+   * 索引へ含められないため（過去の実装計画）、同じ絞り込み方に揃えてある。
    *
    * @param {string} targetType
    * @param {string} variant

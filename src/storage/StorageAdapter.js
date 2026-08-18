@@ -18,7 +18,7 @@
 import { SCHEMA_VERSION } from '../config.js';
 
 /**
- * 保存対象の種別。IndexedDB のオブジェクトストア名と一致させる（実装計画3.1）。
+ * 保存対象の種別。IndexedDB のオブジェクトストア名と一致させる（過去の実装計画）。
  */
 export const ENTITY_TYPE = {
   SETTINGS: 'settings',
@@ -36,7 +36,7 @@ export const COLLECTION_TYPES = [
   ENTITY_TYPE.CHANGE_HISTORY,
 ];
 
-/** 種別ごとの主キー名（実装計画3.1）。 */
+/** 種別ごとの主キー名（過去の実装計画）。 */
 export const KEY_PATH = {
   [ENTITY_TYPE.TASK_TEMPLATES]: 'templateId',
   [ENTITY_TYPE.PROJECT_GROUPS]: 'projectGroupId',
@@ -285,7 +285,7 @@ export class StorageAdapter {
   /**
    * 全データを読み込む。
    *
-   * ## 実装が守る契約（レビュー指摘 C-9）
+   * ## 実装が守る契約（過去のレビュー指摘）
    *
    * - **並び順**: 各コレクションは主キーの昇順で返す。IndexedDB の `getAll()` が
    *   この順で返すため、実装側の都合ではなくこちらを契約とした。順序を約束して
@@ -381,7 +381,7 @@ export class StorageAdapter {
    * `activeOnly` の絞り込みは索引ではなく取得後のメモリ上で行う。IndexedDB の
    * 有効なキー型は number / string / Date / ArrayBuffer / Array であり boolean を
    * 含まないため、`active` を複合索引のキーパスへ加えると該当レコードが例外なく
-   * 索引から除外される（実装計画3.1）。
+   * 索引から除外される（過去の実装計画）。
    *
    * @param {string} targetType
    * @param {string} variant

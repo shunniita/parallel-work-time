@@ -94,7 +94,7 @@ describe('directEntryActions', () => {
     return saved.tasks[index];
   }
 
-  /** 実施回の状態を直接書き換える（状態遷移の操作は Step 10）。 */
+  /** 実施回の状態を直接書き換える。画面の状態遷移操作は経由しない。 */
   async function setRunStatus(status) {
     const { workRuns } = await adapter.loadAll();
     const saved = workRuns.find((item) => item.runId === run.runId);
@@ -113,7 +113,7 @@ describe('directEntryActions', () => {
     return task.directEntries[task.directEntries.length - 1];
   }
 
-  it('別作業項目との合計で実施回上限を超える追加は保存しない（F12-36）', async () => {
+  it('別作業項目との合計で実施回上限を超える追加は保存しない（過去のレビュー指摘）', async () => {
     const { workRuns } = await adapter.loadAll();
     const saved = workRuns.find((item) => item.runId === run.runId);
     const participants = Array.from(

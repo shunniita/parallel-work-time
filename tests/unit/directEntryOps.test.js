@@ -229,7 +229,7 @@ describe('addDirectEntry()', () => {
       expect(result.warnings).toEqual([]);
     });
 
-    it('区切り位置が違えば別の顔ぶれとして扱う（レビュー指摘 S7-3）', () => {
+    it('区切り位置が違えば別の顔ぶれとして扱う（過去のレビュー指摘）', () => {
       // 参加者名は自由入力なので、名前の中に空白が入りうる。単純な区切り文字で
       // 連結して比べると `['甲 太郎']` と `['甲', '太郎']` が同じキーになる。
       const task = taskRecord({
@@ -382,7 +382,7 @@ describe('editDirectEntry()', () => {
     expect(result.errors.join('\n')).toContain('1秒以上');
   });
 
-  describe('取り込んだ0秒レコード（レビュー指摘 S7-2）', () => {
+  describe('取り込んだ0秒レコード（過去のレビュー指摘）', () => {
     // `schema.js` のインポート検証は0秒を通す。「取り込めるが直せない」
     // レコードを作らないため、0秒のままの保存は編集でも通す。
     function taskWithZeroEntry() {

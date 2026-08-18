@@ -173,7 +173,7 @@ test('外部項目コード順に並べ替えられ、未設定は末尾で警�
   expect(byOrder).toEqual(['受入確認', '本作業', '追加加工', '検査']);
 });
 
-test('表示順へ切り替えてもコピーは外部項目コード順になる（仕様書8.7.7、S8-2）', async ({
+test('表示順へ切り替えてもコピーは外部項目コード順になる（仕様書8.7.7）', async ({
   page,
 }) => {
   const clipboard = await recordClipboard(page);
@@ -206,7 +206,7 @@ test('表示順へ切り替えてもコピーは外部項目コード順にな�
   expect(codes).toEqual(['X-100', 'X-1000', 'X-1100', 'X-2000']);
 });
 
-test('集計済みで作業を再開すると確認のうえ作業中へ戻る（仕様書7.1、S8-1）', async ({ page }) => {
+test('集計済みで作業を再開すると確認のうえ作業中へ戻る（仕様書7.1）', async ({ page }) => {
   await setup(page, 'PJ-REOPEN');
 
   await addDirectEntry(page, { task: '受入確認', minutes: '10', note: '計測漏れ' });

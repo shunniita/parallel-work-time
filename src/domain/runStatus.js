@@ -35,7 +35,7 @@ import { RUN_STATUS } from './schema.js';
  * 実施回の状態の表示名（仕様書7章）。
  *
  * `TASK_STATE_LABEL`（`taskState.js`）や `INTERVAL_TYPE_LABEL`（`effort.js`）と
- * 同じく、保存する値と対応する語は定義の近くに置く（レビュー指摘 D-16）。
+ * 同じく、保存する値と対応する語は定義の近くに置く（過去のレビュー指摘）。
  * 遷移を拒む理由の文言でもここを使うため、画面側に置くと domain が UI を参照する
  * ことになる。
  */

@@ -47,7 +47,7 @@ describe('createDateTimeInput', () => {
     const result = component.read();
 
     expect(result.ok).toBe(true);
-    // オフセットは入力された日のローカル値になる（レビュー指摘 SOL-1）。
+    // オフセットは入力された日のローカル値になる（過去のレビュー指摘）。
     expect(result.iso).toBe(toIsoSecond(new Date(2026, 7, 1, 10, 0, 0)));
   });
 
@@ -57,7 +57,7 @@ describe('createDateTimeInput', () => {
     expect(component.read().iso).toBe(toIsoSecond(FIXED_NOW));
   });
 
-  describe('オフセットの保持（レビュー指摘 FB-9）', () => {
+  describe('オフセットの保持（過去のレビュー指摘）', () => {
     // 実行環境のタイムゾーンに依存しないよう、明示したオフセットとの往復だけを
     // 見る。インポートしたJSON（仕様書9.3）は別のオフセットの区間を含みうる。
 
@@ -128,7 +128,7 @@ describe('createDateTimeInput', () => {
     expect(result.error).toContain('日時');
   });
 
-  it('実在しない日付を拒否する（レビュー指摘 SOL-3）', () => {
+  it('実在しない日付を拒否する（過去のレビュー指摘）', () => {
     const { component, input } = mount();
     input.value = '2026-02-30T09:00:00';
 
@@ -143,14 +143,14 @@ describe('createDateTimeInput', () => {
     expect(input.value).toBe('2026-12-31T23:59:59');
   });
 
-  it('ラベルが入力欄と結び付いている（レビュー指摘 D-17）', () => {
+  it('ラベルが入力欄と結び付いている（過去のレビュー指摘）', () => {
     const { component, input } = mount();
 
     expect(component.element.querySelector('label').getAttribute('for')).toBe('at');
     expect(input.id).toBe('at');
   });
 
-  describe('startEmpty（区間編集で未終了のまま始める、設計メモ §4.2.2）', () => {
+  describe('startEmpty（区間編集で未終了のまま始める、過去の設計メモ）', () => {
     it('value / now を無視して空欄から始める', () => {
       const { input } = mount({ startEmpty: true, value: '2026-07-30T09:00:00+09:00' });
 

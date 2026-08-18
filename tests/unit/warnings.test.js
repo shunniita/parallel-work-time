@@ -83,7 +83,7 @@ describe('collectOpenIntervals()（仕様書8.8.1）', () => {
     expect(items).toHaveLength(1);
   });
 
-  it('第n回の採番は案件の全実施回を通して振る（レビュー指摘 D-14 と同じ規則）', () => {
+  it('第n回の採番は案件の全実施回を通して振る（過去のレビュー指摘と同じ規則）', () => {
     const group = projectGroup();
     const first = workRun({
       projectGroupId: group.projectGroupId,

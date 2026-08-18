@@ -50,7 +50,7 @@ import { resolveDeps } from './deps.js';
  * 定義されている（仕様書7章の状態表）。したがって**その状態へ入るたびに**中身を
  * 確かめる必要がある。入口を1つだけ見ればよいわけではない。
  *
- * ## 集計済みからの再編集で破れる（レビュー指摘 S8-1）
+ * ## 集計済みからの再編集で破れる（過去のレビュー指摘）
  *
  * 集計済みは編集できる状態である（7.2 で閲覧のみとするのは転記済みとアーカイブ
  * だけ）。そのため「集計済みにする → 新しい区間を開始する → 転記済みにする」が
@@ -130,7 +130,7 @@ async function changeStatus(deps, runId, nextStatus, input = {}) {
       ...current,
       status: nextStatus,
       // アーカイブは転記済みを内包するため転記日時を保ち、アーカイブ日時を足す。
-      // 作業中・集計済みへ戻す場合は両方を消す（PWT-DESIGN-009 §3.6）。
+      // 作業中・集計済みへ戻す場合は両方を消す（過去の設計メモ）。
       ...timestampsForStatus(current, nextStatus, nowIso),
       updatedAt: nowIso,
     };
@@ -222,7 +222,7 @@ export async function reopenRun(deps, runId) {
  * （仕様書8.7.5）。画面の一時チェックは画面の中だけで持つ。
  *
  * 集計済みになった後で記録が増えている場合があるため、ここでも未終了区間が
- * 無いことを確かめる（レビュー指摘 S8-1、{@link requiresClosedIntervals}）。
+ * 無いことを確かめる（過去のレビュー指摘、{@link requiresClosedIntervals}）。
  *
  * @param {object} deps
  * @param {string} runId

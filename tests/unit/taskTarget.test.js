@@ -18,7 +18,7 @@ describe('assertRunEffortWithinRange()', () => {
       .not.toThrow();
   });
 
-  it('各作業項目が上限内でも実施回合計が超えれば拒否する（F12-36）', () => {
+  it('各作業項目が上限内でも実施回合計が超えれば拒否する（過去のレビュー指摘）', () => {
     const halfPlusOne = MAX_EFFORT_SECONDS / 2 + 1;
     expect(() => assertRunEffortWithinRange(runWithTaskTotals(halfPlusOne, halfPlusOne)))
       .toThrow(/実施回.*合計工数が上限/);

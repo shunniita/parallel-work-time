@@ -54,7 +54,7 @@ test('T-14 同一ブラウザで2タブ開くと警告が出る（A-13）', asyn
   await expect(page.getByTestId('multi-tab-warning')).toBeHidden();
 });
 
-test('別ページへ移って戻ったタブも再び検知される（レビュー指摘 S11-1）', async ({
+test('別ページへ移って戻ったタブも再び検知される（過去のレビュー指摘）', async ({
   page,
   context,
 }) => {
@@ -131,7 +131,7 @@ test('しきい値超過は1分ごとの再評価で現れる（仕様書8.8.2�
   );
 });
 
-test('保存の成否は読み上げ領域で伝える（仕様書9.1、レビュー指摘 D-18）', async ({ page }) => {
+test('保存の成否は読み上げ領域で伝える（仕様書9.1、過去のレビュー指摘）', async ({ page }) => {
   await openFresh(page);
 
   const status = page.getByTestId('save-status');
@@ -139,7 +139,7 @@ test('保存の成否は読み上げ領域で伝える（仕様書9.1、レビ�
   await expect(status).toHaveAttribute('role', 'status');
 });
 
-test('ツリーを矢印キーで移動できる（仕様書13章、レビュー指摘 D-18）', async ({ page }) => {
+test('ツリーを矢印キーで移動できる（仕様書13章、過去のレビュー指摘）', async ({ page }) => {
   await openFresh(page);
   await createProject(page, { projectId: 'PJ-KEY', totalQuantity: 100 });
   await createRun(page, { workDate: '2026-08-01', runQuantity: 10 });
@@ -162,7 +162,7 @@ test('ツリーを矢印キーで移動できる（仕様書13章、レビュー
   await expect(page.getByTestId('run-title')).toBeVisible();
 });
 
-test('狭い画面では左ペインが上へ回り込む（仕様書13章、レビュー指摘 D-19）', async ({ page }) => {
+test('狭い画面では左ペインが上へ回り込む（仕様書13章、過去のレビュー指摘）', async ({ page }) => {
   // viewport を1280へ固定していると layout.css の狭幅対応が実機で発火せず、
   // 横スクロールしないと操作できなくなる。
   await openFresh(page);

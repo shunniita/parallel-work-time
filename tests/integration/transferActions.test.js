@@ -218,7 +218,7 @@ describe('transferActions', () => {
       await expect(seedClosedInterval(1)).rejects.toThrow();
     });
 
-    describe('集計済みなのに未終了区間がある場合の防御（レビュー指摘 S8-1）', () => {
+    describe('集計済みなのに未終了区間がある場合の防御（過去のレビュー指摘）', () => {
       // 仕様書1.3 で「集計済みで未終了区間を生む操作は確認後に作業中へ戻してから
       // 行う」と定めたため、通常の操作でこの状態にはならない
       // （`intervalActions.test.js` の「集計済みからの作業再開」を参照）。

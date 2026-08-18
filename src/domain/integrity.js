@@ -1,5 +1,5 @@
 /**
- * 取り込むデータの業務的整合性（仕様書9.3、レビュー指摘 C-10）。
+ * 取り込むデータの業務的整合性（仕様書9.3、過去のレビュー指摘）。
  *
  * `schema.js` は1件ずつの**構造**を見る（型・必須キー・値の形）。ここは複数の
  * レコードにまたがる**関係**を見る。両者を分けるのは、見る対象が違うためである。
@@ -26,9 +26,9 @@
  * | 主キーの重複 | 拒否 | 後勝ちで黙って消える。どちらが残ったか利用者に分からない |
  * | 存在しない参照 | 拒否 | 画面から親を選び直す手段が無い |
  * | `endAt < startAt` | 拒否 | 工数が0秒へ丸められ、欠落に気づけない（8.9.3） |
- * | 転記済みwith未終了区間 | 拒否 | 画面から到達しない状態（7章、S8-1） |
- * | 参加者の重複・空白名 | 拒否 | 人数を掛けるため工数が水増しされる（8.6.1、GAR-2） |
- * | 状態日時の前後が逆 | 拒否 | 保持期間の起算が狂う（10.2、GAR-3） |
+ * | 転記済みwith未終了区間 | 拒否 | 画面から到達しない状態（7章） |
+ * | 参加者の重複・空白名 | 拒否 | 人数を掛けるため工数が水増しされる（8.6.1） |
+ * | 状態日時の前後が逆 | 拒否 | 保持期間の起算が狂う（10.2） |
  * | 区間の重複 | 通す | 警告にとどめる決まり（8.9.5）。画面でも保存できる |
  * | 同一作業項目に未終了区間が複数 | 通す | 開始が最新の1件を進行中とみなし（`taskState.js`）、残りは終了時刻の補完で閉じられる（8.8.4） |
  * | 累計が総予定数を超える | 通す | 警告して続行できる決まり（8.9.7） |
@@ -180,7 +180,7 @@ function checkTemplateActiveVersions(problems, templates) {
   });
 }
 
-/** 同一系列の版番号は一意である（仕様書6.3、レビュー指摘 C-10）。 */
+/** 同一系列の版番号は一意である（仕様書6.3、過去のレビュー指摘）。 */
 function checkTemplateSeriesVersions(problems, templates) {
   const versionsBySeries = new Map();
   templates.forEach((template, index) => {
@@ -354,7 +354,7 @@ function checkRunReferences(problems, runs, groups, templates) {
 function checkHistoryConsistency(problems, history) {
   history.forEach((entry, index) => {
     // 対応表は `history.js` が持つ。書き込みと取り込みで通る履歴が変わらない
-    // ようにするためである（レビュー指摘 SOL-2）。
+    // ようにするためである（過去のレビュー指摘）。
     const expected = HISTORY_ENTITY_BY_OP[entry?.operation];
     if (expected !== undefined && entry?.entityType !== expected) {
       problems.add(
@@ -413,7 +413,7 @@ function checkEffortRange(problems, run, path) {
 }
 
 /**
- * 参加者一覧が通常入力と同じ意味になるか（仕様書8.6.1、8.9.4、GAR-2）。
+ * 参加者一覧が通常入力と同じ意味になるか（仕様書8.6.1、8.9.4）。
  *
  * 工数は `participants.length` を人数として掛ける。同じ名前が2回入ったJSONは、
  * 1人の作業を2人分として計上する。1時間の区間が7,200秒になり、その値が分単位の
@@ -452,7 +452,7 @@ function checkParticipants(problems, run, path) {
  * 通常入力と同じ意味の参加者一覧かを、共有の正規化規則から導いて確かめる。
  *
  * 判定は `normalizeParticipants()` の結果との差で表す。規則を書き写すと、正規化を
- * 変えたときに取り込み検証だけが古い規則で残り、水増し（GAR-2）がそのクラスで
+ * 変えたときに取り込み検証だけが古い規則で残り、水増し（過去のレビュー指摘）がそのクラスで
  * 復活する。何が落ちたかによって指摘の文言を分ける。
  *
  * @param {unknown} participants
@@ -485,7 +485,7 @@ function checkParticipantList(problems, participants, path, requireAtLeastOne) {
 }
 
 /**
- * 状態日時の前後関係（仕様書7.1、10.2、GAR-3）。
+ * 状態日時の前後関係（仕様書7.1、10.2）。
  *
  * 求めるのは通常操作が必ず満たす順序である。
  *
@@ -550,11 +550,10 @@ function checkIntervalOrder(problems, run, path) {
  * 状態と、その状態が意味する中身が噛み合っているか（仕様書7章）。
  *
  * 集計済み・転記済みは「未終了区間がない」状態である。アクション層はこの不変
- * 条件を守るが（S8-1 の対応）、取り込みはその経路を通らない。
+ * 条件を守るが（過去のレビュー指摘の対応）、取り込みはその経路を通らない。
  *
  * `transferredAt` も状態と対応させる。ただし見るのは**転記より手前の状態**だけで
- * ある。作業中・集計済みに転記完了日時があるのは筋が通らない（設計メモ
- * PWT-DESIGN-008 §2.8 で「戻したら消す」と決めた）。一方アーカイブは転記済みの
+ * ある。作業中・集計済みに転記完了日時があるのは筋が通らない（過去の設計メモで「戻したら消す」と決めた）。一方アーカイブは転記済みの
  * 後の状態なので、転記完了日時が残っていてよい（仕様書7.1、10.1）。
  */
 function checkStatusConsistency(problems, run, path) {

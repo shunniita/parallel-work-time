@@ -177,7 +177,7 @@ function atOrNow(at, nowIso) {
  *
  * 終了（`recordFinish`）・区間の手動追加（`addIntervalManually`）・区間編集
  * （`updateInterval`）には渡さない。終了は区間を閉じるだけ、手動追加は `endAt` が
- * 必須（8.4.11）、編集は終了済みを未終了へ戻せない（設計メモ §2.2）ため、
+ * 必須（8.4.11）、編集は終了済みを未終了へ戻せない（過去の設計メモ）ため、
  * いずれも未終了区間を新たに作れない。
  *
  * @param {{confirmedResume?: boolean}} input
@@ -224,7 +224,7 @@ export async function recordBreak(deps, target, input = {}) {
  *
  * 直前の休憩が0人だった場合、引き継ぐと0人の作業区間になる（仕様書8.9.4 違反）。
  * その場合は拒否されるので、画面は参加者を入力してから `participants` 付きで
- * 呼び直す（設計メモ §2.1）。
+ * 呼び直す（過去の設計メモ）。
  *
  * @param {object} deps
  * @param {{runId: string, taskRecordId: string}} target

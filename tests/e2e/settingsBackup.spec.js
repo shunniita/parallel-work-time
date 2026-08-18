@@ -91,7 +91,7 @@ test('退避なしは取り消せない旨を再確認する（仕様書9.4）',
   await expect(page.getByTestId('import-skip-accept')).toHaveText('退避せず全置換する');
 });
 
-test('取り込みボタンを連打しても全置換は1回だけ走る（レビュー指摘 F12-06）', async ({ page }) => {
+test('取り込みボタンを連打しても全置換は1回だけ走る（過去のレビュー指摘）', async ({ page }) => {
   await createProject(page, { projectId: 'PJ-DOUBLE', totalQuantity: 100 });
   await page.getByTestId('nav-settings').click();
 

@@ -237,7 +237,7 @@ describe('createRunView', () => {
       await vi.waitFor(() => expect(view.query('task-form-row')).toBeNull());
     });
 
-    it('保存を待つ間に別の実施回へ移っていた場合は上書きしない（レビュー指摘 FB-7）', async () => {
+    it('保存を待つ間に別の実施回へ移っていた場合は上書きしない（過去のレビュー指摘）', async () => {
       const view = mount({ tasks: [working('受入確認', 1)] });
       let resolveAction;
       view.actions.recordFinish.mockImplementation(
@@ -262,7 +262,7 @@ describe('createRunView', () => {
       expect(view.container.textContent).toBe('マーカー');
     });
 
-    it('保存を待つ間に作業項目詳細へ移っていた場合は上書きしない（レビュー指摘 FB-7）', async () => {
+    it('保存を待つ間に作業項目詳細へ移っていた場合は上書きしない（過去のレビュー指摘）', async () => {
       const view = mount({ tasks: [working('受入確認', 1)] });
       let resolveAction;
       view.actions.recordFinish.mockImplementation(
@@ -294,7 +294,7 @@ describe('createRunView', () => {
       expect(view.query('task-form-row')).toBeNull();
     });
 
-    it('保存中は別の行の操作ボタンを押せない（レビュー指摘 FB-10）', async () => {
+    it('保存中は別の行の操作ボタンを押せない（過去のレビュー指摘）', async () => {
       const view = mount({ tasks: [working('受入確認', 1), working('外観確認', 2)] });
       let resolveAction;
       view.actions.recordFinish.mockImplementation(

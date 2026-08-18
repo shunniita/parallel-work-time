@@ -6,12 +6,9 @@
  * `src/domain/schema.js` と揃え、「場所: 説明」の形にする。画面はこの文字列を
  * そのまま表示できる。
  *
- * 本モジュールは各Stepで必要になった検証を足していく。実装計画 Step 11 で
- * 8.9.1〜8.9.9 の総点検を行う。
- *
  * 警告（`warnings`）と拒否（`errors`）を分ける。累計超過は警告し、確認後に
  * 続行できる（仕様書8.9.7）ため、保存を止める `errors` とは別に返す。警告は
- * 種別コードつきの `{code, path, message}` で返す（`problems.js`、D-15）。
+ * 種別コードつきの `{code, path, message}` で返す（`problems.js`）。
  */
 
 import { MAX_QUANTITY, MAX_TEXT_LENGTH, isIntegerInRange } from '../config.js';

@@ -27,7 +27,7 @@ function mount(options = {}) {
   const payload = { schemaVersion: 1 };
   const readFile = options.readFile ?? vi.fn(async () => payload);
   // 排他区間の用意と、区間内で使うアクションを閉じ込めるのは `main.js` の役目で
-  // ある（GAR-1、F12-18）。ここでは順序だけを持つ本体（`runDestructiveAction`）へ
+  // ある（過去のレビュー指摘）。ここでは順序だけを持つ本体（`runDestructiveAction`）へ
   // 同じ形でモックを差し込む。
   const runDestructive = options.runDestructive ?? (({ backup, confirmedWithoutBackup, destructiveAction }) =>
     runDestructiveAction({
@@ -159,13 +159,13 @@ describe('createSettingsView', () => {
   });
 
   /**
-   * 利用者の1回の操作意図に対して破壊的操作は1回だけ（レビュー指摘 F12-06）。
+   * 利用者の1回の操作意図に対して破壊的操作は1回だけ（過去のレビュー指摘）。
    *
    * 排他区間の途中で退避エクスポートが `store.setState` を呼び、その購読が画面を
    * 描き直す。busy を持たないとボタンが活性のまま戻り、区間が2つ直列に並んで
    * 全置換が2回走る。区間の隙間に入った保存は2回目の置換で消える。
    */
-  describe('取り込みの二重実行を防ぐ（F12-06）', () => {
+  describe('取り込みの二重実行を防ぐ（過去のレビュー指摘）', () => {
     /** 退避の完了を試験側から握る。区間の途中で再クリックできる状況を作る。 */
     function deferred() {
       let resolve;
@@ -225,11 +225,11 @@ describe('createSettingsView', () => {
   });
 
   /**
-   * ファイルを選び直したときは、最後の選択だけを採用する（レビュー指摘 F12-30）。
+   * ファイルを選び直したときは、最後の選択だけを採用する（過去のレビュー指摘）。
    *
    * 読込は非同期であり、完了の順序は選択の順序と一致しない。
    */
-  describe('選び直したファイルの読込順が逆転しても最後の選択を採る（F12-30）', () => {
+  describe('選び直したファイルの読込順が逆転しても最後の選択を採る（過去のレビュー指摘）', () => {
     /** ファイル名ごとに完了を握れる `readFile` を作る。 */
     function controlledReader() {
       const pending = new Map();
@@ -307,7 +307,7 @@ describe('createSettingsView', () => {
     expect(mounted.query('settings-message')).toBeNull();
   });
 
-  describe('別画面へ移った後は詳細ペインを奪い返さない（GAR-4）', () => {
+  describe('別画面へ移った後は詳細ペインを奪い返さない（過去のレビュー指摘）', () => {
     it('非アクティブになったビューは描かない', async () => {
       // すべてのビューが詳細ペインを共有する。非同期保存の完了後に自分の
       // render() を呼ぶため、その間に画面が変わっていると表示が食い違う。

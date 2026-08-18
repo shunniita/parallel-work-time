@@ -373,7 +373,7 @@ describe('projectActions', () => {
         runQuantity: 30,
       });
 
-      // Step 10 でアーカイブ操作を実装するまでは直接書き換えて確かめる。
+      // アーカイブ操作は経由せず、直接書き換えて確かめる。
       await adapter.saveEntity(ENTITY_TYPE.WORK_RUNS, {
         ...first,
         status: 'archived',
@@ -415,9 +415,9 @@ describe('projectActions', () => {
       expect(error.preview).toMatchObject({ accumulated: 150, overBy: 50, exceeded: true });
     });
 
-    it('累計超過以外の警告では確認を求めない（レビュー指摘 D-15）', async () => {
+    it('累計超過以外の警告では確認を求めない（過去のレビュー指摘）', async () => {
       // 差し戻すかどうかは種別コードで決める。`warnings` が空でないことを確認
-      // 要求とみなすと、Step 7 以降で別種の警告を足した瞬間に誤爆する。
+      // 要求とみなすと、別種の警告を足した瞬間に誤爆する。
       const group = await seedProject({ totalQuantity: 100 });
 
       const { dataset, warnings } = await createWorkRun(deps, group.projectGroupId, {
@@ -601,8 +601,8 @@ describe('projectActions', () => {
 
     describe('状態ガード（仕様書7.2）', () => {
       /**
-       * 実施回の状態を直接書き換える。状態遷移の操作は Step 10 で実装するため、
-       * ここでは保存層へ直接書いて「転記済み／アーカイブ」を作る。
+       * 実施回の状態を直接書き換える。画面の状態遷移操作は経由せず、
+       * 保存層へ直接書いて「転記済み／アーカイブ」を作る。
        */
       async function seedRunWithStatus(status) {
         const group = await seedProject({ totalQuantity: 100 });
