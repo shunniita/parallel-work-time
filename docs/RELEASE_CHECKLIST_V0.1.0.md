@@ -3,10 +3,10 @@
 | 項目           | 内容                                                              |
 | -------------- | ----------------------------------------------------------------- |
 | 文書番号       | PWT-RELEASE-001                                                   |
-| 版数           | 1.4                                                               |
+| 版数           | 1.5                                                               |
 | 作成日         | 2026-08-10                                                        |
 | 対象           | `main`（取扱説明書PDF同梱後）                                      |
-| 現在の公開判定 | **Conditional Go。リポジトリは公開済み。タグ・Release・ブランチ保護が未実施** |
+| 現在の公開判定 | **Conditional Go。リポジトリは公開済み。Release の作成が未実施** |
 | 主な参照先     | [仕様書](同時並行作業時間計測支援ツール_仕様書.md)、[受入対応表](ACCEPTANCE_TRACE.md) |
 
 この文書は、v0.1.0を「完成」とみなし、GitHubで一般公開するまでの実行用チェックリストである。
@@ -244,6 +244,9 @@ cmd.exe /d /c "mise exec -- npm audit --omit=dev --audit-level=high"
 | 取扱説明書PDF目視          | 2026-08-17 | Windows 11 / pdfjs-dist で全ページ画像化          | 42ページ。改ページ崩れ1件（注意書きの分断）を修正して再確認 |
 | 公開前監査（版数1.3）      | 2026-08-17 | `main`全89コミットと通常ブランチの履歴             | 秘密情報・認証情報ファイル0件。authorは承認済み識別子の1種、committerは本人とGitHubの2種だけ |
 | npm audit（版数1.3）       | 2026-08-17 | npm registry                                     | 開発依存込み0件 / 本番依存のみ0件。ランタイム依存は0件 |
+| unit/integration（版数1.5）| 2026-08-18 | Windows 11 / Node.js v24.18.0 / Vitest 4.1.10   | 64ファイル 1,588件 成功 |
+| dist・ZIP照合（版数1.5）   | 2026-08-18 | 同上                                            | 99ファイル、不一致0件。ZIP SHA-256 `036187a9057b007361062d3474fa43c3a19e181cee7885d9c729b161b81c9379`。同一コミットから2回生成して一致 |
+| 公開の到達確認（版数1.5）  | 2026-08-18 | 認証情報なしのHTTP取得                            | リポジトリトップ・README・LICENSE がいずれも200。公開名以外の個人情報なし |
 
 > 版数0.6の注記: 上記の実測値は当時の公開候補で取得したものであり、その後、Slice FのMajorを修正して再計測した。Codex再実測の性能値はChromiumが起動132ms・集計52ms・出力55ms、Firefoxが起動193ms・集計41ms・出力51ms。再生成したZIPのSHA-256は `b1a5be7a8c6af3e51874395a5bf6bf59102c06c630d2c1ae5d785aead905425f`。
 
@@ -271,15 +274,20 @@ cmd.exe /d /c "mise exec -- npm audit --omit=dev --audit-level=high"
 - [x] 実ブラウザーのクリーンプロファイルsmoke（4章）を終える。
 - [x] 履歴上の作者識別子を正しい1つへ揃える（1章）。public化後は書き換えの費用が跳ね上がるため、ここが最後の機会である。
 - [x] 非公開リポジトリを公開へ変更する。履歴・作者メール・秘密情報の最終承認後に行う。
-- [ ] ログアウト状態で、リポジトリトップ・README・LICENSE・Actionsログに公開したくない内容がないことを確認する。
+- [x] ログアウト状態で、リポジトリトップ・README・LICENSE・Actionsログに公開したくない内容がないことを確認する。
+  - 認証情報を付けずにリポジトリトップ・`README.md`・`LICENSE` を取得し、いずれも200で読めることと、公開名 `shunniita` 以外の個人情報が載っていないことを確認した。
 - [x] Description と Topics を設定する。
   - Topics: `time-tracking` / `work-tracking` / `productivity` / `javascript` / `indexeddb` / `local-first`。
 - [x] Dependabot alerts、secret scanning、push protection、code scanning を有効にする（3章）。
   - secret scanning と push protection は有効。CodeQL は解析ワークフローが動き、未解消0件。Dependabot alerts も未解消0件。
   - Dependabot の自動更新PR（security updates）は無効のままである。依存は開発時のみで配布物へ入らないため、更新は手動で行う。
-- [ ] `main` へ force push 禁止・ブランチ削除禁止・CIのstatus check必須を設定する。
-- [ ] 公開予定コミットから最終ZIPを生成する（`npm run dist` が `SHA256SUMS.txt` も出す）。
+- [x] `main` へ force push 禁止・ブランチ削除禁止・CIのstatus check必須を設定する。
+  - リポジトリの ruleset `main-rule` が既定ブランチを対象に有効である。`deletion`・`non_fast_forward`・`required_status_checks`（必須コンテキストは `verify`）の3つを課す。
+  - 従来のbranch protection APIには現れないため、確認は `gh api repos/:owner/:repo/rulesets` で行う。
+- [x] 公開予定コミットから最終ZIPを生成する（`npm run dist` が `SHA256SUMS.txt` も出す）。
   - `src/` は配布物に含まれるため、コメントだけの変更でもZIPのハッシュは変わる。タグを打つコミットで取り直す。
+  - 収録99ファイル、ZIP SHA-256 `036187a9057b007361062d3474fa43c3a19e181cee7885d9c729b161b81c9379`。`SHA256SUMS.txt` と一致する。
+  - 同一コミットから2回生成し、ハッシュが一致することを確かめた。取扱説明書PDFはdist時にChromiumで作るが、結果はバイト単位で同じである。配布ZIPはタグから再生成して照合できる。
 - [ ] 公開予定コミットへ `v0.1.0` タグを付ける。
 - [ ] GitHub ReleaseをDraftで作成する。
 - [ ] `parallel-work-time.zip` と `SHA256SUMS.txt` を添付する。
@@ -353,6 +361,8 @@ F12-11、F12-20〜F12-22、F12-26〜F12-32 は解消済みである。F12-40〜F
 **版数1.3の判定も Conditional Go。** 既存88コミットの作者・コミッター情報を書き換え、`main` を含む通常ブランチから到達する全コミットで誤記が0件になった。書き換え前後のtree IDは一致する。Chrome・Edge・Firefoxの実機smokeも完了済みであり、残る作業はGitHubの公開設定、ログアウト状態の確認、`v0.1.0`タグとReleaseの作成、プロジェクト責任者による公開実行の最終承認である。
 
 **版数1.4の判定も Conditional Go。** リポジトリを公開へ変更し、Description・Topics と secret scanning・push protection・CodeQL を設定した。未解消のアラートは0件である。あわせて、`docs/` から外した設計・レビュー記録への参照をコード・設定・公開文書から除いた。残るのは `main` のブランチ保護、`v0.1.0` タグと Release の作成、および最終承認である。ZIPのハッシュはタグを打つコミットで取り直す。
+
+**版数1.5の判定も Conditional Go。** 公開コミットから配布ZIPを生成し、単体・結合1,588件の成功と、認証情報なしでの公開ページ到達を確認した。ZIPは同一コミットから2回生成してハッシュが一致し、タグから再生成して照合できる。`main` の保護は ruleset で有効である。残るのは Release の作成と最終承認である。
 
 ## 9. リリース記録
 
