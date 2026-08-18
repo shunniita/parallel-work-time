@@ -14,6 +14,18 @@ describe('取扱説明書PDFのMarkdown前処理', () => {
     expect(headingSlug('9. バックアップを取る')).toBe('9-バックアップを取る');
   });
 
+  it('インラインHTMLを除いた語で断片を作る', () => {
+    expect(headingSlug('<b>太字</b>の見出し')).toBe('太字の見出し');
+  });
+
+  // 入れ子や閉じ損ないでは、タグ名の一部が語として断片へ残ることがある。断片は
+  // 見出しを引き当てるための照合キーなので、語が濁ること自体は許容する。保証する
+  // のは記号を持ち出さないことだけで、それは最後の絞り込みが担う。
+  it('崩れたタグを与えても断片へ記号を持ち出さない', () => {
+    expect(headingSlug('<<b>b>見出し')).toBe('b見出し');
+    expect(headingSlug('<script>alert(1)</script>見出し')).toBe('alert1見出し');
+  });
+
   it('PDF内部の見出しIDには短いASCIIだけを使う', () => {
     const markdown = '# トラブルとFAQ\n\n## 起動できない\n';
     const anchors = new Map([

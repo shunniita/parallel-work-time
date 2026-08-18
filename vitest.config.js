@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.js', 'tests/integration/**/*.test.js'],
-    // 既定は node。domain / storage / app 層は DOM に触らない（実装計画4.2）ので、
+    // 既定は node。domain / storage / app 層は DOM に触らない（過去の実装計画）ので、
     // わざわざ DOM 実装を噛ませない。
     //
     // DOM が要るのは UI 層の試験だけである。対象ファイルの先頭へ
@@ -12,7 +12,7 @@ export default defineConfig({
     // 設定側のglob指定（`environmentMatchGlobs`）は Vitest 4 で廃止された。
     //
     // DOM 実装は happy-dom を使う。本アプリが触るのは要素生成・属性・イベント・
-    // `textContent` だけで（`innerHTML` を使わない、実装計画4.2）、CSS カスケードや
+    // `textContent` だけで（`innerHTML` を使わない）、CSS カスケードや
     // レイアウトの再現は要らない。その範囲なら jsdom より軽く、起動も速い。
     environment: 'node',
     coverage: {
