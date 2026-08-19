@@ -1,6 +1,6 @@
 {
   "name": "parallel-work-time",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "同時並行作業時間計測支援ツール。このファイルは開発時のテストツール定義のみを持ち、配布物へは含めない。",
