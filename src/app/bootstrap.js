@@ -16,8 +16,16 @@ import { ENTITY_TYPE } from '../storage/StorageAdapter.js';
 /**
  * 起動処理。
  *
- * サンプルテンプレートの投入は、テンプレートが1件も無いときだけ行う。利用者が
- * 全件削除した状態を復活させないため、件数0を唯一の条件とする。
+ * サンプルテンプレートを投入するのは、まだ一度も投入していないときだけである。
+ * 投入したかどうかは `settings.sampleTemplatesSeededAt` に持つ。
+ *
+ * テンプレートの件数では判定しない。利用者はテンプレートを削除できるため
+ * （仕様書8.1.11）、件数0を条件にすると全件削除した状態が次の起動で元へ戻る。
+ * 件数は「今そこに何があるか」であって「投入済みかどうか」ではない。
+ *
+ * 印が無い既存の利用者は、この版を最初に起動した時点で押す。投入せずに押すこと
+ * になるが、その利用者は既にサンプルを受け取っている（この版より前は件数0で
+ * 判定しており、初回に必ず投入されていた）。
  *
  * @param {import('../storage/StorageAdapter.js').StorageAdapter} adapter
  * @param {{sampleTemplates?: object|null, now?: Date}} [options]
@@ -30,18 +38,26 @@ export async function bootstrap(adapter, options = {}) {
   let dataset = await adapter.loadAll();
 
   let seededTemplateCount = 0;
-  if (dataset.taskTemplates.length === 0 && sampleTemplates !== null) {
-    const templates = buildSeedTemplates(sampleTemplates, toIsoSecond(now));
-    if (templates.length > 0) {
-      // 1トランザクションで全か無かにする。1件ずつ保存すると、途中で失敗した
-      // ときに「1件は入っているので件数0ではない」状態になり、次回以降の起動で
-      // 二度と投入されない（回復不能な部分投入）。
-      await adapter.saveEntities(
-        templates.map((template) => ({ type: ENTITY_TYPE.TASK_TEMPLATES, entity: template })),
-      );
-      seededTemplateCount = templates.length;
-      dataset = await adapter.loadAll();
-    }
+  const seeded = dataset.settings?.sampleTemplatesSeededAt ?? null;
+  if (seeded === null && sampleTemplates !== null) {
+    const seededAt = toIsoSecond(now);
+    // 印だけは常に押す。既にテンプレートを持っている利用者へ投入はしないが、
+    // 印が無いままだと全件削除したときに投入条件へ戻ってしまう。
+    const templates =
+      dataset.taskTemplates.length === 0 ? buildSeedTemplates(sampleTemplates, seededAt) : [];
+
+    // 1トランザクションで全か無かにする。投入と印が別々に書かれると、印だけが
+    // 残ってサンプルを二度と受け取れない状態や、投入だけが残って次回また
+    // 投入される状態が作れてしまう。
+    await adapter.saveEntities([
+      ...templates.map((template) => ({ type: ENTITY_TYPE.TASK_TEMPLATES, entity: template })),
+      {
+        type: ENTITY_TYPE.SETTINGS,
+        entity: { ...dataset.settings, sampleTemplatesSeededAt: seededAt },
+      },
+    ]);
+    seededTemplateCount = templates.length;
+    dataset = await adapter.loadAll();
   }
 
   return { dataset, seededTemplateCount };

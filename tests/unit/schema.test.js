@@ -180,6 +180,32 @@ describe('validateImportPayload()', () => {
 
       expect(result.errors.join('\n')).toContain('settings.lastExportedAt');
     });
+
+    it('sampleTemplatesSeededAt が無くても通る（この項目より前の書き出し）', () => {
+      const { sampleTemplatesSeededAt, ...legacy } = createDefaultSettings();
+
+      expect(validateImportPayload(validPayload({ settings: legacy })).ok).toBe(true);
+    });
+
+    it('sampleTemplatesSeededAt は null を許す', () => {
+      expect(
+        validateImportPayload(
+          validPayload({
+            settings: { ...createDefaultSettings(), sampleTemplatesSeededAt: null },
+          }),
+        ).ok,
+      ).toBe(true);
+    });
+
+    it('sampleTemplatesSeededAt がISO 8601でないと失敗する', () => {
+      const result = validateImportPayload(
+        validPayload({
+          settings: { ...createDefaultSettings(), sampleTemplatesSeededAt: '2026-07-30' },
+        }),
+      );
+
+      expect(result.errors.join('\n')).toContain('settings.sampleTemplatesSeededAt');
+    });
   });
 
   describe('作業テンプレート（仕様書6.3）', () => {

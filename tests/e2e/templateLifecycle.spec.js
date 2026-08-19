@@ -157,6 +157,26 @@ test.describe('削除（仕様書8.1.11）', () => {
     await expect(page.getByTestId('archived-row')).toHaveCount(1);
   });
 
+  test('全て削除しても、再読み込みでサンプルが戻らない（仕様書8.1.6）', async ({ page }) => {
+    // 全件削除は「テンプレート0件＝初回起動」という判定と衝突しうる。
+    const rows = page.getByTestId('template-row');
+    for (let remaining = SAMPLE_COUNT; remaining > 0; remaining -= 1) {
+      await rows.first().getByTestId('archive-template').click();
+      await expect(rows).toHaveCount(remaining - 1);
+    }
+    for (let remaining = SAMPLE_COUNT; remaining > 0; remaining -= 1) {
+      await page.getByTestId('delete-template').first().click();
+      await page.getByTestId('delete-template-confirm-accept').click();
+      await expect(page.getByTestId('archived-row')).toHaveCount(remaining - 1);
+    }
+    await expect(rows).toHaveCount(0);
+
+    await page.reload();
+
+    await expect(rows).toHaveCount(0);
+    await expect(page.getByTestId('archived-templates')).toBeHidden();
+  });
+
   test('削除が再読み込み後も残る（仕様書9.1）', async ({ page }) => {
     await standardA(page).getByTestId('archive-template').click();
     await page.getByTestId('delete-template').click();

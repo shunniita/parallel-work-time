@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { SCHEMA_VERSION, createDefaultSettings } from '../../src/config.js';
+import { toIsoSecond } from '../../src/domain/datetime.js';
 import { bootstrap, buildSeedTemplates } from '../../src/app/bootstrap.js';
 import { MemoryAdapter } from '../../src/storage/MemoryAdapter.js';
 import { IndexedDbAdapter } from '../../src/storage/IndexedDbAdapter.js';
@@ -54,9 +55,31 @@ describe.each(implementations)('bootstrap() / $name', ({ create }) => {
       now: FIXED_NOW,
     });
 
-    expect(dataset.settings).toEqual(createDefaultSettings());
+    expect(dataset.settings).toEqual({
+      ...createDefaultSettings(),
+      sampleTemplatesSeededAt: toIsoSecond(FIXED_NOW),
+    });
     expect(seededTemplateCount).toBe(sample.templates.length);
     expect(dataset.taskTemplates).toHaveLength(sample.templates.length);
+  });
+
+  it('サンプルを投入したら、投入済みの印を残す', async () => {
+    const { dataset } = await bootstrap(adapter, { sampleTemplates: sample, now: FIXED_NOW });
+
+    expect(dataset.settings.sampleTemplatesSeededAt).toBe(toIsoSecond(FIXED_NOW));
+  });
+
+  it('既にテンプレートを持つ利用者へは投入しないが、印は残す', async () => {
+    await adapter.initialize();
+    await adapter.saveEntity(ENTITY_TYPE.TASK_TEMPLATES, taskTemplate());
+
+    const { dataset, seededTemplateCount } = await bootstrap(adapter, {
+      sampleTemplates: sample,
+      now: FIXED_NOW,
+    });
+
+    expect(seededTemplateCount).toBe(0);
+    expect(dataset.settings.sampleTemplatesSeededAt).toBe(toIsoSecond(FIXED_NOW));
   });
 
   it('2回目の起動では投入せず、件数も増えない', async () => {
@@ -65,6 +88,34 @@ describe.each(implementations)('bootstrap() / $name', ({ create }) => {
 
     expect(second.seededTemplateCount).toBe(0);
     expect(second.dataset.taskTemplates).toHaveLength(sample.templates.length);
+  });
+
+  it('投入済みの印があれば、テンプレート0件でも投入しない', async () => {
+    await bootstrap(adapter, { sampleTemplates: sample, now: FIXED_NOW });
+    const before = await adapter.loadAll();
+    for (const template of before.taskTemplates) {
+      await adapter.deleteEntity(ENTITY_TYPE.TASK_TEMPLATES, template.templateId);
+    }
+
+    const { seededTemplateCount } = await bootstrap(adapter, {
+      sampleTemplates: sample,
+      now: FIXED_NOW,
+    });
+
+    expect(seededTemplateCount).toBe(0);
+  });
+
+  it('全テンプレートを削除しても、次の起動でサンプルを再投入しない', async () => {
+    const first = await bootstrap(adapter, { sampleTemplates: sample, now: FIXED_NOW });
+    for (const template of first.dataset.taskTemplates) {
+      await adapter.deleteEntity(ENTITY_TYPE.TASK_TEMPLATES, template.templateId);
+    }
+    expect((await adapter.loadAll()).taskTemplates).toHaveLength(0);
+
+    const second = await bootstrap(adapter, { sampleTemplates: sample, now: FIXED_NOW });
+
+    expect(second.seededTemplateCount).toBe(0);
+    expect(second.dataset.taskTemplates).toHaveLength(0);
   });
 
   it('テンプレートが1件でもあればサンプルを投入しない', async () => {
