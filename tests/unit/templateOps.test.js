@@ -5,10 +5,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  activate,
   activeTaskDefinitions,
   activeTemplates,
+  archivedTemplates,
   buildTemplate,
   deactivate,
+  latestOfSeries,
   nextOrder,
   normalizeExternalCode,
   normalizeTaskDefinitions,
@@ -396,5 +399,79 @@ describe('activeTemplates()', () => {
 
   it('有効版が無ければ空配列を返す', () => {
     expect(activeTemplates([taskTemplate({ active: false })])).toEqual([]);
+  });
+});
+
+describe('activate()', () => {
+  it('有効へ戻し、版番号は動かさない', () => {
+    const template = taskTemplate({ version: 3, active: false });
+
+    expect(activate(template)).toMatchObject({ version: 3, active: true });
+  });
+
+  it('元のオブジェクトを書き換えない', () => {
+    const template = taskTemplate({ active: false });
+
+    activate(template);
+
+    expect(template.active).toBe(false);
+  });
+});
+
+describe('latestOfSeries()', () => {
+  it('系列内で版番号が最大のものを返す', () => {
+    const templates = [
+      taskTemplate({ templateSeriesId: 'series-1', version: 1 }),
+      taskTemplate({ templateSeriesId: 'series-1', version: 3 }),
+      taskTemplate({ templateSeriesId: 'series-1', version: 2 }),
+      taskTemplate({ templateSeriesId: 'series-2', version: 9 }),
+    ];
+
+    expect(latestOfSeries(templates, 'series-1').version).toBe(3);
+  });
+
+  it('該当する系列が無ければ null を返す', () => {
+    expect(latestOfSeries([taskTemplate({ templateSeriesId: 'series-1' })], 'series-2')).toBeNull();
+  });
+});
+
+describe('archivedTemplates()', () => {
+  it('有効版が1つも無い系列だけを、最新版1件で返す', () => {
+    const templates = [
+      taskTemplate({ templateSeriesId: 'series-1', version: 1, active: false }),
+      taskTemplate({ templateSeriesId: 'series-1', version: 2, active: false }),
+      taskTemplate({ templateSeriesId: 'series-2', version: 1, active: false }),
+      taskTemplate({ templateSeriesId: 'series-2', version: 2, active: true }),
+    ];
+
+    const list = archivedTemplates(templates);
+
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ templateSeriesId: 'series-1', version: 2 });
+  });
+
+  it('対象種別・バリエーションの順で返す', () => {
+    const templates = [
+      taskTemplate({
+        templateSeriesId: 'series-1',
+        targetType: '対象種別B',
+        variant: '標準',
+        active: false,
+      }),
+      taskTemplate({
+        templateSeriesId: 'series-2',
+        targetType: '対象種別A',
+        variant: '拡張',
+        active: false,
+      }),
+    ];
+
+    expect(
+      archivedTemplates(templates).map((template) => template.targetType),
+    ).toEqual(['対象種別A', '対象種別B']);
+  });
+
+  it('アーカイブが無ければ空配列を返す', () => {
+    expect(archivedTemplates([taskTemplate({ active: true })])).toEqual([]);
   });
 });

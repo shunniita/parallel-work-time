@@ -263,6 +263,19 @@ function validateSettings(settings, problems) {
       'null またはオフセット付きISO 8601（秒精度）である必要がある',
     );
   }
+  // 無い場合を許す。この項目より前に書き出されたJSONには存在しないため、必須に
+  // すると過去の書き出しを取り込めなくなる。未設定は「まだ投入していない」と
+  // 同じ意味として扱う（`bootstrap.js`）。
+  if (
+    settings.sampleTemplatesSeededAt !== undefined &&
+    settings.sampleTemplatesSeededAt !== null &&
+    !isValidIsoSecond(settings.sampleTemplatesSeededAt)
+  ) {
+    problems.add(
+      'settings.sampleTemplatesSeededAt',
+      'null またはオフセット付きISO 8601（秒精度）である必要がある',
+    );
+  }
 }
 
 /** 作業テンプレート（仕様書6.3）。 */

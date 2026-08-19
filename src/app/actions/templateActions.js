@@ -14,9 +14,11 @@
 
 import { toIsoSecond } from '../../domain/datetime.js';
 import {
+  activate,
   activeTemplates,
   buildTemplate,
   deactivate,
+  latestOfSeries,
   nextTemplateVersion,
   reviseTemplate,
 } from '../../domain/templateOps.js';
@@ -160,6 +162,142 @@ export async function reviseTemplateAction(deps, templateId, draft) {
 }
 
 /**
+ * テンプレートをアーカイブする（仕様書8.1.9）。
+ *
+ * 有効版を無効にするだけで、版番号は繰り上げず、レコードも消さない。系列に有効版
+ * が1つも無い状態がアーカイブ済みである（仕様書6.3）。
+ *
+ * 実施回は作業項目定義を値として複製済みなので、アーカイブしても既存の実施回は
+ * 変化しない。
+ *
+ * @param {{adapter: object, persistence: object}} deps
+ * @param {string} templateId アーカイブする有効版の識別子
+ * @returns {Promise<{dataset: object, template: object}>}
+ */
+export async function archiveTemplateAction(deps, templateId) {
+  const { adapter, persistence } = resolveDeps(deps);
+
+  const { dataset, value: archived } = await persistence.run(async ({ taskTemplates }) => {
+    const current = taskTemplates.find((template) => template.templateId === templateId);
+    if (current === undefined) {
+      throw new ValidationError([`テンプレート: 対象が見つからない（${templateId}）`]);
+    }
+    if (current.active !== true) {
+      throw new ValidationError([
+        `テンプレート: ${current.targetType} / ${current.variant} は既にアーカイブ済みである`,
+      ]);
+    }
+
+    const built = deactivate(current);
+    return {
+      write: () => adapter.saveEntity(ENTITY_TYPE.TASK_TEMPLATES, built),
+      value: built,
+    };
+  });
+
+  return { dataset, template: archived };
+}
+
+/**
+ * アーカイブしたテンプレートを再び有効にする（仕様書8.1.10）。
+ *
+ * 戻すのは系列の最新版である。アーカイブ中に同じ対象種別×バリエーションで別の
+ * テンプレートを作られていると、戻した瞬間に有効版が2つ並ぶ。どちらから実施回を
+ * 生成するかが決まらなくなるため、入口で拒む。
+ *
+ * @param {{adapter: object, persistence: object}} deps
+ * @param {string} templateSeriesId 戻す系列の識別子
+ * @returns {Promise<{dataset: object, template: object}>}
+ */
+export async function restoreTemplateAction(deps, templateSeriesId) {
+  const { adapter, persistence } = resolveDeps(deps);
+
+  const { dataset, value: restored } = await persistence.run(async ({ taskTemplates }) => {
+    const latest = latestOfSeries(taskTemplates, templateSeriesId);
+    if (latest === null) {
+      throw new ValidationError([`テンプレート: 対象が見つからない（${templateSeriesId}）`]);
+    }
+    if (taskTemplates.some(
+      (template) =>
+        template.templateSeriesId === templateSeriesId && template.active === true,
+    )) {
+      throw new ValidationError([
+        `テンプレート: ${latest.targetType} / ${latest.variant} はアーカイブされていない`,
+      ]);
+    }
+
+    const conflict = validateTemplateIsNew(activeTemplates(taskTemplates), {
+      targetType: latest.targetType,
+      variant: latest.variant,
+    });
+    if (!conflict.ok) {
+      throw new ValidationError(conflict.errors);
+    }
+
+    const built = activate(latest);
+    return {
+      write: () => adapter.saveEntity(ENTITY_TYPE.TASK_TEMPLATES, built),
+      value: built,
+    };
+  });
+
+  return { dataset, template: restored };
+}
+
+/**
+ * テンプレートを系列ごと削除する（仕様書8.1.11）。
+ *
+ * 実施回は `templateId` でテンプレートを参照し続ける。参照先を消すと、書き出した
+ * JSONを取り込めなくなる（`integrity.js` の `checkRunReferences`）。1版でも参照
+ * されている系列は削除せず、アーカイブへ誘導する。
+ *
+ * 系列の全版をまとめて消す。一部の版だけ残すと版番号に穴が空き、系列を辿れなく
+ * なる。
+ *
+ * @param {{adapter: object, persistence: object}} deps
+ * @param {string} templateSeriesId 削除する系列の識別子
+ * @returns {Promise<{dataset: object, removed: number}>}
+ */
+export async function deleteTemplateAction(deps, templateSeriesId) {
+  const { adapter, persistence } = resolveDeps(deps);
+
+  const { dataset, value: removed } = await persistence.run(
+    async ({ taskTemplates, workRuns }) => {
+      const series = taskTemplates.filter(
+        (template) => template.templateSeriesId === templateSeriesId,
+      );
+      if (series.length === 0) {
+        throw new ValidationError([`テンプレート: 対象が見つからない（${templateSeriesId}）`]);
+      }
+
+      const seriesIds = new Set(series.map((template) => template.templateId));
+      const referencing = workRuns.filter((run) => seriesIds.has(run.templateId));
+      if (referencing.length > 0) {
+        const sample = series[0];
+        throw new ValidationError([
+          `テンプレート: ${sample.targetType} / ${sample.variant} は実施回${referencing.length}件から参照されている。` +
+            '削除せずアーカイブする。',
+        ]);
+      }
+
+      return {
+        write: () =>
+          adapter.saveEntities(
+            series.map((template) => ({
+              type: ENTITY_TYPE.TASK_TEMPLATES,
+              entity: template,
+              remove: true,
+            })),
+          ),
+        value: series.length,
+      };
+    },
+  );
+
+  return { dataset, removed };
+}
+
+/**
  * テンプレートを画面の下書き形へ写す。
  *
  * 保存済みのオブジェクトをそのまま編集させると、保存に失敗したときに画面と
@@ -173,5 +311,26 @@ export function toDraft(template) {
     targetType: template.targetType,
     variant: template.variant,
     tasks: template.tasks.map((task) => ({ ...task })),
+  };
+}
+
+/**
+ * テンプレートを複製元とした新規登録の下書きへ写す（仕様書8.1.7）。
+ *
+ * `taskDefinitionId` を落とす。これは版をまたいで同一項目を追跡する識別子であり
+ * （仕様書6.3）、引き継ぐと別系列の項目どうしが同じものとして辿れてしまう。保存
+ * 時に採番し直す（`normalizeTaskDefinitions`）。
+ *
+ * 対象種別とバリエーションは複製元のまま返す。そのままでは有効版が重複して保存
+ * できないが、どこを変えるのかは利用者が決めることなので、画面で書き換えさせる。
+ *
+ * @param {object} template
+ * @returns {{targetType: string, variant: string, tasks: object[]}}
+ */
+export function toCopyDraft(template) {
+  return {
+    targetType: template.targetType,
+    variant: template.variant,
+    tasks: template.tasks.map(({ taskDefinitionId, ...task }) => ({ ...task })),
   };
 }

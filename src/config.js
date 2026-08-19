@@ -184,7 +184,8 @@ export const EXPORT_FILE_PREFIX = 'parallel-work-time';
  * 書き換えられないようにする。
  *
  * @returns {{schemaVersion: number, retentionDays: number,
- *            longRunningThresholdHours: number, lastExportedAt: string|null}}
+ *            longRunningThresholdHours: number, lastExportedAt: string|null,
+ *            sampleTemplatesSeededAt: string|null}}
  */
 export function createDefaultSettings() {
   return {
@@ -192,5 +193,6 @@ export function createDefaultSettings() {
     retentionDays: DEFAULT_RETENTION_DAYS,
     longRunningThresholdHours: DEFAULT_LONG_RUNNING_THRESHOLD_HOURS,
     lastExportedAt: null,
+    sampleTemplatesSeededAt: null,
   };
 }
