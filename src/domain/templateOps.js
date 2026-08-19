@@ -98,6 +98,72 @@ export function deactivate(template) {
 }
 
 /**
+ * 再び有効版にしたテンプレートを返す（仕様書8.1.10）。
+ *
+ * 版番号は動かさない。アーカイブは内容の変更ではないため、戻すときも新しい版に
+ * はしない。
+ *
+ * @param {object} template
+ * @returns {object}
+ */
+export function activate(template) {
+  return { ...template, active: true };
+}
+
+/**
+ * 系列の中で版番号が最大のものを返す（仕様書8.1.10）。
+ *
+ * アーカイブを戻すときに、どの版を有効へ戻すかを決める。系列に版が無ければ null。
+ *
+ * @param {object[]} templates 全テンプレート（版を問わない）
+ * @param {string} templateSeriesId
+ * @returns {object|null}
+ */
+export function latestOfSeries(templates, templateSeriesId) {
+  const series = templates.filter(
+    (template) => template.templateSeriesId === templateSeriesId,
+  );
+  if (series.length === 0) {
+    return null;
+  }
+  return series.reduce((latest, template) =>
+    template.version > latest.version ? template : latest,
+  );
+}
+
+/**
+ * アーカイブ済みの系列を、系列ごとに最新版1件で返す（仕様書8.1.9）。
+ *
+ * 有効版が1つも無い系列をアーカイブ済みとみなす。画面は戻す操作の対象として
+ * 最新版だけを示せばよいので、旧版は畳んで返す。
+ *
+ * @param {object[]} templates
+ * @returns {object[]}
+ */
+export function archivedTemplates(templates) {
+  const activeSeries = new Set(
+    templates
+      .filter((template) => template.active === true)
+      .map((template) => template.templateSeriesId),
+  );
+  const latestBySeries = new Map();
+  for (const template of templates) {
+    if (activeSeries.has(template.templateSeriesId)) {
+      continue;
+    }
+    const current = latestBySeries.get(template.templateSeriesId);
+    if (current === undefined || template.version > current.version) {
+      latestBySeries.set(template.templateSeriesId, template);
+    }
+  }
+  return [...latestBySeries.values()].sort(
+    (left, right) =>
+      left.targetType.localeCompare(right.targetType, 'ja') ||
+      left.variant.localeCompare(right.variant, 'ja'),
+  );
+}
+
+/**
  * 作業項目定義を保存できる形へ整える。
  *
  * `taskDefinitionId` は版をまたいで同一項目を追跡する識別子であり、改訂時も

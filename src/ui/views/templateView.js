@@ -1,8 +1,8 @@
 /**
  * 作業テンプレート画面（仕様書8.1、12.2）。
  *
- * 有効版の一覧、選択したテンプレートの作業項目編集、改訂、新規登録を扱う。
- * 旧版の閲覧・比較画面は設けない（仕様書6.3、12.2）。
+ * 有効版の一覧、選択したテンプレートの編集、改訂、新規登録、複製、アーカイブと
+ * その復元、削除を扱う（仕様書8.1）。旧版の閲覧・比較画面は設けない（仕様書6.3、12.2）。
  *
  * 描画の方針。入力欄への打ち込みでは再描画しない。下書きオブジェクトを直接
  * 書き換えるだけにして、フォーカスとカーソル位置を保つ。再描画は行の追加・削除、
@@ -11,11 +11,13 @@
 
 import {
   activeTemplates,
+  archivedTemplates,
   nextOrder,
   sortTaskDefinitions,
 } from '../../domain/templateOps.js';
-import { toDraft } from '../../app/actions/templateActions.js';
+import { toCopyDraft, toDraft } from '../../app/actions/templateActions.js';
 import { toErrorMessages } from '../../app/errors.js';
+import { createConfirmPanel } from '../components/confirmPanel.js';
 import { el, field, replaceChildren } from '../dom.js';
 import { toOptionalIntegerInput } from '../numeric.js';
 import { MAX_TEXT_LENGTH } from '../../config.js';
@@ -45,6 +47,9 @@ export function createTemplateView({ container, store, actions, isActive = () =>
     /** @type {object} */
     newDraft: emptyDraft(),
     busy: false,
+    /** 削除の確認中である系列。確認パネルは対象の近くへ差し込む。 */
+    /** @type {string|null} */
+    pendingDeleteSeriesId: null,
   };
 
   function emptyDraft() {
@@ -58,6 +63,11 @@ export function createTemplateView({ container, store, actions, isActive = () =>
   /** 現在のデータセットにある有効版テンプレート。 */
   function templates() {
     return activeTemplates(store.getState().dataset.taskTemplates);
+  }
+
+  /** アーカイブ済みの系列（系列ごとに最新版1件）。 */
+  function archived() {
+    return archivedTemplates(store.getState().dataset.taskTemplates);
   }
 
   /** 選択中のテンプレート。選択が失われていれば null。 */
@@ -124,6 +134,45 @@ export function createTemplateView({ container, store, actions, isActive = () =>
   }
 
   /**
+   * 複製して新規登録を始める（仕様書8.1.7）。
+   *
+   * 登録はせず、新規登録フォームを複製元の内容で開くだけにする。対象種別か
+   * バリエーションを変えないと有効版が重複して保存できないため、どこを変えるかを
+   * 利用者に決めさせる。
+   */
+  function startCopy(template) {
+    local.creating = true;
+    local.newDraft = toCopyDraft(template);
+    local.errors = [];
+    local.pendingDeleteSeriesId = null;
+    render();
+  }
+
+  async function handleArchive(templateId) {
+    await submit(async () => {
+      await actions.archiveTemplate(templateId);
+      // アーカイブすると一覧から消える。編集中だった場合は選択を外す。
+      if (local.selectedTemplateId === templateId) {
+        local.selectedTemplateId = null;
+        local.draft = null;
+      }
+    });
+  }
+
+  async function handleRestore(templateSeriesId) {
+    await submit(async () => {
+      await actions.restoreTemplate(templateSeriesId);
+    });
+  }
+
+  async function handleDelete(templateSeriesId) {
+    await submit(async () => {
+      await actions.deleteTemplate(templateSeriesId);
+      local.pendingDeleteSeriesId = null;
+    });
+  }
+
+  /**
    * 有効版テンプレートの一覧を描く。
    */
   function renderList() {
@@ -166,6 +215,22 @@ export function createTemplateView({ container, store, actions, isActive = () =>
                   dataset: { testid: 'select-template' },
                   disabled: current,
                   on: { click: () => selectTemplate(template.templateId) },
+                }),
+                el('button', {
+                  type: 'button',
+                  class: 'button',
+                  text: '複製',
+                  dataset: { testid: 'copy-template' },
+                  disabled: local.busy,
+                  on: { click: () => startCopy(template) },
+                }),
+                el('button', {
+                  type: 'button',
+                  class: 'button',
+                  text: 'アーカイブ',
+                  dataset: { testid: 'archive-template' },
+                  disabled: local.busy,
+                  on: { click: () => handleArchive(template.templateId) },
                 }),
               ]),
             ],
@@ -330,6 +395,40 @@ export function createTemplateView({ container, store, actions, isActive = () =>
           '改訂すると版番号が繰り上がり、旧版のレコードは保持されます。' +
           '既存の実施回は作業項目定義を複製済みのため、改訂の影響を受けません。',
       }),
+      el('div', { class: 'field-row' }, [
+        field({
+          id: 'editor-target-type',
+          label: '対象種別',
+          input: el('input', {
+            type: 'text',
+            class: 'input',
+            value: local.draft.targetType,
+            maxlength: MAX_TEXT_LENGTH,
+            dataset: { testid: 'editor-target-type' },
+            on: {
+              input: (event) => {
+                local.draft.targetType = event.target.value;
+              },
+            },
+          }),
+        }),
+        field({
+          id: 'editor-variant',
+          label: 'バリエーション',
+          input: el('input', {
+            type: 'text',
+            class: 'input',
+            value: local.draft.variant,
+            maxlength: MAX_TEXT_LENGTH,
+            dataset: { testid: 'editor-variant' },
+            on: {
+              input: (event) => {
+                local.draft.variant = event.target.value;
+              },
+            },
+          }),
+        }),
+      ]),
       renderTaskTable(local.draft, 'editor'),
       el('p', {
         class: 'note',
@@ -457,6 +556,121 @@ export function createTemplateView({ container, store, actions, isActive = () =>
     ]);
   }
 
+  /**
+   * アーカイブ済みテンプレートの一覧を描く（仕様書8.1.9、8.1.10、8.1.11）。
+   *
+   * 系列ごとに最新版だけを出す。戻す操作も削除も系列単位であり、版を選ばせる
+   * 意味がない。1件も無ければ節ごと出さない。
+   */
+  function renderArchived() {
+    const list = archived();
+    if (list.length === 0) {
+      return null;
+    }
+
+    return el('section', { class: 'card', dataset: { testid: 'archived-templates' } }, [
+      el('h3', { class: 'card__title', text: 'アーカイブ済み' }),
+      el('p', {
+        class: 'note',
+        text:
+          'アーカイブしたテンプレートは一覧と実施回の作成候補から外れます。' +
+          '記録は残るため、いつでも戻せます。',
+      }),
+      el('table', { class: 'table' }, [
+        el('thead', {}, [
+          el('tr', {}, [
+            el('th', { scope: 'col', text: '対象種別' }),
+            el('th', { scope: 'col', text: 'バリエーション' }),
+            el('th', { scope: 'col', class: 'table__num', text: '版' }),
+            el('th', { scope: 'col' }),
+          ]),
+        ]),
+        el(
+          'tbody',
+          {},
+          list.map((template) =>
+            el(
+              'tr',
+              {
+                dataset: {
+                  testid: 'archived-row',
+                  templateSeriesId: template.templateSeriesId,
+                },
+              },
+              [
+                el('td', { text: template.targetType }),
+                el('td', { text: template.variant }),
+                el('td', { class: 'table__num', text: `版${template.version}` }),
+                el('td', {}, [
+                  el('button', {
+                    type: 'button',
+                    class: 'button',
+                    text: '戻す',
+                    dataset: { testid: 'restore-template' },
+                    disabled: local.busy,
+                    on: { click: () => handleRestore(template.templateSeriesId) },
+                  }),
+                  el('button', {
+                    type: 'button',
+                    class: 'button',
+                    text: '削除',
+                    dataset: { testid: 'delete-template' },
+                    disabled: local.busy,
+                    on: {
+                      click: () => {
+                        local.pendingDeleteSeriesId = template.templateSeriesId;
+                        local.errors = [];
+                        render();
+                      },
+                    },
+                  }),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ]),
+      renderDeleteConfirm(list),
+    ]);
+  }
+
+  /**
+   * 削除の確認を描く。
+   *
+   * 削除は取り消せないうえ、系列の全版をまとめて消す。実施回から参照されている
+   * 場合はアクションが拒むが、その手前で対象を言葉にして見せる。
+   */
+  function renderDeleteConfirm(list) {
+    if (local.pendingDeleteSeriesId === null) {
+      return null;
+    }
+    const target = list.find(
+      (template) => template.templateSeriesId === local.pendingDeleteSeriesId,
+    );
+    if (target === undefined) {
+      return null;
+    }
+
+    const { element } = createConfirmPanel({
+      title: 'テンプレートを削除する',
+      description:
+        `${target.targetType} / ${target.variant} を版${target.version}まで全て削除します。` +
+        'この操作は取り消せません。',
+      note:
+        '実施回から参照されているテンプレートは削除できません。' +
+        'その場合はアーカイブのままにしてください。',
+      confirmLabel: '削除する',
+      testidPrefix: 'delete-template-confirm',
+      busy: local.busy,
+      onConfirm: () => handleDelete(target.templateSeriesId),
+      onCancel: () => {
+        local.pendingDeleteSeriesId = null;
+        render();
+      },
+    });
+    return element;
+  }
+
   function renderErrors() {
     if (local.errors.length === 0) {
       return null;
@@ -490,6 +704,7 @@ export function createTemplateView({ container, store, actions, isActive = () =>
       renderCreateForm(),
       renderList(),
       renderEditor(),
+      renderArchived(),
     ]);
   }
 

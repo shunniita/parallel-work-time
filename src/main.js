@@ -30,7 +30,10 @@ import { createStore } from './app/store.js';
 import { createPersistence } from './app/persistence.js';
 import { startTabGuard } from './app/tabGuard.js';
 import {
+  archiveTemplateAction,
   createTemplate,
+  deleteTemplateAction,
+  restoreTemplateAction,
   reviseTemplateAction,
 } from './app/actions/templateActions.js';
 import {
@@ -346,6 +349,9 @@ async function main() {
     actions: {
       createTemplate: wrap(createTemplate),
       reviseTemplate: wrap(reviseTemplateAction),
+      archiveTemplate: wrap(archiveTemplateAction),
+      restoreTemplate: wrap(restoreTemplateAction),
+      deleteTemplate: wrap(deleteTemplateAction),
     },
     isActive: owns(VIEW.TEMPLATES),
   });
